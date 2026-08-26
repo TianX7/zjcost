@@ -1,0 +1,34 @@
+# Build artifacts & packaged output
+dist/
+build/
+output/
+artifacts/
+筑衡_便携版.zip
+
+# Runtime databases & backups (keep portable seed templates)
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+!*seed.db
+backups/
+
+# Dependencies
+node_modules/
+
+# Python caches
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Env & IDE
+.env
+.env.local
+.idea/
+.vscode/
+
+# Logs & temp
+*.log
+~$*

@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell -NoProfile -Command \"netsh interface show interface | Select-String 'Enabled|Connected'\")",
+      "Read(//c/Users/TIAN/AppData/Roaming/Codex//**)",
+      "Read(//c/Users/TIAN/AppData/Roaming/Codex++//**)",
+      "Bash(tasklist)",
+      "Bash(schtasks /query)",
+      "Read(//c/Users/TIAN/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/**)",
+      "Read(//c/ProgramData/Microsoft/Windows/Start Menu/Programs/**)",
+      "Read(//c/Users/TIAN/Desktop/**)",
+      "Read(//c/Users/TIAN/AppData/Local/Programs/**)",
+      "Read(//c/Users/TIAN/AppData/Local/Programs//**)",
+      "Bash(ls -laR \"/c/Users/TIAN/AppData/Local/com.bigpizzav3.codexplusplus.manager/\")",
+      "Read(//c/Users/TIAN/AppData/LocalLow/**)",
+      "Read(//c/ProgramData/**)"
+    ]
+  }
+}
