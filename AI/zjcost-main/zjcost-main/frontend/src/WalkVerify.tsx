@@ -581,7 +581,7 @@ export default function WalkVerify() {
       console.error("加载默认模型失败:", error);
       // 如果加载失败，使用备用示例数据
       setSceneElements(verifyElements);
-      setSceneTitle("IFC 漫游演示场景");
+      setSceneTitle("IFC 漫游核查场景");
     } finally {
       if (loadAbortRef.current === controller) {
         loadAbortRef.current = null;

@@ -1,6 +1,6 @@
 import { api, type Project } from "./api";
 
-const DEMO_BOQ_ITEMS = [
+const SAMPLE_BOQ_ITEMS = [
   {
     code: "010401003001",
     name: "框架柱混凝土 C30",
@@ -43,18 +43,18 @@ const DEMO_BOQ_ITEMS = [
   },
 ];
 
-export async function createDemoProject(): Promise<Project> {
+export async function createSampleProject(): Promise<Project> {
   const project = await api.createProject({
-    name: `筑衡演示项目 ${new Date().toLocaleDateString("zh-CN")}`,
+    name: `筑衡示例项目 ${new Date().toLocaleDateString("zh-CN")}`,
     region: "默认区域",
     project_type: "公共建筑",
     budget: 3200000,
-    owner: "演示用户",
+    owner: "导览用户",
     standard_type: "GB/T50500-2024",
-    description: "用于验证图纸识别、IFC 自动套定额、全过程计价和审计流水线的本地演示项目。",
+    description: "用于验证图纸识别、IFC 自动套定额、全过程计价和审计流水线的本地示例项目。",
   });
 
-  for (const item of DEMO_BOQ_ITEMS) {
+  for (const item of SAMPLE_BOQ_ITEMS) {
     await api.createBoqItem(project.id, item);
   }
 
@@ -62,7 +62,7 @@ export async function createDemoProject(): Promise<Project> {
     await api.autoValuate(project.id);
     await api.calculate(project.id);
   } catch {
-    // The demo project is still useful if matching/calculation requires more data.
+    // The tour project is still useful if matching/calculation requires more data.
   }
 
   return project;

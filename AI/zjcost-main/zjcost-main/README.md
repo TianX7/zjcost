@@ -4,7 +4,7 @@
 [![Python](https://img.shields.io/badge/Python-3.12+-green.svg)](https://www.python.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-teal.svg)](https://fastapi.tiangolo.com/)
-[![React](https://img.shields.io/badge/React-18.2+-61DAFB.svg)](https://react.dev/)
+[![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://react.dev/)
 
 > 🤖 **辅助驱动的建筑造价全流程管理平台**  
 > 从图纸识别到清单生成、定额绑定、单价分析、成本核算的辅助化闭环解决方案
@@ -142,7 +142,7 @@ graph TB
 ## 📦 项目结构
 
 ```
-building cost/
+zjcost/
 ├── frontend/                    # React 前端
 │   ├── src/
 │   │   ├── pages/             # 页面组件 (10+)
@@ -254,11 +254,11 @@ venv\Scripts\python.exe -m pip install -r requirements.txt
 
 ### 🔐 安全配置
 
-- `ZJCOST_AUTH_REQUIRED=false` 适合本地演示；部署或共享网络访问前请设为 `true`。
+- `ZJCOST_AUTH_REQUIRED=false` 适合本地使用；部署或共享网络访问前请设为 `true`。
 - `JWT_SECRET_KEY` 部署前必须改为随机长密钥。
 - `BACKEND_CORS_ORIGINS` 只填写允许访问后端的前端地址。
 - `MAX_UPLOAD_SIZE` / `DRAWING_MAX_UPLOAD_MB` / `IFC_MAX_UPLOAD_MB` 控制上传文件大小上限。
-- `ZJCOST_ALLOW_REGISTRATION=false` 控制是否开放公开注册（默认关闭）。
+- `ZJCOST_ALLOW_REGISTRATION=false` 关闭公开注册（默认开放；关闭后新用户无法自行注册）。
  
 ## 📊 项目规模
 

@@ -113,7 +113,7 @@ def run_system_check(db: Session = Depends(get_db)) -> SystemCheckResponse:
         "material_prices",
         "材料价",
         "ok" if material_count > 0 else "warning",
-        "材料价可用。" if material_count > 0 else "未检测到材料价，离线计价会使用演示/默认价格。",
+        "材料价可用。" if material_count > 0 else "未检测到材料价，离线计价会使用内置默认价格。",
         {"count": material_count},
     ))
 
@@ -151,7 +151,7 @@ def run_system_check(db: Session = Depends(get_db)) -> SystemCheckResponse:
         "zh_provider",
         "在线模型",
         "ok" if zh_ready else "warning",
-        f"当前模型供应商：{zhConf.provider}。" if zh_ready else "未启用在线模型，系统会使用本地规则和演示数据兜底。",
+        f"当前模型供应商：{zhConf.provider}。" if zh_ready else "未启用在线模型，系统会使用本地规则和示例数据兜底。",
         {"provider": zhConf.provider, "has_api_key": bool(zhConf.api_key)},
     ))
 

@@ -157,22 +157,22 @@ def _get_task(task_id: str) -> dict | None:
 
 
 def _valuation_progress_percent(message: str) -> int:
-    if "完成" in message or "瀹屾垚" in message:
+    if "完成" in message:
         return 100
-    if "计算" in message or "璁＄畻" in message:
+    if "计算" in message:
         return 90
-    if "整理" in message or "鏁寸悊" in message:
+    if "整理" in message:
         return 95
     match = re.search(r"(\d+)\s*/\s*(\d+)", message)
     if match:
         current, total = int(match.group(1)), max(int(match.group(2)), 1)
-        if "写入" in message or "清单" in message or "鍐欏叆" in message or "娓呭崟" in message:
+        if "写入" in message or "清单" in message:
             return min(35, 8 + round(current / total * 27))
-        if "匹配" in message or "定额" in message or "鍖归厤" in message:
+        if "匹配" in message or "定额" in message:
             return min(88, 40 + round(current / total * 48))
-    if "读取" in message or "定额" in message or "璇诲彇" in message:
+    if "读取" in message or "定额" in message:
         return 38
-    if "创建" in message or "项目" in message or "鍒涘缓" in message:
+    if "创建" in message or "项目" in message:
         return 8
     return 5
 

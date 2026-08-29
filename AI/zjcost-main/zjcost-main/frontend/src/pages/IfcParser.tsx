@@ -6,7 +6,7 @@ import { CloudUploadOutlined, ClearOutlined, DownloadOutlined, FolderAddOutlined
 import { api, type IfcElement, type IfcTaskStatus, type Project } from "../api";
 import Ifc3DViewer from "../components/Ifc3DViewer";
 import ValuationReview from "../components/ValuationReview";
-import { createDemoProject } from "../demoProject";
+import { createSampleProject } from "../sampleProject";
 
 type BottomTab = "elements" | "boq" | "valuation" | "diagnostics" | null;
 
@@ -125,21 +125,21 @@ export default function IfcParser() {
   const [saving, setSaving] = useState(false);
   const [valuating, setValuating] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [creatingDemo, setCreatingDemo] = useState(false);
+  const [creatingSample, setCreatingTour] = useState(false);
   const [bottomTab, setBottomTab] = useState<BottomTab>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // TEMP: perf-demo loader for browser testing, removed after verification.
+  // TEMP: perf-tour loader for browser testing, removed after verification.
   useEffect(() => {
-    if (!new URLSearchParams(window.location.search).has("perf-demo")) return undefined;
+    if (!new URLSearchParams(window.location.search).has("perf-tour")) return undefined;
     void (async () => {
       try {
         const response = await fetch(`${import.meta.env.BASE_URL}models/museum-complex.walk.json`);
         const raw = (await response.json()) as { elements?: IfcElement[] };
-        const demo: IfcTaskStatus = {
-          taskId: "perf-demo",
+        const tour: IfcTaskStatus = {
+          taskId: "perf-tour",
           status: "done",
-          summary: "perf-demo",
+          summary: "perf-tour",
           elements: raw.elements ?? [],
           preview_elements: [],
           boq_suggestions: [],
@@ -162,11 +162,11 @@ export default function IfcParser() {
           updated_at: null,
           timeout_seconds: 0,
         };
-        setResult(demo);
-        setFileName("perf-demo-model");
-        setTaskId("perf-demo");
+        setResult(tour);
+        setFileName("perf-tour-model");
+        setTaskId("perf-tour");
       } catch (error) {
-        console.error("perf demo load failed", error);
+        console.error("perf tour load failed", error);
       }
     })();
     return undefined;
@@ -375,17 +375,17 @@ export default function IfcParser() {
     }
   };
 
-  const startDemo = async () => {
-    setCreatingDemo(true);
+  const startSample = async () => {
+    setCreatingTour(true);
     try {
-      const project = await createDemoProject();
-      message.success("已创建演示项目，可用于保存 IFC 清单");
+      const project = await createSampleProject();
+      message.success("已创建示例项目，可用于保存 IFC 清单");
       await loadProjects();
       setProjectId(project.id);
     } catch (err) {
-      message.error(err instanceof Error ? err.message : "创建演示项目失败");
+      message.error(err instanceof Error ? err.message : "创建示例项目失败");
     } finally {
-      setCreatingDemo(false);
+      setCreatingTour(false);
     }
   };
 
@@ -626,7 +626,7 @@ export default function IfcParser() {
                   onChange={setProjectId}
                 />
                 <div className="ifc-save-actions">
-                  <Button icon={<FolderAddOutlined />} loading={creatingDemo} onClick={startDemo}>演示</Button>
+                  <Button icon={<FolderAddOutlined />} loading={creatingSample} onClick={startSample}>导览</Button>
                   <Button loading={saving} disabled={!taskId || !isDone} onClick={saveToNewProject}>新建</Button>
                   <Button type="primary" icon={<SaveOutlined />} loading={saving} disabled={!taskId || !isDone || !projectId} onClick={saveToProject}>保存</Button>
                 </div>

@@ -1,10 +1,10 @@
 /**
- * 筑衡 — 演示流程引导条
+ * 筑衡 — 导览流程引导条
  *
  * 在关键页面底部显示"下一步"引导，串联核心流程：
  * 图纸识别 → 清单计价 → 审计复核 → 成果报表 → 3D 漫游核查
  *
- * 演示者点击"下一步"即可跳转到下一个流程节点，无需记忆路径
+ * 讲解者点击"下一步"即可跳转到下一个流程节点，无需记忆路径
  */
 
 import { useNavigate } from "react-router-dom";
@@ -16,12 +16,12 @@ interface FlowStep {
   icon: string;
 }
 
-/** 核心演示流程节点 */
-const DEMO_FLOW: FlowStep[] = [
+/** 核心导览流程节点 */
+const SAMPLE_FLOW: FlowStep[] = [
   { key: "dashboard", label: "总控台", route: "/dashboard", icon: "query_stats" },
   { key: "drawings", label: "图纸识别", route: "/drawings", icon: "drawing" },
   { key: "pricing", label: "清单计价", route: "/pricing-audit", icon: "calculate" },
-  { key: "ifc-walk", label: "3D 核查", route: "/ifc-walk-demo", icon: "deployed_code" },
+  { key: "ifc-walk", label: "3D 核查", route: "/ifc-walk-tour", icon: "deployed_code" },
 ];
 
 interface FlowGuideProps {
@@ -33,22 +33,22 @@ interface FlowGuideProps {
 
 export default function FlowGuide({ current, customNext }: FlowGuideProps) {
   const navigate = useNavigate();
-  const currentIndex = DEMO_FLOW.findIndex(s => s.key === current);
+  const currentIndex = SAMPLE_FLOW.findIndex(s => s.key === current);
 
   if (currentIndex < 0) return null;
 
-  const isLast = currentIndex >= DEMO_FLOW.length - 1;
+  const isLast = currentIndex >= SAMPLE_FLOW.length - 1;
   const nextStep = customNext
     ? { route: customNext.route, label: customNext.label, icon: "arrow_forward" }
     : !isLast
-      ? { route: DEMO_FLOW[currentIndex + 1].route, label: DEMO_FLOW[currentIndex + 1].label, icon: DEMO_FLOW[currentIndex + 1].icon }
+      ? { route: SAMPLE_FLOW[currentIndex + 1].route, label: SAMPLE_FLOW[currentIndex + 1].label, icon: SAMPLE_FLOW[currentIndex + 1].icon }
       : null;
 
   return (
     <div className="flow-guide">
       {/* 流程进度指示 */}
       <div className="flow-guide-steps">
-        {DEMO_FLOW.map((step, i) => {
+        {SAMPLE_FLOW.map((step, i) => {
           const done = i < currentIndex;
           const active = i === currentIndex;
           return (

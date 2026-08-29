@@ -1,11 +1,11 @@
 /**
- * 筑衡 — 比赛现场演示导览脚本
+ * 筑衡 — 产品功能导览脚本
  *
  * 每个步骤定义：目标路由、标题、讲解要点、预计停留时长
- * 演示者通过浮动控制面板或键盘快捷键（← →）切换步骤
+ * 讲解者通过浮动控制面板或键盘快捷键（← →）切换步骤
  */
 
-export interface DemoStep {
+export interface TourStep {
   /** 步骤序号（从 1 开始） */
   index: number;
   /** 目标路由 */
@@ -20,7 +20,7 @@ export interface DemoStep {
   icon: string;
 }
 
-export const DEMO_STEPS: DemoStep[] = [
+export const SAMPLE_STEPS: TourStep[] = [
   {
     index: 1,
     route: "/dashboard",
@@ -39,7 +39,7 @@ export const DEMO_STEPS: DemoStep[] = [
     title: "项目台账",
     points: [
       "集中管理所有造价项目，支持按状态、类型筛选",
-      "点击「创建演示项目」可一键生成含完整清单的示例项目",
+      "点击「创建示例项目」可一键生成含完整清单的示例项目",
       "进入项目详情即可展开清单管理、定额绑定、计价计算",
     ],
     duration: 45,
@@ -95,7 +95,7 @@ export const DEMO_STEPS: DemoStep[] = [
   },
   {
     index: 7,
-    route: "/ifc-walk-demo",
+    route: "/ifc-walk-tour",
     title: "IFC 三维漫游核查",
     points: [
       "加载 IFC 模型，第一人称漫游核查建筑构件",
@@ -107,5 +107,5 @@ export const DEMO_STEPS: DemoStep[] = [
   },
 ];
 
-/** 演示总时长（秒） */
-export const DEMO_TOTAL_DURATION = DEMO_STEPS.reduce((sum, s) => sum + s.duration, 0);
+/** 导览总时长（秒） */
+export const SAMPLE_TOTAL_DURATION = SAMPLE_STEPS.reduce((sum, s) => sum + s.duration, 0);

@@ -3,7 +3,7 @@ import { Alert, Button, Empty, Table, Tag, message } from "antd";
 import { AuditOutlined } from "@ant-design/icons";
 import type { PipelineResponse, Project, ValidationReport } from "../api";
 import { api } from "../api";
-import { createDemoProject } from "../demoProject";
+import { createSampleProject } from "../sampleProject";
 
 const STAGE_LABELS: Record<string, string> = {
   validation_handler: "规则校验",
@@ -26,7 +26,7 @@ export default function AuditWorkbench() {
   const [pipeline, setPipeline] = useState<PipelineResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [auditLoading, setAuditLoading] = useState(false);
-  const [creatingDemo, setCreatingDemo] = useState(false);
+  const [creatingSample, setCreatingTour] = useState(false);
 
   // 从校验报告中提取计价类问题（替代原 BatchReviewResponse 死代码）
   const pricingIssues = useMemo(() => {
@@ -84,17 +84,17 @@ export default function AuditWorkbench() {
     }
   };
 
-  const startDemo = async () => {
-    setCreatingDemo(true);
+  const startSample = async () => {
+    setCreatingTour(true);
     try {
-      const project = await createDemoProject();
-      message.success("已创建演示项目");
+      const project = await createSampleProject();
+      message.success("已创建示例项目");
       await loadProjects();
       setProjectId(project.id);
     } catch (err) {
-      message.error(err instanceof Error ? err.message : "创建演示项目失败");
+      message.error(err instanceof Error ? err.message : "创建示例项目失败");
     } finally {
-      setCreatingDemo(false);
+      setCreatingTour(false);
     }
   };
 
@@ -104,7 +104,7 @@ export default function AuditWorkbench() {
         <div className="content-card">
           <div className="content-card-body">
             <Empty description="当前没有项目。创建或选择项目后，可以运行规则校验、计价审查和审计汇总。">
-              <Button type="primary" loading={creatingDemo} onClick={startDemo}>创建演示项目</Button>
+              <Button type="primary" loading={creatingSample} onClick={startSample}>创建示例项目</Button>
             </Empty>
           </div>
         </div>

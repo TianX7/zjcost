@@ -97,7 +97,7 @@ export default function QuantityCenter() {
       }
     }
     const computed = ALL_CATEGORIES.map((c) => ({ ...c, ...map.get(c.key)! }));
-    // fallback：若完全按编码匹配不到，按面积比例演示国标分类结构（标注为结构预览）
+    // fallback：若完全按编码匹配不到，按面积比例展示国标分类结构（标注为结构预览）
     const isFallback = lines.length > 0 && computed.every((c) => c.count === 0);
     const fallbackRatios = [0.06, 0.03, 0.10, 0.07, 0.26, 0.05, 0.04, 0.22, 0.07, 0.05, 0.03, 0.02];
     const fallback: Record<string, { count: number; amount: number }> = isFallback

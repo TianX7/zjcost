@@ -1,10 +1,10 @@
 /**
- * 筑衡 — 演示数据快照
+ * 筑衡 — 示例数据快照
  *
  * 完全离线的预设项目数据，不依赖后端 API。
- * 演示模式开启后，client.ts 的 request 函数会优先匹配此快照返回数据。
+ * 导览模式开启后，client.ts 的 request 函数会优先匹配此快照返回数据。
  *
- * 涵盖演示流程所有关键页面：
+ * 涵盖导览流程所有关键页面：
  * 总控台 → 图纸识别 → 清单计价 → 审计复核 → 成果报表 → 3D 核查
  */
 
@@ -14,14 +14,14 @@ import type {
   PipelineResponse, ReportData,
 } from "./api";
 
-export const DEMO_PROJECT_ID = 9999;
+export const SAMPLE_PROJECT_ID = 9999;
 
 // ─── 项目 ───────────────────────────────────────────────────────
 
-const DEMO_PROJECT: Project = {
-  id: DEMO_PROJECT_ID,
-  name: "筑衡演示项目 · 滨江科创中心",
-  description: "公共建筑演示项目，涵盖图纸识别、IFC 套价、全过程计价与审计流水线。",
+const SAMPLE_PROJECT: Project = {
+  id: SAMPLE_PROJECT_ID,
+  name: "筑衡示例项目 · 滨江科创中心",
+  description: "公共建筑示例项目，涵盖图纸识别、IFC 套价、全过程计价与审计流水线。",
   region: "浙江·杭州",
   project_type: "公共建筑",
   status: "active",
@@ -36,8 +36,8 @@ const DEMO_PROJECT: Project = {
   updated_at: "2025-06-15T14:30:00Z",
 };
 
-export const DEMO_PROJECT_LIST: ProjectListResponse = {
-  items: [DEMO_PROJECT],
+export const SAMPLE_PROJECT_LIST: ProjectListResponse = {
+  items: [SAMPLE_PROJECT],
   total: 1,
   page: 1,
   page_size: 20,
@@ -46,20 +46,20 @@ export const DEMO_PROJECT_LIST: ProjectListResponse = {
 
 // ─── 清单项 ─────────────────────────────────────────────────────
 
-export const DEMO_BOQ_ITEMS: BoqItem[] = [
-  { id: 9001, project_id: DEMO_PROJECT_ID, code: "010401003001", name: "框架柱混凝土 C30", characteristics: "柱类型:框架柱;混凝土强度:C30;泵送商品混凝土", unit: "m³", quantity: 186.5, division: "混凝土及钢筋混凝土工程", sort_order: 1, item_ref: "", trade_section: "建筑工程", description_en: "", rate: 0, amount: 0, remark: "" },
-  { id: 9002, project_id: DEMO_PROJECT_ID, code: "010403002001", name: "矩形梁混凝土 C30", characteristics: "梁类型:框架梁;混凝土强度:C30;泵送商品混凝土", unit: "m³", quantity: 342.8, division: "混凝土及钢筋混凝土工程", sort_order: 2, item_ref: "", trade_section: "建筑工程", description_en: "", rate: 0, amount: 0, remark: "" },
-  { id: 9003, project_id: DEMO_PROJECT_ID, code: "010405001001", name: "有梁板混凝土 C30", characteristics: "板厚:120mm;混凝土强度:C30", unit: "m³", quantity: 535.2, division: "混凝土及钢筋混凝土工程", sort_order: 3, item_ref: "", trade_section: "建筑工程", description_en: "", rate: 0, amount: 0, remark: "" },
-  { id: 9004, project_id: DEMO_PROJECT_ID, code: "010515001001", name: "现浇构件钢筋 HRB400", characteristics: "钢筋种类:HRB400;直径综合", unit: "t", quantity: 124.6, division: "钢筋工程", sort_order: 4, item_ref: "", trade_section: "建筑工程", description_en: "", rate: 0, amount: 0, remark: "" },
-  { id: 9005, project_id: DEMO_PROJECT_ID, code: "010515001002", name: "现浇构件钢筋 HPB300", characteristics: "钢筋种类:HPB300;直径综合", unit: "t", quantity: 38.2, division: "钢筋工程", sort_order: 5, item_ref: "", trade_section: "建筑工程", description_en: "", rate: 0, amount: 0, remark: "" },
-  { id: 9006, project_id: DEMO_PROJECT_ID, code: "030404017001", name: "配电箱安装", characteristics: "规格:落地/嵌入综合;含接线调试", unit: "台", quantity: 28, division: "电气设备安装工程", sort_order: 6, item_ref: "", trade_section: "安装工程", description_en: "", rate: 0, amount: 0, remark: "" },
-  { id: 9007, project_id: DEMO_PROJECT_ID, code: "030411001001", name: "配管 砖混结构暗配", characteristics: "材质:SC管;规格:DN25", unit: "m", quantity: 856, division: "电气设备安装工程", sort_order: 7, item_ref: "", trade_section: "安装工程", description_en: "", rate: 0, amount: 0, remark: "" },
-  { id: 9008, project_id: DEMO_PROJECT_ID, code: "031001001001", name: "镀锌钢管 螺纹连接", characteristics: "规格:DN50;连接方式:螺纹", unit: "m", quantity: 342, division: "给排水工程", sort_order: 8, item_ref: "", trade_section: "安装工程", description_en: "", rate: 0, amount: 0, remark: "" },
+export const SAMPLE_BOQ_ITEMS: BoqItem[] = [
+  { id: 9001, project_id: SAMPLE_PROJECT_ID, code: "010401003001", name: "框架柱混凝土 C30", characteristics: "柱类型:框架柱;混凝土强度:C30;泵送商品混凝土", unit: "m³", quantity: 186.5, division: "混凝土及钢筋混凝土工程", sort_order: 1, item_ref: "", trade_section: "建筑工程", description_en: "", rate: 0, amount: 0, remark: "" },
+  { id: 9002, project_id: SAMPLE_PROJECT_ID, code: "010403002001", name: "矩形梁混凝土 C30", characteristics: "梁类型:框架梁;混凝土强度:C30;泵送商品混凝土", unit: "m³", quantity: 342.8, division: "混凝土及钢筋混凝土工程", sort_order: 2, item_ref: "", trade_section: "建筑工程", description_en: "", rate: 0, amount: 0, remark: "" },
+  { id: 9003, project_id: SAMPLE_PROJECT_ID, code: "010405001001", name: "有梁板混凝土 C30", characteristics: "板厚:120mm;混凝土强度:C30", unit: "m³", quantity: 535.2, division: "混凝土及钢筋混凝土工程", sort_order: 3, item_ref: "", trade_section: "建筑工程", description_en: "", rate: 0, amount: 0, remark: "" },
+  { id: 9004, project_id: SAMPLE_PROJECT_ID, code: "010515001001", name: "现浇构件钢筋 HRB400", characteristics: "钢筋种类:HRB400;直径综合", unit: "t", quantity: 124.6, division: "钢筋工程", sort_order: 4, item_ref: "", trade_section: "建筑工程", description_en: "", rate: 0, amount: 0, remark: "" },
+  { id: 9005, project_id: SAMPLE_PROJECT_ID, code: "010515001002", name: "现浇构件钢筋 HPB300", characteristics: "钢筋种类:HPB300;直径综合", unit: "t", quantity: 38.2, division: "钢筋工程", sort_order: 5, item_ref: "", trade_section: "建筑工程", description_en: "", rate: 0, amount: 0, remark: "" },
+  { id: 9006, project_id: SAMPLE_PROJECT_ID, code: "030404017001", name: "配电箱安装", characteristics: "规格:落地/嵌入综合;含接线调试", unit: "台", quantity: 28, division: "电气设备安装工程", sort_order: 6, item_ref: "", trade_section: "安装工程", description_en: "", rate: 0, amount: 0, remark: "" },
+  { id: 9007, project_id: SAMPLE_PROJECT_ID, code: "030411001001", name: "配管 砖混结构暗配", characteristics: "材质:SC管;规格:DN25", unit: "m", quantity: 856, division: "电气设备安装工程", sort_order: 7, item_ref: "", trade_section: "安装工程", description_en: "", rate: 0, amount: 0, remark: "" },
+  { id: 9008, project_id: SAMPLE_PROJECT_ID, code: "031001001001", name: "镀锌钢管 螺纹连接", characteristics: "规格:DN50;连接方式:螺纹", unit: "m", quantity: 342, division: "给排水工程", sort_order: 8, item_ref: "", trade_section: "安装工程", description_en: "", rate: 0, amount: 0, remark: "" },
 ];
 
 // ─── 计算汇总 ───────────────────────────────────────────────────
 
-export const DEMO_CALC_SUMMARY: CalcSummary = {
+export const SAMPLE_CALC_SUMMARY: CalcSummary = {
   total_direct: 8_965_000,
   total_management: 717_200,
   total_profit: 448_250,
@@ -82,8 +82,8 @@ export const DEMO_CALC_SUMMARY: CalcSummary = {
 
 // ─── Dashboard 汇总 ─────────────────────────────────────────────
 
-export const DEMO_DASHBOARD_SUMMARY: DashboardSummary = {
-  project_id: DEMO_PROJECT_ID,
+export const SAMPLE_DASHBOARD_SUMMARY: DashboardSummary = {
+  project_id: SAMPLE_PROJECT_ID,
   boq_count: 8,
   unbound_count: 0,
   dirty_count: 0,
@@ -97,8 +97,8 @@ export const DEMO_DASHBOARD_SUMMARY: DashboardSummary = {
 
 // ─── 审计校验 ───────────────────────────────────────────────────
 
-export const DEMO_VALIDATION_REPORT: ValidationReport = {
-  project_id: DEMO_PROJECT_ID,
+export const SAMPLE_VALIDATION_REPORT: ValidationReport = {
+  project_id: SAMPLE_PROJECT_ID,
   total_issues: 5,
   errors: 1,
   warnings: 3,
@@ -113,7 +113,7 @@ export const DEMO_VALIDATION_REPORT: ValidationReport = {
 
 // ─── 审计流水线 ─────────────────────────────────────────────────
 
-export const DEMO_PIPELINE_RESPONSE: PipelineResponse = {
+export const SAMPLE_PIPELINE_RESPONSE: PipelineResponse = {
   pipeline: "audit",
   stages: [
     { index: 0, handler: "数据校验", success: true, duration_s: 0.8, tool_calls: 3, answer: "校验 8 项清单，发现 5 个问题（1 错误 / 3 警告 / 1 提示）" },
@@ -129,10 +129,10 @@ export const DEMO_PIPELINE_RESPONSE: PipelineResponse = {
 
 // ─── 造价管理概览 ───────────────────────────────────────────────
 
-export const DEMO_VALUATION_OVERVIEW: ValuationOverview = {
-  project_id: DEMO_PROJECT_ID,
+export const SAMPLE_VALUATION_OVERVIEW: ValuationOverview = {
+  project_id: SAMPLE_PROJECT_ID,
   standard: {
-    project_id: DEMO_PROJECT_ID,
+    project_id: SAMPLE_PROJECT_ID,
     standard_code: "GB/T50500-2024",
     standard_name: "建设工程工程量清单计价规范",
     effective_date: "2024-07-01",
@@ -155,13 +155,13 @@ export const DEMO_VALUATION_OVERVIEW: ValuationOverview = {
 
 // ─── 成果报表 ───────────────────────────────────────────────────
 
-export const DEMO_REPORT_DATA: ReportData = {
+export const SAMPLE_REPORT_DATA: ReportData = {
   project: {
-    id: DEMO_PROJECT_ID,
-    name: DEMO_PROJECT.name,
-    region: DEMO_PROJECT.region,
-    project_type: DEMO_PROJECT.project_type,
-    standard_type: DEMO_PROJECT.standard_type,
+    id: SAMPLE_PROJECT_ID,
+    name: SAMPLE_PROJECT.name,
+    region: SAMPLE_PROJECT.region,
+    project_type: SAMPLE_PROJECT.project_type,
+    standard_type: SAMPLE_PROJECT.standard_type,
     currency: "CNY",
   },
   statistics: {
@@ -172,13 +172,13 @@ export const DEMO_REPORT_DATA: ReportData = {
     calculated_items: 8,
   },
   cost_summary: {
-    total_direct: DEMO_CALC_SUMMARY.total_direct,
-    total_management: DEMO_CALC_SUMMARY.total_management,
-    total_profit: DEMO_CALC_SUMMARY.total_profit,
-    total_regulatory: DEMO_CALC_SUMMARY.total_regulatory,
-    total_tax: DEMO_CALC_SUMMARY.total_tax,
-    total_measures: DEMO_CALC_SUMMARY.total_measures,
-    grand_total: DEMO_CALC_SUMMARY.grand_total,
+    total_direct: SAMPLE_CALC_SUMMARY.total_direct,
+    total_management: SAMPLE_CALC_SUMMARY.total_management,
+    total_profit: SAMPLE_CALC_SUMMARY.total_profit,
+    total_regulatory: SAMPLE_CALC_SUMMARY.total_regulatory,
+    total_tax: SAMPLE_CALC_SUMMARY.total_tax,
+    total_measures: SAMPLE_CALC_SUMMARY.total_measures,
+    grand_total: SAMPLE_CALC_SUMMARY.grand_total,
   },
   divisions: [
     { division: "混凝土及钢筋混凝土工程", item_count: 3, bound_count: 3, total_cost: 659_849, percentage: "5.5%" },
@@ -186,15 +186,15 @@ export const DEMO_REPORT_DATA: ReportData = {
     { division: "电气设备安装工程", item_count: 2, bound_count: 2, total_cost: 125_562, percentage: "1.1%" },
     { division: "给排水工程", item_count: 1, bound_count: 1, total_cost: 30_916, percentage: "0.3%" },
   ],
-  line_items: DEMO_BOQ_ITEMS.map((item, i) => ({
+  line_items: SAMPLE_BOQ_ITEMS.map((item, i) => ({
     boq_item_id: item.id,
     code: item.code,
     name: item.name,
     unit: item.unit,
     quantity: item.quantity,
     division: item.division,
-    unit_price: DEMO_CALC_SUMMARY.line_results[i]?.total / item.quantity || null,
-    total_cost: DEMO_CALC_SUMMARY.line_results[i]?.total || null,
+    unit_price: SAMPLE_CALC_SUMMARY.line_results[i]?.total / item.quantity || null,
+    total_cost: SAMPLE_CALC_SUMMARY.line_results[i]?.total || null,
     is_bound: true,
     quota_count: 1,
   })),
@@ -203,9 +203,9 @@ export const DEMO_REPORT_DATA: ReportData = {
 
 // ─── 路由匹配 ───────────────────────────────────────────────────
 
-/** 图纸识别演示结果 */
-export const DEMO_DRAWING_RESULT = {
-  taskId: "demo-drawing-001",
+/** 图纸识别导览结果 */
+export const SAMPLE_DRAWING_RESULT = {
+  taskId: "tour-drawing-001",
   status: "done" as const,
   drawing_type: "建筑施工图",
   summary: "识别 6 个图层，提取 42 个构件，自动套价 8 项清单",
@@ -257,35 +257,35 @@ export const DEMO_DRAWING_RESULT = {
   valuation_error: null,
 };
 
-/** 演示模式下 upload 函数的兜底返回 */
-export const DEMO_UPLOAD_TASK_ID = { taskId: "demo-drawing-001" };
+/** 导览模式下 upload 函数的兜底返回 */
+export const SAMPLE_UPLOAD_TASK_ID = { taskId: "tour-drawing-001" };
 
 /**
- * 根据请求路径和方法匹配演示快照数据。
+ * 根据请求路径和方法匹配导览快照数据。
  * 返回 null 表示无匹配，请求将走真实 API。
  */
-export function matchDemoSnapshot(path: string, method: string): unknown | null {
+export function matchTourSnapshot(path: string, method: string): unknown | null {
   // 仅拦截 GET 和部分 POST（审计流水线）
   const isPost = method === "POST";
 
   // 项目列表
-  if (path === "/projects" || path.startsWith("/projects?")) return DEMO_PROJECT_LIST;
+  if (path === "/projects" || path.startsWith("/projects?")) return SAMPLE_PROJECT_LIST;
 
   // 项目详情
   const projectMatch = path.match(/^\/projects\/(\d+)(?:\/|$|\?)/);
   const pid = projectMatch ? Number(projectMatch[1]) : null;
 
   if (pid !== null) {
-    if (path === `/projects/${pid}`) return DEMO_PROJECT;
-    if (path === `/projects/${pid}/boq-items` || path.startsWith(`/projects/${pid}/boq-items?`)) return DEMO_BOQ_ITEMS;
-    if (path === `/projects/${pid}/dashboard-summary`) return DEMO_DASHBOARD_SUMMARY;
-    if (path === `/projects/${pid}/calc-summary`) return DEMO_CALC_SUMMARY;
-    if (path === `/projects/${pid}/validation-issues`) return DEMO_VALIDATION_REPORT;
-    if (path === `/projects/${pid}/valuation-management/overview`) return DEMO_VALUATION_OVERVIEW;
-    if (path === `/projects/${pid}/report` || path.startsWith(`/projects/${pid}/report?`)) return DEMO_REPORT_DATA;
-    if (isPost && path === `/projects/${pid}/pipeline/audit`) return DEMO_PIPELINE_RESPONSE;
-    if (isPost && path === `/projects/${pid}/calculate`) return { ok: true, message: "演示模式：计价已完成" };
-    if (isPost && path === `/projects/${pid}/calculate:dirty`) return { ok: true, updated: 0, message: "演示模式：无待重算项" };
+    if (path === `/projects/${pid}`) return SAMPLE_PROJECT;
+    if (path === `/projects/${pid}/boq-items` || path.startsWith(`/projects/${pid}/boq-items?`)) return SAMPLE_BOQ_ITEMS;
+    if (path === `/projects/${pid}/dashboard-summary`) return SAMPLE_DASHBOARD_SUMMARY;
+    if (path === `/projects/${pid}/calc-summary`) return SAMPLE_CALC_SUMMARY;
+    if (path === `/projects/${pid}/validation-issues`) return SAMPLE_VALIDATION_REPORT;
+    if (path === `/projects/${pid}/valuation-management/overview`) return SAMPLE_VALUATION_OVERVIEW;
+    if (path === `/projects/${pid}/report` || path.startsWith(`/projects/${pid}/report?`)) return SAMPLE_REPORT_DATA;
+    if (isPost && path === `/projects/${pid}/pipeline/audit`) return SAMPLE_PIPELINE_RESPONSE;
+    if (isPost && path === `/projects/${pid}/calculate`) return { ok: true, message: "导览模式：计价已完成" };
+    if (isPost && path === `/projects/${pid}/calculate:dirty`) return { ok: true, updated: 0, message: "导览模式：无待重算项" };
   }
 
   // 定额匹配候选（图纸识别页可能用到）
@@ -299,14 +299,14 @@ export function matchDemoSnapshot(path: string, method: string): unknown | null 
   // 快照列表
   if (path.match(/^\/projects\/\d+\/snapshots$/)) {
     return [
-      { id: 8801, project_id: DEMO_PROJECT_ID, label: "施工图预算基线", created_at: "2025-05-28T09:00:00Z", grand_total: 11_580_000 },
-      { id: 8802, project_id: DEMO_PROJECT_ID, label: "第 2 期进度结算", created_at: "2025-06-10T15:00:00Z", grand_total: 11_898_392 },
+      { id: 8801, project_id: SAMPLE_PROJECT_ID, label: "施工图预算基线", created_at: "2025-05-28T09:00:00Z", grand_total: 11_580_000 },
+      { id: 8802, project_id: SAMPLE_PROJECT_ID, label: "第 2 期进度结算", created_at: "2025-06-10T15:00:00Z", grand_total: 11_898_392 },
     ];
   }
 
   // 图纸识别结果
   if (path.startsWith("/drawing-recognition/") && !path.includes("/export")) {
-    return DEMO_DRAWING_RESULT;
+    return SAMPLE_DRAWING_RESULT;
   }
 
   return null;

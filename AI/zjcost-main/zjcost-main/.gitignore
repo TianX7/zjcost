@@ -33,7 +33,7 @@ venv/
 *.sqlite3
 
 # Data & backups (runtime generated)
-data/
+backend/data/
 backups/
 
 # Logs
@@ -82,6 +82,7 @@ frontend/vite-*.log
 tools/python/__pycache__/
 tools/python/Lib/**/__pycache__/
 tools/python/Scripts/__pycache__/
+tools/python/Lib/site-packages/numpy/**/tests/data/
 tools/*.zip
 tools/get-pip.py
 

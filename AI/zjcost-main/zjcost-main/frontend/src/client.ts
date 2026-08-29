@@ -6,17 +6,17 @@ const UPLOAD_REQUEST_TIMEOUT_MS = 120000;
 /** 401 时派发的事件名，AuthGate 监听此事件以切换到登录界面 */
 export const AUTH_LOGOUT_EVENT = "zjcost:auth-logout";
 
-/** 演示模式是否激活（由 DemoModeProvider 设置 body.demo-mode 类驱动） */
-function isDemoModeActive(): boolean {
+/** 导览模式是否激活（由 TourModeProvider 设置 body.tour-mode 类驱动） */
+function isTourModeActive(): boolean {
   try {
-    return document.documentElement.classList.contains("demo-mode");
+    return document.documentElement.classList.contains("tour-mode");
   } catch {
     return false;
   }
 }
 
-// 动态导入演示快照匹配器（避免非演示模式下的加载开销）
-import { matchDemoSnapshot, DEMO_UPLOAD_TASK_ID } from "./demoSnapshot";
+// 动态导入导览快照匹配器（避免非导览模式下的加载开销）
+import { matchTourSnapshot, SAMPLE_UPLOAD_TASK_ID } from "./tourSnapshot";
 
 export function getAuthToken() {
   try {
@@ -83,10 +83,10 @@ async function parseErrorResponse(res: Response): Promise<string> {
 }
 
 export async function request<T>(path: string, opts?: RequestInit): Promise<T> {
-  // 演示模式：优先返回离线快照数据
-  if (isDemoModeActive()) {
+  // 导览模式：优先返回离线快照数据
+  if (isTourModeActive()) {
     try {
-      const snapshot = matchDemoSnapshot(path, opts?.method ?? "GET");
+      const snapshot = matchTourSnapshot(path, opts?.method ?? "GET");
       if (snapshot !== null) {
         return snapshot as T;
       }
@@ -116,9 +116,9 @@ export async function request<T>(path: string, opts?: RequestInit): Promise<T> {
 }
 
 export async function upload<T>(path: string, formData: FormData): Promise<T> {
-  // 演示模式：图纸识别上传返回模拟 taskId
-  if (isDemoModeActive() && path.startsWith("/drawing-recognition")) {
-    return DEMO_UPLOAD_TASK_ID as T;
+  // 导览模式：图纸识别上传返回模拟 taskId
+  if (isTourModeActive() && path.startsWith("/drawing-recognition")) {
+    return SAMPLE_UPLOAD_TASK_ID as T;
   }
 
   const { signal, clear } = createTimeoutSignal(UPLOAD_REQUEST_TIMEOUT_MS);

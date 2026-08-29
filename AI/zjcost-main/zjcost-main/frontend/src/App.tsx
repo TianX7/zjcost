@@ -3,9 +3,9 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from
 import { App as AntApp, Button, Card, ConfigProvider, Form, Input, Space, theme, Typography } from "antd";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { API_BASE, AUTH_LOGOUT_EVENT, getAuthToken, setAuthToken } from "./client";
-import DemoGuide from "./components/DemoGuide";
+import TourGuide from "./components/TourGuide";
 import ParticleBackdrop from "./components/ParticleBackdrop";
-import { DemoModeProvider, useDemoMode } from "./demoMode";
+import { TourModeProvider, useTourMode } from "./tourMode";
 
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const ProjectList = lazy(() => import("./pages/ProjectList"));
@@ -32,7 +32,7 @@ const NAV_ITEMS = [
   { path: "/pv-power", icon: "solar_power", label: "光伏发电监测" },
   { path: "/water-reuse", icon: "water_drop", label: "净水与中水回用" },
   { path: "/facility-ops", icon: "build_circle", label: "设施运维管理" },
-  { path: "/ifc-walk-demo", icon: "directions_walk", label: "数字孪生漫游" },
+  { path: "/ifc-walk-tour", icon: "directions_walk", label: "数字孪生漫游" },
   { path: "/data-resources", icon: "database", label: "定额与价格库" },
   { path: "/old-materials", icon: "recycling", label: "旧材利用定额" },
   { path: "/unit-price-analysis", icon: "price_change", label: "综合单价分析" },
@@ -61,7 +61,7 @@ function AppSidebar() {
   const navigate = useNavigate();
   const location = useLocation();
   const hasToken = Boolean(getAuthToken());
-  const { demoMode, toggleDemoMode } = useDemoMode();
+  const { tourMode, toggleTourMode } = useTourMode();
 
   return (
     <aside className="app-sidebar">
@@ -108,12 +108,12 @@ function AppSidebar() {
         <>
           <button
             type="button"
-            className={`app-sidebar-demo-toggle${demoMode ? " active" : ""}`}
-            onClick={toggleDemoMode}
-            title={demoMode ? "退出演示模式" : "进入演示模式"}
+            className={`app-sidebar-tour-toggle${tourMode ? " active" : ""}`}
+            onClick={toggleTourMode}
+            title={tourMode ? "退出导览模式" : "进入导览模式"}
           >
-            <span className="material-symbols-outlined">{demoMode ? "play_circle" : "slideshow"}</span>
-            <span>{demoMode ? "演示中 · 点击退出" : "演示模式"}</span>
+            <span className="material-symbols-outlined">{tourMode ? "play_circle" : "slideshow"}</span>
+            <span>{tourMode ? "导览中 · 点击退出" : "导览模式"}</span>
           </button>
           <Button
             type="text"
@@ -159,7 +159,7 @@ function AuthGate({ children }: { children: ReactNode }) {
   const [authed, setAuthed] = useState<boolean>(() => !authRequired || Boolean(getAuthToken()));
   const [submitting, setSubmitting] = useState(false);
   const location = useLocation();
-  const { demoMode } = useDemoMode();
+  const { tourMode } = useTourMode();
 
   useEffect(() => {
     if (!authRequired) return;
@@ -192,12 +192,12 @@ function AuthGate({ children }: { children: ReactNode }) {
   };
 
   if (authed) {
-    // WalkVerify 全屏页面不显示演示导览（避免遮挡 3D HUD）
-    const isWalkDemo = location.pathname.startsWith("/ifc-walk-demo");
+    // WalkVerify 全屏页面不显示导览（避免遮挡 3D HUD）
+    const isWalkTour = location.pathname.startsWith("/ifc-walk-tour");
     return (
       <>
         {children}
-        {demoMode && !isWalkDemo && <DemoGuide />}
+        {tourMode && !isWalkTour && <TourGuide />}
       </>
     );
   }
@@ -264,12 +264,12 @@ export default function App() {
       >
         <AntApp>
           <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-            <DemoModeProvider>
+            <TourModeProvider>
             <AuthGate>
               <Suspense fallback={<div className="page-container">正在加载...</div>}>
                 <Routes>
                   <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                  <Route path="/ifc-walk-demo" element={<WalkVerify />} />
+                  <Route path="/ifc-walk-tour" element={<WalkVerify />} />
                   <Route
                     path="/*"
                     element={
@@ -319,7 +319,7 @@ export default function App() {
                 </Routes>
               </Suspense>
             </AuthGate>
-            </DemoModeProvider>
+            </TourModeProvider>
           </BrowserRouter>
         </AntApp>
       </ConfigProvider>

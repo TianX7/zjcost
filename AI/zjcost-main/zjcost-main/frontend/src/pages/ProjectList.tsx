@@ -21,7 +21,7 @@ import {
 import { AppstoreOutlined, CopyOutlined, DeleteOutlined, FolderAddOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, TableOutlined } from "@ant-design/icons";
 import type { Project, ProjectCreateData, ProjectListParams } from "../api";
 import { api } from "../api";
-import { createDemoProject } from "../demoProject";
+import { createSampleProject } from "../sampleProject";
 
 const STATUS_OPTIONS = [
   { value: "", label: "全部状态" },
@@ -121,7 +121,7 @@ export default function ProjectList() {
   const [pageSize] = useState(10);
   const [view, setView] = useState<"card" | "table">("card");
   const [modalOpen, setModalOpen] = useState(false);
-  const [creatingDemo, setCreatingDemo] = useState(false);
+  const [creatingSample, setCreatingTour] = useState(false);
   const [form] = Form.useForm<ProjectCreateData>();
 
   const summary = useMemo(() => {
@@ -173,16 +173,16 @@ export default function ProjectList() {
     }
   };
 
-  const startDemo = async () => {
-    setCreatingDemo(true);
+  const startSample = async () => {
+    setCreatingTour(true);
     try {
-      const project = await createDemoProject();
-      message.success("已创建演示项目");
+      const project = await createSampleProject();
+      message.success("已创建示例项目");
       navigate(`/projects/${project.id}`);
     } catch (err) {
-      message.error(err instanceof Error ? err.message : "创建演示项目失败");
+      message.error(err instanceof Error ? err.message : "创建示例项目失败");
     } finally {
-      setCreatingDemo(false);
+      setCreatingTour(false);
     }
   };
 
@@ -194,7 +194,7 @@ export default function ProjectList() {
           <Typography.Text type="secondary">集中管理工程项目、计价规范、预算口径和全过程成果入口。</Typography.Text>
         </div>
         <Space wrap>
-          <Button icon={<FolderAddOutlined />} loading={creatingDemo} onClick={startDemo}>演示项目</Button>
+          <Button icon={<FolderAddOutlined />} loading={creatingSample} onClick={startSample}>示例项目</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>新建项目</Button>
         </Space>
       </div>
@@ -259,10 +259,10 @@ export default function ProjectList() {
 
       {items.length === 0 ? (
         <div className="pl-empty">
-          <Empty description="项目已清空。可以新建项目，也可以用演示项目检查图纸、IFC、计价和审计流程。">
+          <Empty description="项目已清空。可以新建项目，也可以用示例项目检查图纸、IFC、计价和审计流程。">
             <Space wrap>
               <Button type="primary" onClick={() => setModalOpen(true)}>新建项目</Button>
-              <Button loading={creatingDemo} onClick={startDemo}>创建演示项目</Button>
+              <Button loading={creatingSample} onClick={startSample}>创建示例项目</Button>
             </Space>
           </Empty>
         </div>

@@ -38,7 +38,7 @@ venv/
 .venv/
 *.sqlite
 *.sqlite3
-data/
+backend/data/
 backend/uploads/
 backend/.tmp/
 backend/tmp-pytest/

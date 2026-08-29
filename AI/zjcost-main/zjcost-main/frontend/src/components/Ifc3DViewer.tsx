@@ -12665,7 +12665,7 @@ export default function Ifc3DViewer({
     >
       <div ref={containerRef} className="ifc-walk-canvas" />
 
-      {/* 顶部场景信息条（非紧凑、非演示模式） */}
+      {/* 顶部场景信息条（非紧凑、非导览模式） */}
       {!isCompactViewer && !presentationMode && !isWalkView && (
         <div className="ifc-walk-scene">
           <span className="material-symbols-outlined ifc-walk-scene-icon">deployed_code</span>
@@ -12676,7 +12676,7 @@ export default function Ifc3DViewer({
         </div>
       )}
 
-      {/* 演示模式信息条 */}
+      {/* 导览模式信息条 */}
       {presentationMode && (
         <div className="ifc-walk-scene" style={{ top: isCompactViewer ? 126 : 60 }}>
           <span className="material-symbols-outlined ifc-walk-scene-icon">deployed_code</span>

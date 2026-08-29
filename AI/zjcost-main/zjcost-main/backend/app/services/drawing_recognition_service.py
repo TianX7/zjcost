@@ -71,7 +71,7 @@ _RECOGNITION_PROMPT = """\
 """
 
 
-def _get_demo_components() -> list[RecognizedComponent]:
+def _get_sample_components() -> list[RecognizedComponent]:
     return [
         RecognizedComponent(id="C-1", type="框架柱", count=12, spec="600×600", confidence=95.0, material="C30混凝土", unit="m³", quantity_estimate=17.28),
         RecognizedComponent(id="C-2", type="框架柱", count=8, spec="500×500", confidence=92.0, material="C30混凝土", unit="m³", quantity_estimate=8.64),
@@ -100,8 +100,8 @@ def recognize_drawing(
     provider = get_zh_provider()
     if not provider.is_enabled() or not provider.is_configured():
         return RecognitionResult(
-            components=_get_demo_components(),
-            summary="【离线演示模式】AI服务未配置，当前展示示例识别数据。共识别到15类构件，包含框架柱20根、框架梁26根、剪力墙4面、楼板2层，以及给排水、电气、消防等安装工程内容。",
+            components=_get_sample_components(),
+            summary="【离线模式】AI服务未配置，当前展示示例识别数据。共识别到15类构件，包含框架柱20根、框架梁26根、剪力墙4面、楼板2层，以及给排水、电气、消防等安装工程内容。",
             drawing_type="结构+安装综合平面图",
         )
 

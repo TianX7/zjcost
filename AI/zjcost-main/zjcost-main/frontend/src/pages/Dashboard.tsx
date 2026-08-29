@@ -4,7 +4,7 @@ import { Button, Empty, Space, Spin, Tag, message } from "antd";
 import { FolderAddOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import type { CalcSummary, DashboardSummary, Project, ValuationOverview } from "../api";
 import { api } from "../api";
-import { createDemoProject } from "../demoProject";
+import { createSampleProject } from "../sampleProject";
 
 function useCountUp(target: number, duration = 700) {
   const [val, setVal] = useState(0);
@@ -264,7 +264,7 @@ export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [stats, setStats] = useState<Map<number, ProjectStats>>(new Map());
   const [loading, setLoading] = useState(true);
-  const [creatingDemo, setCreatingDemo] = useState(false);
+  const [creatingSample, setCreatingTour] = useState(false);
   // 遥测心跳：驱动首页实时时钟与运营设施迷你曲线
   const [opsClock, setOpsClock] = useState(() => Date.now());
   useEffect(() => {
@@ -387,16 +387,16 @@ export default function Dashboard() {
     ];
   }, [bindRate, boqCount, hasCalc, maintenanceCount, top?.calc?.grand_total, topProject, validationIssues]);
 
-  const startDemo = async () => {
-    setCreatingDemo(true);
+  const startSample = async () => {
+    setCreatingTour(true);
     try {
-      const project = await createDemoProject();
-      message.success("已创建演示项目，可用于离线验证全流程");
+      const project = await createSampleProject();
+      message.success("已创建示例项目，可用于离线验证全流程");
       navigate(`/projects/${project.id}`);
     } catch (err) {
-      message.error(err instanceof Error ? err.message : "创建演示项目失败");
+      message.error(err instanceof Error ? err.message : "创建示例项目失败");
     } finally {
-      setCreatingDemo(false);
+      setCreatingTour(false);
     }
   };
 
@@ -629,10 +629,10 @@ export default function Dashboard() {
           </div>
           {projects.length === 0 ? (
             <div className="dash-empty-panel">
-              <Empty description="当前没有项目台账。可以新建真实工程，也可以用演示项目验证全流程。">
+              <Empty description="当前没有项目台账。可以新建真实工程，也可以用示例项目验证全流程。">
                 <Space wrap>
                   <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate("/projects")}>新建项目</Button>
-                  <Button icon={<FolderAddOutlined />} loading={creatingDemo} onClick={startDemo}>创建演示项目</Button>
+                  <Button icon={<FolderAddOutlined />} loading={creatingSample} onClick={startSample}>创建示例项目</Button>
                 </Space>
               </Empty>
             </div>

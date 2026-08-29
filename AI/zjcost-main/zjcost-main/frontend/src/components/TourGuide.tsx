@@ -1,7 +1,7 @@
 /**
- * 筑衡 — 演示导览控制面板
+ * 筑衡 — 导览控制面板
  *
- * 比赛现场演示辅助工具：
+ * 产品功能导览辅助工具：
  * - 浮动控制面板（右下角），可折叠
  * - 步骤导航：上一步 / 下一步 / 跳转
  * - 讲解提示卡：当前步骤的讲解要点
@@ -11,10 +11,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { DEMO_STEPS } from "../demoSteps";
-import DemoSummary from "./DemoSummary";
+import { SAMPLE_STEPS } from "../tourSteps";
+import TourSummary from "./TourSummary";
 
-const STORAGE_KEY = "zh-demo-guide-state";
+const STORAGE_KEY = "zh-tour-guide-state";
 
 interface GuideState {
   active: boolean;
@@ -41,7 +41,7 @@ function formatTime(seconds: number): string {
   return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }
 
-export default function DemoGuide() {
+export default function TourGuide() {
   const navigate = useNavigate();
   const location = useLocation();
   const [state, setState] = useState<GuideState>(loadState);
@@ -49,8 +49,8 @@ export default function DemoGuide() {
   const [showSummary, setShowSummary] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const currentStep = DEMO_STEPS[state.stepIndex];
-  const isLast = state.stepIndex >= DEMO_STEPS.length - 1;
+  const currentStep = SAMPLE_STEPS[state.stepIndex];
+  const isLast = state.stepIndex >= SAMPLE_STEPS.length - 1;
   const isFirst = state.stepIndex <= 0;
 
   // 持久化
@@ -76,8 +76,8 @@ export default function DemoGuide() {
   }, [state.active, state.stepIndex]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const goToStep = useCallback((index: number) => {
-    const clamped = Math.max(0, Math.min(DEMO_STEPS.length - 1, index));
-    const step = DEMO_STEPS[clamped];
+    const clamped = Math.max(0, Math.min(SAMPLE_STEPS.length - 1, index));
+    const step = SAMPLE_STEPS[clamped];
     setState(prev => ({ ...prev, stepIndex: clamped }));
     if (step && location.pathname !== step.route) {
       navigate(step.route);
@@ -128,47 +128,47 @@ export default function DemoGuide() {
     return (
       <button
         type="button"
-        className="demo-guide-launch"
+        className="tour-guide-launch"
         onClick={toggleActive}
-        title="启动演示导览"
+        title="启动导览"
       >
         <span className="material-symbols-outlined">play_circle</span>
-        <span>演示导览</span>
+        <span>导览</span>
       </button>
     );
   }
 
-  const progressPercent = Math.round(((state.stepIndex + 1) / DEMO_STEPS.length) * 100);
+  const progressPercent = Math.round(((state.stepIndex + 1) / SAMPLE_STEPS.length) * 100);
   const stepElapsed = state.elapsed; // 简化：用总计时
   const overTime = stepElapsed > currentStep?.duration;
 
   return (
-    <div className={`demo-guide${collapsed ? " demo-guide-collapsed" : ""}`}>
+    <div className={`tour-guide${collapsed ? " tour-guide-collapsed" : ""}`}>
       {/* 折叠态：只显示一个小圆 */}
       {collapsed ? (
         <button
           type="button"
-          className="demo-guide-toggle"
+          className="tour-guide-toggle"
           onClick={() => setCollapsed(false)}
           title="展开导览面板（H）"
         >
           <span className="material-symbols-outlined">expand_less</span>
-          <span className="demo-guide-toggle-badge">{state.stepIndex + 1}/{DEMO_STEPS.length}</span>
+          <span className="tour-guide-toggle-badge">{state.stepIndex + 1}/{SAMPLE_STEPS.length}</span>
         </button>
       ) : (
         <>
           {/* 头部 */}
-          <div className="demo-guide-header">
-            <div className="demo-guide-header-info">
-              <span className="material-symbols-outlined demo-guide-header-icon">tour</span>
+          <div className="tour-guide-header">
+            <div className="tour-guide-header-info">
+              <span className="material-symbols-outlined tour-guide-header-icon">tour</span>
               <div>
-                <div className="demo-guide-header-title">演示导览</div>
-                <div className="demo-guide-header-sub">步骤 {state.stepIndex + 1} / {DEMO_STEPS.length}</div>
+                <div className="tour-guide-header-title">导览</div>
+                <div className="tour-guide-header-sub">步骤 {state.stepIndex + 1} / {SAMPLE_STEPS.length}</div>
               </div>
             </div>
             <button
               type="button"
-              className="demo-guide-icon-btn"
+              className="tour-guide-icon-btn"
               onClick={() => setCollapsed(true)}
               title="折叠（H）"
             >
@@ -177,17 +177,17 @@ export default function DemoGuide() {
           </div>
 
           {/* 进度条 */}
-          <div className="demo-guide-progress">
-            <div className="demo-guide-progress-bar" style={{ width: `${progressPercent}%` }} />
+          <div className="tour-guide-progress">
+            <div className="tour-guide-progress-bar" style={{ width: `${progressPercent}%` }} />
           </div>
 
           {/* 当前步骤卡片 */}
-          <div className="demo-guide-step">
-            <div className="demo-guide-step-head">
-              <span className="material-symbols-outlined demo-guide-step-icon">{currentStep?.icon}</span>
-              <div className="demo-guide-step-title">{currentStep?.title}</div>
+          <div className="tour-guide-step">
+            <div className="tour-guide-step-head">
+              <span className="material-symbols-outlined tour-guide-step-icon">{currentStep?.icon}</span>
+              <div className="tour-guide-step-title">{currentStep?.title}</div>
             </div>
-            <ul className="demo-guide-points">
+            <ul className="tour-guide-points">
               {currentStep?.points.map((point, i) => (
                 <li key={i}>{point}</li>
               ))}
@@ -195,22 +195,22 @@ export default function DemoGuide() {
           </div>
 
           {/* 计时器 */}
-          <div className="demo-guide-timer">
+          <div className="tour-guide-timer">
             <button
               type="button"
-              className="demo-guide-icon-btn"
+              className="tour-guide-icon-btn"
               onClick={togglePause}
               title={state.running ? "暂停（Space）" : "继续（Space）"}
             >
               <span className="material-symbols-outlined">{state.running ? "pause" : "play_arrow"}</span>
             </button>
-            <span className={`demo-guide-time${overTime ? " demo-guide-time-over" : ""}`}>
+            <span className={`tour-guide-time${overTime ? " tour-guide-time-over" : ""}`}>
               {formatTime(stepElapsed)}
             </span>
-            <span className="demo-guide-time-target">/ {formatTime(currentStep?.duration || 0)}</span>
+            <span className="tour-guide-time-target">/ {formatTime(currentStep?.duration || 0)}</span>
             <button
               type="button"
-              className="demo-guide-icon-btn"
+              className="tour-guide-icon-btn"
               onClick={reset}
               title="重置（R）"
             >
@@ -219,10 +219,10 @@ export default function DemoGuide() {
           </div>
 
           {/* 导航按钮 */}
-          <div className="demo-guide-nav">
+          <div className="tour-guide-nav">
             <button
               type="button"
-              className="demo-guide-nav-btn"
+              className="tour-guide-nav-btn"
               onClick={prev}
               disabled={isFirst}
               title="上一步（←）"
@@ -232,35 +232,35 @@ export default function DemoGuide() {
             </button>
             <button
               type="button"
-              className="demo-guide-nav-btn demo-guide-nav-btn-primary"
+              className="tour-guide-nav-btn tour-guide-nav-btn-primary"
               onClick={isLast ? () => setShowSummary(true) : next}
-              title={isLast ? "完成演示" : "下一步（→）"}
+              title={isLast ? "完成导览" : "下一步（→）"}
             >
               {isLast ? "完成" : "下一步"}
               <span className="material-symbols-outlined">{isLast ? "check" : "chevron_right"}</span>
             </button>
           </div>
 
-          {/* 退出演示 */}
+          {/* 退出导览 */}
           <button
             type="button"
-            className="demo-guide-exit"
+            className="tour-guide-exit"
             onClick={toggleActive}
-            title="退出演示导览"
+            title="退出导览"
           >
             <span className="material-symbols-outlined">close</span>
             退出导览
           </button>
 
           {/* 快捷键提示 */}
-          <div className="demo-guide-shortcuts">
+          <div className="tour-guide-shortcuts">
             ← → 切换 · Space 暂停 · R 重置 · H 折叠
           </div>
         </>
       )}
 
-      {/* 演示结束总结页 */}
-      <DemoSummary
+      {/* 导览结束总结页 */}
+      <TourSummary
         open={showSummary}
         elapsed={state.elapsed}
         onClose={() => {

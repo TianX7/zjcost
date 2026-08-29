@@ -5422,11 +5422,11 @@ body::after {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   演示导览控制面板 (DemoGuide)
+   导览控制面板 (TourGuide)
    ═══════════════════════════════════════════════════════════════ */
 
 /* 启动按钮（未激活态） */
-.demo-guide-launch {
+.tour-guide-launch {
   position: fixed;
   bottom: 24px;
   right: 24px;
@@ -5447,19 +5447,19 @@ body::after {
   backdrop-filter: blur(12px);
 }
 
-.demo-guide-launch .material-symbols-outlined {
+.tour-guide-launch .material-symbols-outlined {
   font-size: 20px;
   color: #7dd3fc;
 }
 
-.demo-guide-launch:hover {
+.tour-guide-launch:hover {
   transform: translateY(-2px);
   box-shadow: 0 12px 32px rgba(20, 86, 184, 0.5);
   border-color: rgba(56, 189, 248, 0.6);
 }
 
 /* 导览面板主体 */
-.demo-guide {
+.tour-guide {
   position: fixed;
   bottom: 20px;
   right: 20px;
@@ -5471,20 +5471,20 @@ body::after {
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(148, 163, 184, 0.08);
   backdrop-filter: blur(16px);
   overflow: hidden;
-  animation: demo-guide-in 0.3s ease-out;
+  animation: tour-guide-in 0.3s ease-out;
 }
 
-@keyframes demo-guide-in {
+@keyframes tour-guide-in {
   from { opacity: 0; transform: translateY(12px) scale(0.96); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 /* 折叠态 */
-.demo-guide-collapsed {
+.tour-guide-collapsed {
   width: auto;
 }
 
-.demo-guide-toggle {
+.tour-guide-toggle {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -5497,47 +5497,47 @@ body::after {
   font-weight: 700;
 }
 
-.demo-guide-toggle .material-symbols-outlined { font-size: 20px; }
+.tour-guide-toggle .material-symbols-outlined { font-size: 20px; }
 
-.demo-guide-toggle-badge {
+.tour-guide-toggle-badge {
   font-size: 11px;
   color: #94a3b8;
   font-family: ui-monospace, monospace;
 }
 
 /* 头部 */
-.demo-guide-header {
+.tour-guide-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 12px 14px 8px;
 }
 
-.demo-guide-header-info {
+.tour-guide-header-info {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.demo-guide-header-icon {
+.tour-guide-header-icon {
   font-size: 20px;
   color: #38bdf8;
 }
 
-.demo-guide-header-title {
+.tour-guide-header-title {
   font-size: 14px;
   font-weight: 700;
   color: #e2e8f0;
 }
 
-.demo-guide-header-sub {
+.tour-guide-header-sub {
   font-size: 10px;
   color: #64748b;
   margin-top: 1px;
 }
 
 /* 图标按钮 */
-.demo-guide-icon-btn {
+.tour-guide-icon-btn {
   display: grid;
   place-items: center;
   width: 28px;
@@ -5550,15 +5550,15 @@ body::after {
   transition: all 0.15s;
 }
 
-.demo-guide-icon-btn .material-symbols-outlined { font-size: 16px; }
+.tour-guide-icon-btn .material-symbols-outlined { font-size: 16px; }
 
-.demo-guide-icon-btn:hover {
+.tour-guide-icon-btn:hover {
   background: rgba(56, 189, 248, 0.12);
   color: #e2e8f0;
 }
 
 /* 进度条 */
-.demo-guide-progress {
+.tour-guide-progress {
   height: 3px;
   background: rgba(148, 163, 184, 0.1);
   margin: 0 14px;
@@ -5566,7 +5566,7 @@ body::after {
   overflow: hidden;
 }
 
-.demo-guide-progress-bar {
+.tour-guide-progress-bar {
   height: 100%;
   background: linear-gradient(90deg, #1456b8, #38bdf8);
   border-radius: 2px;
@@ -5574,29 +5574,29 @@ body::after {
 }
 
 /* 步骤卡片 */
-.demo-guide-step {
+.tour-guide-step {
   padding: 12px 14px;
 }
 
-.demo-guide-step-head {
+.tour-guide-step-head {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
 }
 
-.demo-guide-step-icon {
+.tour-guide-step-icon {
   font-size: 18px;
   color: #38bdf8;
 }
 
-.demo-guide-step-title {
+.tour-guide-step-title {
   font-size: 14px;
   font-weight: 700;
   color: #e2e8f0;
 }
 
-.demo-guide-points {
+.tour-guide-points {
   list-style: none;
   padding: 0;
   margin: 0;
@@ -5605,7 +5605,7 @@ body::after {
   gap: 5px;
 }
 
-.demo-guide-points li {
+.tour-guide-points li {
   position: relative;
   padding-left: 14px;
   font-size: 11px;
@@ -5613,7 +5613,7 @@ body::after {
   color: #94a3b8;
 }
 
-.demo-guide-points li::before {
+.tour-guide-points li::before {
   content: "";
   position: absolute;
   left: 0;
@@ -5626,7 +5626,7 @@ body::after {
 }
 
 /* 计时器 */
-.demo-guide-timer {
+.tour-guide-timer {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -5635,7 +5635,7 @@ body::after {
   border-bottom: 1px solid rgba(148, 163, 184, 0.1);
 }
 
-.demo-guide-time {
+.tour-guide-time {
   font-size: 16px;
   font-weight: 800;
   color: #e2e8f0;
@@ -5643,24 +5643,24 @@ body::after {
   letter-spacing: 0.5px;
 }
 
-.demo-guide-time-over {
+.tour-guide-time-over {
   color: #f87171;
 }
 
-.demo-guide-time-target {
+.tour-guide-time-target {
   font-size: 11px;
   color: #475569;
   font-family: ui-monospace, monospace;
 }
 
 /* 导航按钮 */
-.demo-guide-nav {
+.tour-guide-nav {
   display: flex;
   gap: 8px;
   padding: 10px 14px;
 }
 
-.demo-guide-nav-btn {
+.tour-guide-nav-btn {
   flex: 1;
   display: inline-flex;
   align-items: center;
@@ -5677,30 +5677,30 @@ body::after {
   transition: all 0.15s;
 }
 
-.demo-guide-nav-btn .material-symbols-outlined { font-size: 16px; }
+.tour-guide-nav-btn .material-symbols-outlined { font-size: 16px; }
 
-.demo-guide-nav-btn:hover:not(:disabled) {
+.tour-guide-nav-btn:hover:not(:disabled) {
   background: rgba(56, 189, 248, 0.1);
   color: #e2e8f0;
 }
 
-.demo-guide-nav-btn:disabled {
+.tour-guide-nav-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
 }
 
-.demo-guide-nav-btn-primary {
+.tour-guide-nav-btn-primary {
   background: linear-gradient(135deg, #1456b8, #0d3d8a);
   border-color: rgba(56, 189, 248, 0.4);
   color: #e2e8f0;
 }
 
-.demo-guide-nav-btn-primary:hover:not(:disabled) {
+.tour-guide-nav-btn-primary:hover:not(:disabled) {
   background: linear-gradient(135deg, #1a6ad9, #1456b8);
 }
 
 /* 退出按钮 */
-.demo-guide-exit {
+.tour-guide-exit {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -5717,15 +5717,15 @@ body::after {
   transition: all 0.15s;
 }
 
-.demo-guide-exit .material-symbols-outlined { font-size: 14px; }
+.tour-guide-exit .material-symbols-outlined { font-size: 14px; }
 
-.demo-guide-exit:hover {
+.tour-guide-exit:hover {
   background: rgba(248, 113, 113, 0.1);
   color: #fca5a5;
 }
 
 /* 快捷键提示 */
-.demo-guide-shortcuts {
+.tour-guide-shortcuts {
   padding: 6px 14px 10px;
   font-size: 9px;
   color: #475569;
@@ -5733,7 +5733,7 @@ body::after {
   letter-spacing: 0.3px;
 }
 
-/* ============ 演示流程引导条 FlowGuide ============ */
+/* ============ 导览流程引导条 FlowGuide ============ */
 .flow-guide {
   position: fixed;
   bottom: 0;
@@ -5859,8 +5859,8 @@ body::after {
   .flow-guide { height: 38px; padding: 0 10px; }
 }
 
-/* ============ 演示模式开关按钮 ============ */
-.app-sidebar-demo-toggle {
+/* ============ 导览模式开关按钮 ============ */
+.app-sidebar-tour-toggle {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -5878,60 +5878,60 @@ body::after {
   width: calc(100% - 24px);
 }
 
-.app-sidebar-demo-toggle .material-symbols-outlined {
+.app-sidebar-tour-toggle .material-symbols-outlined {
   font-size: 20px;
   transition: all 0.25s;
 }
 
-.app-sidebar-demo-toggle:hover {
+.app-sidebar-tour-toggle:hover {
   background: rgba(56, 189, 248, 0.08);
   color: #cbd5e1;
   border-color: rgba(56, 189, 248, 0.35);
 }
 
-.app-sidebar-demo-toggle.active {
+.app-sidebar-tour-toggle.active {
   background: linear-gradient(135deg, rgba(20, 86, 184, 0.35), rgba(56, 189, 248, 0.2));
   border-color: rgba(56, 189, 248, 0.5);
   color: #e0f2fe;
   box-shadow: 0 0 20px rgba(56, 189, 248, 0.15), inset 0 0 12px rgba(56, 189, 248, 0.06);
 }
 
-.app-sidebar-demo-toggle.active .material-symbols-outlined {
+.app-sidebar-tour-toggle.active .material-symbols-outlined {
   color: #38bdf8;
-  animation: demo-toggle-pulse 2s ease-in-out infinite;
+  animation: tour-toggle-pulse 2s ease-in-out infinite;
 }
 
-@keyframes demo-toggle-pulse {
+@keyframes tour-toggle-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }
 }
 
-/* ============ 演示模式全局样式 ============ */
-html.demo-mode .app-sidebar-link span:not(.material-symbols-outlined) {
+/* ============ 导览模式全局样式 ============ */
+html.tour-mode .app-sidebar-link span:not(.material-symbols-outlined) {
   font-size: 13.5px;
 }
 
-html.demo-mode .page-container {
+html.tour-mode .page-container {
   font-size: 14px;
 }
 
-html.demo-mode .ant-table {
+html.tour-mode .ant-table {
   font-size: 13.5px;
 }
 
-html.demo-mode .ant-table-thead > tr > th {
+html.tour-mode .ant-table-thead > tr > th {
   font-size: 13px;
   font-weight: 600;
 }
 
-/* 演示模式下隐藏调试类元素 */
-html.demo-mode .dev-only,
-html.demo-mode .debug-only {
+/* 导览模式下隐藏调试类元素 */
+html.tour-mode .dev-only,
+html.tour-mode .debug-only {
   display: none !important;
 }
 
-/* ============ 演示结束总结页 DemoSummary ============ */
-.demo-summary-overlay {
+/* ============ 导览结束总结页 TourSummary ============ */
+.tour-summary-overlay {
   position: fixed;
   inset: 0;
   z-index: 10000;
@@ -5945,11 +5945,11 @@ html.demo-mode .debug-only {
   transition: opacity 0.4s ease;
 }
 
-.demo-summary-overlay.demo-summary-in {
+.tour-summary-overlay.tour-summary-in {
   opacity: 1;
 }
 
-.demo-summary-card {
+.tour-summary-card {
   position: relative;
   width: 720px;
   max-width: 92vw;
@@ -5964,11 +5964,11 @@ html.demo-mode .debug-only {
   transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.demo-summary-overlay.demo-summary-in .demo-summary-card {
+.tour-summary-overlay.tour-summary-in .tour-summary-card {
   transform: scale(1) translateY(0);
 }
 
-.demo-summary-glow {
+.tour-summary-glow {
   position: absolute;
   top: -60px;
   left: 50%;
@@ -5979,38 +5979,38 @@ html.demo-mode .debug-only {
   pointer-events: none;
 }
 
-.demo-summary-header {
+.tour-summary-header {
   text-align: center;
   margin-bottom: 20px;
 }
 
-.demo-summary-header-icon {
+.tour-summary-header-icon {
   font-size: 48px;
   color: #38bdf8;
   margin-bottom: 8px;
   display: inline-block;
-  animation: demo-summary-icon-pulse 2s ease-in-out infinite;
+  animation: tour-summary-icon-pulse 2s ease-in-out infinite;
 }
 
-@keyframes demo-summary-icon-pulse {
+@keyframes tour-summary-icon-pulse {
   0%, 100% { filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.3)); }
   50% { filter: drop-shadow(0 0 20px rgba(56, 189, 248, 0.5)); }
 }
 
-.demo-summary-header h2 {
+.tour-summary-header h2 {
   font-size: 26px;
   font-weight: 700;
   color: #e0f2fe;
   margin: 0 0 4px;
 }
 
-.demo-summary-header p {
+.tour-summary-header p {
   font-size: 13px;
   color: #64748b;
   margin: 0;
 }
 
-.demo-summary-time {
+.tour-summary-time {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -6025,19 +6025,19 @@ html.demo-mode .debug-only {
   color: #94a3b8;
 }
 
-.demo-summary-time .material-symbols-outlined {
+.tour-summary-time .material-symbols-outlined {
   font-size: 16px;
   color: #38bdf8;
 }
 
-.demo-summary-metrics {
+.tour-summary-metrics {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 12px;
   margin-bottom: 24px;
 }
 
-.demo-summary-metric {
+.tour-summary-metric {
   display: flex;
   align-items: center;
   gap: 14px;
@@ -6046,15 +6046,15 @@ html.demo-mode .debug-only {
   background: rgba(15, 23, 35, 0.6);
   border: 1px solid rgba(56, 189, 248, 0.1);
   opacity: 0;
-  animation: demo-summary-metric-in 0.5s ease forwards;
+  animation: tour-summary-metric-in 0.5s ease forwards;
 }
 
-@keyframes demo-summary-metric-in {
+@keyframes tour-summary-metric-in {
   from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-.demo-summary-metric-icon {
+.tour-summary-metric-icon {
   flex-shrink: 0;
   width: 42px;
   height: 42px;
@@ -6065,34 +6065,34 @@ html.demo-mode .debug-only {
   background: rgba(56, 189, 248, 0.06);
 }
 
-.demo-summary-metric-icon .material-symbols-outlined {
+.tour-summary-metric-icon .material-symbols-outlined {
   font-size: 22px;
 }
 
-.demo-summary-metric-body {
+.tour-summary-metric-body {
   flex: 1;
   min-width: 0;
 }
 
-.demo-summary-metric-label {
+.tour-summary-metric-label {
   font-size: 11px;
   color: #64748b;
   margin-bottom: 2px;
 }
 
-.demo-summary-metric-value {
+.tour-summary-metric-value {
   font-size: 20px;
   font-weight: 700;
   line-height: 1.2;
   margin-bottom: 2px;
 }
 
-.demo-summary-metric-sub {
+.tour-summary-metric-sub {
   font-size: 11px;
   color: #475569;
 }
 
-.demo-summary-flow {
+.tour-summary-flow {
   margin-bottom: 24px;
   padding: 16px 20px;
   border-radius: 12px;
@@ -6100,21 +6100,21 @@ html.demo-mode .debug-only {
   border: 1px solid rgba(30, 41, 59, 0.5);
 }
 
-.demo-summary-flow-title {
+.tour-summary-flow-title {
   font-size: 12px;
   color: #64748b;
   margin-bottom: 10px;
   font-weight: 600;
 }
 
-.demo-summary-flow-chain {
+.tour-summary-flow-chain {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-.demo-summary-flow-node {
+.tour-summary-flow-node {
   padding: 4px 12px;
   border-radius: 16px;
   background: rgba(56, 189, 248, 0.08);
@@ -6124,24 +6124,24 @@ html.demo-mode .debug-only {
   white-space: nowrap;
 }
 
-.demo-summary-flow-node-final {
+.tour-summary-flow-node-final {
   background: linear-gradient(135deg, rgba(20, 86, 184, 0.3), rgba(56, 189, 248, 0.2));
   border-color: rgba(56, 189, 248, 0.4);
   color: #e0f2fe;
 }
 
-.demo-summary-flow-arrow {
+.tour-summary-flow-arrow {
   font-size: 14px;
   color: #475569;
 }
 
-.demo-summary-actions {
+.tour-summary-actions {
   display: flex;
   gap: 12px;
   justify-content: center;
 }
 
-.demo-summary-btn {
+.tour-summary-btn {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -6154,28 +6154,28 @@ html.demo-mode .debug-only {
   border: 1px solid transparent;
 }
 
-.demo-summary-btn .material-symbols-outlined {
+.tour-summary-btn .material-symbols-outlined {
   font-size: 18px;
 }
 
-.demo-summary-btn-secondary {
+.tour-summary-btn-secondary {
   background: transparent;
   border-color: rgba(148, 163, 184, 0.2);
   color: #94a3b8;
 }
 
-.demo-summary-btn-secondary:hover {
+.tour-summary-btn-secondary:hover {
   background: rgba(148, 163, 184, 0.08);
   color: #cbd5e1;
 }
 
-.demo-summary-btn-primary {
+.tour-summary-btn-primary {
   background: linear-gradient(135deg, #1456b8, #38bdf8);
   color: #fff;
   box-shadow: 0 4px 16px rgba(56, 189, 248, 0.25);
 }
 
-.demo-summary-btn-primary:hover {
+.tour-summary-btn-primary:hover {
   transform: translateY(-1px);
   box-shadow: 0 6px 24px rgba(56, 189, 248, 0.35);
 }

@@ -28,6 +28,7 @@ limiter = Limiter(key_func=get_remote_address)
 from app.api.routes.auth import require_route_access
 from app.db.base import Base
 from app.services.auto_backup_service import create_backup, start_backup_timer
+from app.services.task_store import mark_stale_processing_failed
 from app.db.session import engine
 
 # Import models so SQLAlchemy is aware of them for metadata.create_all
@@ -404,6 +405,9 @@ async def _lifespan(app: FastAPI):
     _ensure_quota_item_old_material_columns()
     _ensure_reference_seed_data()
     _load_zh_settings_from_db()
+    # 上一进程遗留的"进行中"后台任务已无工作线程，启动时统一标记为失败
+    mark_stale_processing_failed("drawing_recognition", "服务重启导致任务中断，请重新上传图纸")
+    mark_stale_processing_failed("ifc_parse", "服务重启导致任务中断，请重新上传 IFC 模型")
     create_backup()  # auto-backup on startup
     start_backup_timer()  # periodic backup if configured
 

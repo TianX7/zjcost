@@ -133,6 +133,10 @@ def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)
 
 @router.post("/register", response_model=TokenResponse)
 def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> TokenResponse:
+    allow_registration = os.getenv("ZJCOST_ALLOW_REGISTRATION", "true").strip().lower() not in {"0", "false", "no", "off"}
+    if not allow_registration:
+        raise HTTPException(status_code=403, detail="注册已关闭，请联系管理员开通账号")
+
     existing = db.query(User).filter(User.username == payload.username).first()
     if existing:
         raise HTTPException(status_code=400, detail="用户名已存在")

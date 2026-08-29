@@ -134,6 +134,48 @@ def delete_expired_background_tasks(task_type: str, ttl_seconds: int) -> None:
         logger.warning("Failed to delete expired background tasks: %s", exc)
 
 
+def mark_stale_processing_failed(task_type: str, message: str) -> int:
+    """启动时调用：将上一进程遗留的"进行中"任务标记为失败。
+
+    后台工作线程随进程终止，DB 中残留的 processing 任务若不处理，
+    前端轮询将永远等不到终态。同时修正任务内嵌的 valuation 子状态。
+    """
+    now = datetime.now(timezone.utc)
+    marked = 0
+    try:
+        with _store_lock:
+            with session_scope() as db:
+                rows = (
+                    db.query(BackgroundTask)
+                    .filter(BackgroundTask.task_type == task_type)
+                    .filter(BackgroundTask.status == "processing")
+                    .all()
+                )
+                for row in rows:
+                    try:
+                        payload = json.loads(row.payload_json or "{}")
+                    except json.JSONDecodeError:
+                        payload = {}
+                    payload["status"] = "error"
+                    payload["error"] = message
+                    payload["updated_at"] = now.isoformat()
+                    if payload.get("valuation_status") == "processing":
+                        payload["valuation_status"] = "error"
+                        payload["valuation_error"] = message
+                        payload["valuation_progress"] = "服务重启，自动计价中断"
+                        payload["valuation_progress_percent"] = 0
+                    row.status = "error"
+                    row.payload_json = json.dumps(payload, ensure_ascii=False, default=_json_default)
+                    row.updated_at = now
+                    marked += 1
+    except Exception as exc:  # pragma: no cover - startup sweep must not break boot
+        logger.warning("Failed to mark stale processing tasks for %s: %s", task_type, exc)
+        return 0
+    if marked:
+        logger.info("Startup sweep: marked %d stale '%s' task(s) as failed", marked, task_type)
+    return marked
+
+
 def _parse_dt(value: Any) -> datetime | None:
     if isinstance(value, datetime):
         return value
