@@ -32,3 +32,28 @@ htmlcov/
 # Logs & temp
 *.log
 ~$*
+
+# ── 内层项目快照：与 zjcost-main 仓库的忽略规则保持一致 ──
+venv/
+.venv/
+*.sqlite
+*.sqlite3
+data/
+backend/uploads/
+backend/.tmp/
+backend/tmp-pytest/
+backend/.pytest_tmp*/
+screenshot_*.png
+frontend/*.png
+ifc-walk-*.png
+patch_issues.txt
+backend/*_result.json
+chrome-profile-*
+tools/*.zip
+tools/get-pip.py
+tools/offline_packages/
+*.egg-info/
+coverage.xml
+.playwright-cli/
+shots/
+.pwtmp/

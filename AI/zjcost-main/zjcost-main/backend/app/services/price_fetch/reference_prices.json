@@ -1,0 +1,69 @@
+[
+  { "name": "人工费", "spec": "综合工日", "unit": "工日", "unit_price": 240, "region": "", "source": "reference", "category": "人工费" },
+  { "name": "材料费", "spec": "综合材料", "unit": "项", "unit_price": 1, "region": "", "source": "reference", "category": "材料费" },
+  { "name": "机械费", "spec": "综合机械", "unit": "台班", "unit_price": 320, "region": "", "source": "reference", "category": "机械费" },
+
+  { "name": "螺纹钢", "spec": "HRB400E 12", "unit": "t", "unit_price": 3540, "region": "", "source": "reference", "category": "钢材" },
+  { "name": "螺纹钢", "spec": "HRB400E 16", "unit": "t", "unit_price": 3480, "region": "", "source": "reference", "category": "钢材" },
+  { "name": "螺纹钢", "spec": "HRB400E 20", "unit": "t", "unit_price": 3430, "region": "", "source": "reference", "category": "钢材" },
+  { "name": "盘螺", "spec": "HRB400E 8", "unit": "t", "unit_price": 3660, "region": "", "source": "reference", "category": "钢材" },
+  { "name": "高线", "spec": "HPB300 8", "unit": "t", "unit_price": 3600, "region": "", "source": "reference", "category": "钢材" },
+  { "name": "工字钢", "spec": "Q235B 25a", "unit": "t", "unit_price": 3890, "region": "", "source": "reference", "category": "钢材" },
+  { "name": "槽钢", "spec": "Q235B 16#", "unit": "t", "unit_price": 3820, "region": "", "source": "reference", "category": "钢材" },
+  { "name": "热轧板卷", "spec": "Q235B 4.75mm", "unit": "t", "unit_price": 3570, "region": "", "source": "reference", "category": "钢材" },
+  { "name": "冷轧板卷", "spec": "SPCC 1.0mm", "unit": "t", "unit_price": 4180, "region": "", "source": "reference", "category": "钢材" },
+  { "name": "无缝钢管", "spec": "20# 108x4.5", "unit": "t", "unit_price": 4890, "region": "", "source": "reference", "category": "钢材" },
+
+  { "name": "普通硅酸盐水泥", "spec": "P.O 42.5 袋装", "unit": "t", "unit_price": 405, "region": "", "source": "reference", "category": "水泥" },
+  { "name": "普通硅酸盐水泥", "spec": "P.O 42.5 散装", "unit": "t", "unit_price": 372, "region": "", "source": "reference", "category": "水泥" },
+  { "name": "复合硅酸盐水泥", "spec": "P.C 32.5 袋装", "unit": "t", "unit_price": 338, "region": "", "source": "reference", "category": "水泥" },
+  { "name": "矿渣硅酸盐水泥", "spec": "P.S.A 32.5", "unit": "t", "unit_price": 321, "region": "", "source": "reference", "category": "水泥" },
+
+  { "name": "商品混凝土", "spec": "C20", "unit": "m3", "unit_price": 420, "region": "", "source": "reference", "category": "混凝土" },
+  { "name": "商品混凝土", "spec": "C25", "unit": "m3", "unit_price": 445, "region": "", "source": "reference", "category": "混凝土" },
+  { "name": "商品混凝土", "spec": "C30", "unit": "m3", "unit_price": 470, "region": "", "source": "reference", "category": "混凝土" },
+  { "name": "商品混凝土", "spec": "C35", "unit": "m3", "unit_price": 498, "region": "", "source": "reference", "category": "混凝土" },
+  { "name": "商品混凝土", "spec": "C40", "unit": "m3", "unit_price": 530, "region": "", "source": "reference", "category": "混凝土" },
+  { "name": "商品砂浆", "spec": "M5", "unit": "m3", "unit_price": 295, "region": "", "source": "reference", "category": "砂浆" },
+  { "name": "商品砂浆", "spec": "M10", "unit": "m3", "unit_price": 318, "region": "", "source": "reference", "category": "砂浆" },
+
+  { "name": "机制砂", "spec": "中砂", "unit": "m3", "unit_price": 126, "region": "", "source": "reference", "category": "砂石" },
+  { "name": "碎石", "spec": "5-31.5mm", "unit": "m3", "unit_price": 118, "region": "", "source": "reference", "category": "砂石" },
+  { "name": "级配碎石", "spec": "0-31.5mm", "unit": "m3", "unit_price": 132, "region": "", "source": "reference", "category": "砂石" },
+  { "name": "石粉", "spec": "机制石粉", "unit": "m3", "unit_price": 92, "region": "", "source": "reference", "category": "砂石" },
+
+  { "name": "页岩砖", "spec": "240x115x53 MU10", "unit": "千块", "unit_price": 540, "region": "", "source": "reference", "category": "砌体材料" },
+  { "name": "加气混凝土砌块", "spec": "600x240x200", "unit": "m3", "unit_price": 298, "region": "", "source": "reference", "category": "砌体材料" },
+  { "name": "加气混凝土砌块", "spec": "600x240x100", "unit": "m3", "unit_price": 315, "region": "", "source": "reference", "category": "砌体材料" },
+
+  { "name": "木模板", "spec": "1830x915x15", "unit": "张", "unit_price": 56, "region": "", "source": "reference", "category": "木材" },
+  { "name": "木方", "spec": "50x100x4000", "unit": "m3", "unit_price": 1760, "region": "", "source": "reference", "category": "木材" },
+  { "name": "胶合板", "spec": "1220x2440x12", "unit": "张", "unit_price": 82, "region": "", "source": "reference", "category": "木材" },
+
+  { "name": "SBS改性沥青防水卷材", "spec": "3mm", "unit": "m2", "unit_price": 29, "region": "", "source": "reference", "category": "防水材料" },
+  { "name": "SBS改性沥青防水卷材", "spec": "4mm", "unit": "m2", "unit_price": 36, "region": "", "source": "reference", "category": "防水材料" },
+  { "name": "JS防水涂料", "spec": "II型 20kg", "unit": "桶", "unit_price": 252, "region": "", "source": "reference", "category": "防水材料" },
+
+  { "name": "XPS保温板", "spec": "B1级 50mm", "unit": "m2", "unit_price": 39, "region": "", "source": "reference", "category": "保温材料" },
+  { "name": "岩棉板", "spec": "100kg/m3 50mm", "unit": "m2", "unit_price": 35, "region": "", "source": "reference", "category": "保温材料" },
+
+  { "name": "内墙乳胶漆", "spec": "18L", "unit": "桶", "unit_price": 360, "region": "", "source": "reference", "category": "装饰材料" },
+  { "name": "外墙涂料", "spec": "25kg", "unit": "桶", "unit_price": 405, "region": "", "source": "reference", "category": "装饰材料" },
+  { "name": "地面瓷砖", "spec": "800x800", "unit": "m2", "unit_price": 79, "region": "", "source": "reference", "category": "装饰材料" },
+  { "name": "墙面瓷砖", "spec": "300x600", "unit": "m2", "unit_price": 62, "region": "", "source": "reference", "category": "装饰材料" },
+
+  { "name": "PVC-U排水管", "spec": "DN110x3.2", "unit": "m", "unit_price": 31, "region": "", "source": "reference", "category": "安装材料" },
+  { "name": "PPR给水管", "spec": "DN25x2.8", "unit": "m", "unit_price": 17.5, "region": "", "source": "reference", "category": "安装材料" },
+  { "name": "PPR给水管", "spec": "DN32x3.6", "unit": "m", "unit_price": 24.8, "region": "", "source": "reference", "category": "安装材料" },
+  { "name": "镀锌钢管", "spec": "DN25", "unit": "m", "unit_price": 44, "region": "", "source": "reference", "category": "安装材料" },
+  { "name": "镀锌钢管", "spec": "DN50", "unit": "m", "unit_price": 66, "region": "", "source": "reference", "category": "安装材料" },
+  { "name": "PVC电工套管", "spec": "DN20", "unit": "m", "unit_price": 3.6, "region": "", "source": "reference", "category": "安装材料" },
+  { "name": "PVC电工套管", "spec": "DN25", "unit": "m", "unit_price": 5.1, "region": "", "source": "reference", "category": "安装材料" },
+  { "name": "铜芯电线", "spec": "BV 2.5mm2", "unit": "m", "unit_price": 2.95, "region": "", "source": "reference", "category": "安装材料" },
+  { "name": "铜芯电线", "spec": "BV 4mm2", "unit": "m", "unit_price": 4.45, "region": "", "source": "reference", "category": "安装材料" },
+  { "name": "铜芯电缆", "spec": "YJV 4x25+1x16", "unit": "m", "unit_price": 78, "region": "", "source": "reference", "category": "安装材料" },
+  { "name": "电缆桥架", "spec": "200x100", "unit": "m", "unit_price": 68, "region": "", "source": "reference", "category": "安装材料" },
+  { "name": "风管", "spec": "镀锌钢板 0.75mm", "unit": "m2", "unit_price": 86, "region": "", "source": "reference", "category": "安装材料" },
+  { "name": "蝶阀", "spec": "DN100", "unit": "个", "unit_price": 185, "region": "", "source": "reference", "category": "安装材料" },
+  { "name": "闸阀", "spec": "DN100", "unit": "个", "unit_price": 215, "region": "", "source": "reference", "category": "安装材料" }
+]

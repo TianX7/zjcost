@@ -1,0 +1,102 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+backend/node_modules/
+
+# Build output
+frontend/dist/
+backend/dist/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Env
+.env
+.env.local
+
+# Database (runtime — seed template is tracked)
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Data & backups (runtime generated)
+data/
+backups/
+
+# Logs
+*.log
+vite-*.log
+
+# 截图与临时产物
+ifc-walk-*.png
+patch_issues.txt
+
+# 测试覆盖率
+coverage.xml
+.coverage
+htmlcov/
+
+# 构建产物
+dist/
+
+# Project generated files
+artifacts/
+output/
+backend/uploads/
+backend/.tmp/
+backend/tmp-pytest/
+backend/.pytest_tmp*/
+.pytest_cache/
+screenshot_*.png
+frontend/*.png
+backend/*_result.json
+
+# Office temp / lock files
+~$*
+
+# Session / Chrome profiles
+chrome-profile-*
+
+# SQLite DB in portable seed (keep seed template only)
+backend/portable_seed/*.db
+
+# Vite / dev server logs in frontend root
+frontend/vite-*.log
+
+# ── Portable runtime ──────────────────────
+# 便携 Python/Node.js 运行时已入库（离线可用）
+# 仅排除缓存和临时文件
+tools/python/__pycache__/
+tools/python/Lib/**/__pycache__/
+tools/python/Scripts/__pycache__/
+tools/*.zip
+tools/get-pip.py
+
+# ── Offline pip/npm package cache ──
+tools/offline_packages/
+
+# ── PyInstaller build output ──
+build/
+*.egg-info/
+
+# 浏览器调试产物
+.playwright-cli/
+shots/
+.pwtmp/
+
+# 例外：pip 依赖运行时中名为 build 的目录是包源码，勿忽略
+!tools/python/Lib/site-packages/pip/_internal/operations/build/
+!tools/python/Lib/site-packages/pip/_internal/operations/build/*.py

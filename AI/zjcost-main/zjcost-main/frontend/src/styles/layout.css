@@ -1,0 +1,286 @@
+/* ─── App Layout (Sidebar + Main) ──────────────────────────── */
+
+.app-layout {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ===== Blueprint / construction decorations for content area ===== */
+
+/* blueprint grid */
+.app-main::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(77, 212, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(77, 212, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(rgba(77, 212, 255, 0.028) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(77, 212, 255, 0.028) 1px, transparent 1px);
+  background-size: 160px 160px, 160px 160px, 32px 32px, 32px 32px;
+  mask-image: radial-gradient(ellipse 90% 80% at 50% 40%, rgba(0,0,0,1) 40%, rgba(0,0,0,0.35) 100%);
+  -webkit-mask-image: radial-gradient(ellipse 90% 80% at 50% 40%, rgba(0,0,0,1) 40%, rgba(0,0,0,0.35) 100%);
+}
+
+/* building skyline + construction lines (layered via inline SVG data URI) */
+.app-main::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-repeat: no-repeat;
+  background-position: right bottom, left top, right 5% bottom 12%, left 8% bottom 6%;
+  background-size: 46% auto, 34% auto, 220px auto, 180px auto;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 600 400' fill='none'%3E%3Cg stroke='%234dd4ff' stroke-opacity='0.10' stroke-width='1.5'%3E%3Cpath d='M380 400V180h60v220M440 400V120h70v280M510 400V210h50v190M350 400V250h30v150'/%3E%3Cpath d='M420 400V240M500 400V300M560 400V260'/%3E%3Cpath d='M440 120l70-40M510 210l50-30M380 180l60-36'/%3E%3Cpath d='M300 400V140M340 400V140M300 140l-20-30M340 140l20-30M320 140V90M320 90h-14M311 90l9-9M329 90l-9-9'/%3E%3Cpath d='M300 160h40M300 190h40M300 220h40M300 250h40M300 280h40M300 310h40M300 340h40M300 370h40'/%3E%3C/g%3E%3Cg stroke='%234dd4ff' stroke-opacity='0.07' stroke-width='1'%3E%3Cpath d='M395 200h30M395 230h30M395 260h30M395 290h30M395 320h30M395 350h30'/%3E%3Cpath d='M460 150h40M460 180h40M460 210h40M460 240h40M460 270h40M460 300h40M460 330h40M460 360h40'/%3E%3Cpath d='M520 230h30M520 260h30M520 290h30M520 320h30M520 350h30'/%3E%3C/g%3E%3Ccircle cx='320' cy='84' r='3' fill='%234dd4ff' fill-opacity='0.30'/%3E%3Ccircle cx='515' cy='118' r='2.5' fill='%234dd4ff' fill-opacity='0.22'/%3E%3Ccircle cx='410' cy='144' r='2' fill='%234dd4ff' fill-opacity='0.20'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 500 360' fill='none'%3E%3Cg stroke='%233d8bff' stroke-opacity='0.08' stroke-width='1.5'%3E%3Cpath d='M270 360V160h55v200M325 360V100h62v260M387 360V190h48v170'/%3E%3Cpath d='M250 360V230h20v130M435 360V270h22v90'/%3E%3Cpath d='M325 100l62-36M387 190l48-28M270 160l55-32'/%3E%3Cpath d='M225 360V190M262 360V190M225 190h37M243 190V150M243 150h-12M233 150l10-10M253 150l-10-10'/%3E%3Cpath d='M225 215h37M225 245h37M225 275h37M225 305h37M225 335h37'/%3E%3C/g%3E%3Cg stroke='%233d8bff' stroke-opacity='0.06' stroke-width='1'%3E%3Cpath d='M283 180h30M283 210h30M283 240h30M283 270h30M283 300h30M283 330h30'/%3E%3Cpath d='M338 125h40M338 155h40M338 185h40M338 215h40M338 245h40M338 275h40M338 305h40M338 335h40'/%3E%3C/g%3E%3Ccircle cx='243' cy='144' r='2.5' fill='%233d8bff' fill-opacity='0.25'/%3E%3Ccircle cx='392' cy='158' r='2' fill='%233d8bff' fill-opacity='0.18'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 160' fill='none'%3E%3Cg stroke='%234dd4ff' stroke-opacity='0.10' stroke-width='1'%3E%3Cpath d='M10 120h180M10 120v-14M100 120v-14M190 120v-14M10 99v4M100 99v4M190 99v4'/%3E%3Cpath d='M100 40v80M85 40h30M100 40l-14 22M100 40l14 22M86 62h28M100 12v28M92 20l8-8 8 8'/%3E%3Cpath d='M60 100l40-20 40 20M100 40l40 60M100 40l-40 60'/%3E%3C/g%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 120' fill='none'%3E%3Cg stroke='%233d8bff' stroke-opacity='0.09' stroke-width='1'%3E%3Crect x='20' y='40' width='120' height='60'/%3E%3Cpath d='M20 40l15-20h105l20 20%3E'/%3E%3Cpath d='M50 40v60M80 40v60M110 40v60M20 70h120'/%3E%3Cpath d='M35 20v-8h105v8M140 20h10M140 100h10'/%3E%3C/g%3E%3C/svg%3E");
+  animation: blueprint-fade 8s ease-in-out infinite alternate;
+}
+
+@keyframes blueprint-fade {
+  0% { opacity: 0.7; }
+  100% { opacity: 1; }
+}
+
+/* keep actual content above decorations */
+.app-main > * {
+  position: relative;
+  z-index: 1;
+}
+
+.workspace-header {
+  min-height: 82px;
+  padding: 16px 32px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(10, 28, 56, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-shrink: 0;
+}
+
+.workspace-eyebrow { color: var(--text-muted); font-size: 12px; margin-bottom: 3px; }
+.workspace-header h2 { margin: 0; font-size: 18px; font-weight: 650; color: var(--text-primary); }
+.workspace-header p { margin: 3px 0 0; color: var(--text-secondary); font-size: 12px; }
+
+
+/* ─── Sidebar ──────────────────────────────────────────────── */
+
+.app-sidebar {
+  width: 256px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border-light);
+  background: rgba(12, 30, 60, 0.66);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.app-sidebar-top {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.app-sidebar-brand {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  text-decoration: none;
+  color: inherit;
+}
+
+.app-sidebar-brand-icon {
+  background: rgba(20, 86, 184, 0.1);
+  padding: 8px;
+  border-radius: var(--radius);
+}
+
+.app-sidebar-brand-icon .material-symbols-outlined {
+  font-size: 24px;
+  color: var(--primary);
+}
+
+.app-sidebar-brand-text h1 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+  margin: 0;
+}
+
+.app-sidebar-brand-text p {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin: 3px 0 0;
+}
+
+.app-sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+
+.app-sidebar-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.app-sidebar-group-title {
+  padding: 0 12px 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.app-sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 14px;
+  border-radius: 10px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.25s ease;
+  position: relative;
+  border: 1px solid rgba(80, 160, 255, 0.10);
+  background: linear-gradient(145deg, rgba(26, 61, 106, 0.35), rgba(19, 45, 82, 0.25));
+  overflow: hidden;
+}
+
+/* tech sheen sweep on hover */
+.app-sidebar-link::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -80%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(77, 212, 255, 0.18), transparent);
+  transform: skewX(-18deg);
+  transition: left 0.45s ease;
+  pointer-events: none;
+}
+
+.app-sidebar-link:hover {
+  border-color: rgba(77, 212, 255, 0.45);
+  color: #eaf4ff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 18px rgba(61, 139, 255, 0.25), inset 0 0 12px rgba(77, 212, 255, 0.08);
+  background: linear-gradient(145deg, rgba(61, 139, 255, 0.30), rgba(19, 45, 82, 0.35));
+}
+
+.app-sidebar-link:hover::after {
+  left: 120%;
+}
+
+.app-sidebar-link:hover .material-symbols-outlined {
+  color: #4dd4ff;
+  text-shadow: 0 0 10px rgba(77, 212, 255, 0.7);
+}
+
+.app-sidebar-link.active {
+  background: linear-gradient(145deg, rgba(61, 139, 255, 0.45), rgba(26, 61, 106, 0.45));
+  border-color: rgba(77, 212, 255, 0.55);
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 4px 20px rgba(61, 139, 255, 0.35), inset 0 0 14px rgba(77, 212, 255, 0.12);
+}
+
+.app-sidebar-link.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, #4dd4ff, #3d8bff);
+  box-shadow: 0 0 8px rgba(77, 212, 255, 0.8);
+}
+
+.app-sidebar-link.active .material-symbols-outlined {
+  color: #ffffff;
+  text-shadow: 0 0 10px rgba(77, 212, 255, 0.9);
+}
+
+.app-sidebar-link .material-symbols-outlined {
+  font-size: 22px;
+  flex-shrink: 0;
+  transition: all 0.25s ease;
+}
+
+.app-sidebar > .app-sidebar-link {
+  width: calc(100% - 40px);
+  height: auto;
+  margin: 0 20px 20px;
+  justify-content: flex-start;
+}
+
+.app-auth-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--bg-main);
+}
+
+.app-auth-card {
+  width: min(100%, 360px);
+  border-radius: 8px;
+}
+
+.app-auth-card .ant-card-body {
+  padding: 28px;
+}
+
+.app-auth-card .ant-typography {
+  margin-top: 0;
+  margin-bottom: 20px;
+}
+
+@media (max-width: 760px) {
+  .app-sidebar { width: 56px; }
+  .app-sidebar-top { padding: 14px 8px; }
+  .app-sidebar-brand { justify-content: center; }
+  .app-sidebar-brand-text, .app-sidebar-group-title, .app-sidebar-link > span:not(.material-symbols-outlined) { display: none; }
+  .app-sidebar-link { justify-content: center; padding: 11px 8px; }
+  .workspace-header { padding: 14px 16px; }
+  .workspace-header p, .workspace-eyebrow, .workspace-header .ant-space .ant-btn:not(.ant-btn-primary) { display: none; }
+}
+
+
+/* ─── Sidebar Contact Author ────────────────────────────────── */
+
+
+/* ─── Contact Modal ────────────────────────────────────────── */
