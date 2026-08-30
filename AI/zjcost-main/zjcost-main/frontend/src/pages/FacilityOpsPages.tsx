@@ -301,6 +301,7 @@ export function PvPowerPage() {
             <span className="ops-live-badge"><i />LIVE</span>
           </div>
           <LiveLineChart
+            height={240}
             series={[
               { data: live, color: "#fbbf24", unit: "kW" },
               { data: irrLive, color: "#fb923c", unit: "W/m²", dashed: true },
@@ -553,6 +554,7 @@ export function WaterReusePage() {
             <span className="ops-live-badge"><i />LIVE</span>
           </div>
           <LiveLineChart
+            height={205}
             series={[
               { data: flowData, color: "#818cf8", unit: "取水 m³/h" },
               { data: supData, color: "#38bdf8", unit: "供水 m³/h" },
@@ -763,6 +765,11 @@ export function FacilityOpsPage() {
               ))}
             </div>
           </div>
+          <div className="ops-order-stats">
+            <div><em>今日新增</em><strong>6 单</strong></div>
+            <div><em>现场在办</em><strong>3 单</strong></div>
+            <div><em>逾期处置</em><strong>1 单</strong></div>
+          </div>
         </div>
 
         <div className="ops-panel">
@@ -771,6 +778,7 @@ export function FacilityOpsPage() {
             <span className="ops-live-badge"><i />LIVE</span>
           </div>
           <LiveLineChart
+            height={185}
             series={[
               { data: co2Series, color: "#a78bfa", unit: "ppm", max: 900 },
               { data: tempSeries, color: "#fb923c", unit: "℃", dashed: true },
@@ -839,6 +847,9 @@ export function FacilityOpsPage() {
                 <strong style={{ color: o.color }}>{o.value}%</strong>
               </div>
             ))}
+          </div>
+          <div className="ops-scene-caption">
+            单位面积年运维成本 28.6 元/m² · 同比 -3.1% · 外包合同占比 62%
           </div>
         </div>
 

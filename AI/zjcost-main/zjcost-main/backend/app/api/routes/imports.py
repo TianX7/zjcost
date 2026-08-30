@@ -3,6 +3,7 @@ import os
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.cache import _cache as cache
 from app.db.session import get_db
@@ -68,7 +69,10 @@ async def import_boq(
 ) -> BoqImportResult:
     _validate_excel_extension(file.filename)
     contents = await _read_limited_upload(file)
-    stats = parse_and_import(file_bytes=contents, project_id=project_id, db=db)
+    # openpyxl 解析 + 批量写库是重同步操作，放线程池执行，避免阻塞事件循环
+    stats = await run_in_threadpool(
+        parse_and_import, file_bytes=contents, project_id=project_id, db=db
+    )
     items_out = [
         BoqItemOut(
             id=item.id,
@@ -96,7 +100,8 @@ async def import_quota(
     normalized_discipline = discipline if discipline in VALID_DISCIPLINES else AUTO_DISCIPLINE
     _validate_excel_extension(file.filename)
     contents = await _read_limited_upload(file)
-    stats = parse_and_import_quota_with_sheets(
+    stats = await run_in_threadpool(
+        parse_and_import_quota_with_sheets,
         file_bytes=contents,
         db=db,
         discipline=normalized_discipline,
@@ -134,7 +139,7 @@ async def inspect_quota_sheets(
 ) -> QuotaWorkbookInspectResult:
     _validate_excel_extension(file.filename)
     contents = await _read_limited_upload(file)
-    sheets = inspect_quota_workbook(contents)
+    sheets = await run_in_threadpool(inspect_quota_workbook, contents)
     sheet_out = [
         QuotaWorkbookSheetOut(
             name=str(sheet["name"]),
@@ -161,7 +166,9 @@ async def import_quota_resource_details(
 ):
     _validate_excel_extension(file.filename)
     contents = await _read_limited_upload(file)
-    stats = parse_and_import_resource_details(file_bytes=contents, db=db)
+    stats = await run_in_threadpool(
+        parse_and_import_resource_details, file_bytes=contents, db=db
+    )
     return {
         "imported": stats.imported,
         "skipped": stats.skipped,

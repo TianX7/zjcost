@@ -1,81 +1,26 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Button, Form, Input, InputNumber, Select, Switch, Table, Tabs, Tag, message } from "antd";
+import { Button, Table, Tabs, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { ApiOutlined, CheckCircleOutlined, CloudSyncOutlined, DesktopOutlined, SaveOutlined, CloudServerOutlined, SafetyOutlined } from "@ant-design/icons";
-import type { PriceSourceInfo, ZhSettingsPayload, SystemCheckItem } from "../api";
+import { CheckCircleOutlined, CloudSyncOutlined, DesktopOutlined, SafetyOutlined } from "@ant-design/icons";
+import type { PriceSourceInfo, SystemCheckItem } from "../api";
 import { api } from "../api";
 import TaskCenter from "./TaskCenter";
 
-const PROVIDERS = ["provider_a", "provider_b", "provider_c", "provider_d", "compatible"] as const;
-type ProviderName = (typeof PROVIDERS)[number];
-
-const PROVIDER_LABELS: Record<ProviderName, string> = {
-  provider_a: "推理服务 A",
-  provider_b: "推理服务 B",
-  provider_c: "推理服务 C",
-  provider_d: "推理服务 D",
-  compatible: "兼容模式",
-};
-
-function defaultSettings(): ZhSettingsPayload {
-  return {
-    provider: "provider_a",
-    timeout_seconds: 60,
-    enable_audit_logs: true,
-    providers: {
-      provider_a: { api_key: "", api_key_set: false, base_url: "", model: "" },
-      provider_b: { api_key: "", api_key_set: false, base_url: "", model: "" },
-      provider_c: { api_key: "", api_key_set: false, base_url: "", model: "" },
-      provider_d: { api_key: "", api_key_set: false, base_url: "", model: "" },
-      compatible: { api_key: "", api_key_set: false, base_url: "", model: "" },
-    },
-  };
-}
-
-function isProviderName(value: string | undefined): value is ProviderName {
-  return PROVIDERS.includes(value as ProviderName);
-}
-
-function normalizeSettings(value: ZhSettingsPayload | null | undefined): ZhSettingsPayload {
-  const defaults = defaultSettings();
-  const source = value ?? defaults;
-  return {
-    ...defaults,
-    ...source,
-    provider: isProviderName(source.provider) ? source.provider : defaults.provider,
-    providers: {
-      provider_a: { ...defaults.providers.provider_a, ...source.providers?.provider_a },
-      provider_b: { ...defaults.providers.provider_b, ...source.providers?.provider_b },
-      provider_c: { ...defaults.providers.provider_c, ...source.providers?.provider_c },
-      provider_d: { ...defaults.providers.provider_d, ...source.providers?.provider_d },
-      compatible: { ...defaults.providers.compatible, ...source.providers?.compatible },
-    },
-  };
-}
-
 export default function SystemSettings() {
   const navigate = useNavigate();
-  const [settings, setSettings] = useState<ZhSettingsPayload>(defaultSettings());
-  const [activeProvider, setActiveProvider] = useState<ProviderName>("provider_a");
   const [systemChecks, setSystemChecks] = useState<SystemCheckItem[]>([]);
   const [priceSources, setPriceSources] = useState<PriceSourceInfo[]>([]);
   const [, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
   const [fetchingPrices, setFetchingPrices] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [zhConf, checks, sources] = await Promise.all([
-        api.getZhSettings().catch(() => defaultSettings()),
+      const [checks, sources] = await Promise.all([
         api.getSystemCheck().catch(() => null),
         api.listPriceSources().catch(() => []),
       ]);
-      const normalized = normalizeSettings(zhConf);
-      setSettings(normalized);
-      setActiveProvider(isProviderName(zhConf.provider) ? zhConf.provider : normalized.provider as ProviderName);
       setSystemChecks(checks?.checks ?? []);
       setPriceSources(sources);
     } finally {
@@ -86,54 +31,6 @@ export default function SystemSettings() {
   useEffect(() => {
     void load();
   }, [load]);
-
-  const updateProviderField = (field: "api_key" | "base_url" | "model", value: string) => {
-    setSettings((current) => ({
-      ...current,
-      providers: {
-        ...current.providers,
-        [activeProvider]: {
-          ...defaultSettings().providers[activeProvider],
-          ...current.providers[activeProvider],
-          [field]: value,
-        },
-      },
-    }));
-  };
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      const data = await api.updateZhSettings({ ...normalizeSettings(settings), provider: activeProvider });
-      setSettings(normalizeSettings(data));
-      message.success("设置已保存");
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : "保存失败");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const testConnection = async () => {
-    setTesting(true);
-    try {
-      const provider = normalizeSettings(settings).providers[activeProvider];
-      const result = await api.testZhConnection({
-        provider: activeProvider,
-        api_key: provider.api_key,
-        use_saved_key: !provider.api_key && provider.api_key_set,
-        base_url: provider.base_url,
-        model: provider.model,
-        timeout_seconds: settings.timeout_seconds,
-      });
-      if (result.success) message.success(`连接成功，延迟 ${result.latency_ms}ms`);
-      else message.error(result.error || "连接失败");
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : "连接测试失败");
-    } finally {
-      setTesting(false);
-    }
-  };
 
   const fetchPrices = async () => {
     setFetchingPrices(true);
@@ -158,13 +55,6 @@ export default function SystemSettings() {
       {/* KPI 指标卡 */}
       <div className="kpi-grid">
         <div className="kpi-card">
-          <span className="material-symbols-outlined kpi-card-icon">cloud</span>
-          <div className="kpi-card-body">
-            <span className="kpi-card-label">在线服务供应商</span>
-            <span className="kpi-card-value">{PROVIDERS.length}<span className="kpi-card-suffix">个</span></span>
-          </div>
-        </div>
-        <div className="kpi-card">
           <span className="material-symbols-outlined kpi-card-icon">verified</span>
           <div className="kpi-card-body">
             <span className="kpi-card-label">系统检查项</span>
@@ -178,78 +68,10 @@ export default function SystemSettings() {
             <span className="kpi-card-value">{priceSources.filter((source) => source.available).length}<span className="kpi-card-suffix">/{priceSources.length || 0}</span></span>
           </div>
         </div>
-        <div className="kpi-card">
-          <span className="material-symbols-outlined kpi-card-icon">history</span>
-          <div className="kpi-card-body">
-            <span className="kpi-card-label">审计日志</span>
-            <span className="kpi-card-value">{settings.enable_audit_logs ? "启用" : "停用"}</span>
-          </div>
-        </div>
       </div>
 
       <Tabs
         items={[
-          {
-            key: "zhConf",
-            label: <span><CloudServerOutlined /> 在线服务</span>,
-            children: (
-              <div className="content-card">
-                <div className="content-card-head">
-                  <h3 className="content-card-title"><span className="material-symbols-outlined">zh_toy</span>辅助服务配置 — {PROVIDER_LABELS[activeProvider]}</h3>
-                </div>
-                <div className="content-card-body">
-                  <Form layout="vertical">
-                    <div className="settings-form-grid">
-                      <Form.Item label="当前供应商">
-                        <Select
-                          value={activeProvider}
-                          onChange={setActiveProvider}
-                          options={PROVIDERS.map((provider) => ({ value: provider, label: PROVIDER_LABELS[provider] }))}
-                        />
-                      </Form.Item>
-                      <Form.Item label="服务模型">
-                        <Input
-                          value={settings.providers[activeProvider].model}
-                          placeholder="如 standard-model"
-                          onChange={(event) => updateProviderField("model", event.target.value)}
-                        />
-                      </Form.Item>
-                      <Form.Item label="API Key" className="settings-form-full">
-                        <Input.Password
-                          value={settings.providers[activeProvider].api_key}
-                          placeholder={settings.providers[activeProvider].api_key_set ? "已保存，可留空继续使用" : "请输入 API Key"}
-                          onChange={(event) => updateProviderField("api_key", event.target.value)}
-                        />
-                      </Form.Item>
-                      <Form.Item label="Base URL" className="settings-form-full">
-                        <Input
-                          value={settings.providers[activeProvider].base_url}
-                          placeholder="留空则使用供应商默认地址"
-                          onChange={(event) => updateProviderField("base_url", event.target.value)}
-                        />
-                      </Form.Item>
-                    </div>
-
-                    <div className="settings-inline-row" style={{ marginTop: 16 }}>
-                      <div className="settings-inline-item">
-                        <span>超时秒数</span>
-                        <InputNumber min={5} max={300} value={settings.timeout_seconds} onChange={(value) => setSettings((current) => ({ ...current, timeout_seconds: Number(value ?? 60) }))} />
-                      </div>
-                      <div className="settings-inline-item">
-                        <span>审计日志</span>
-                        <Switch checked={settings.enable_audit_logs} onChange={(checked) => setSettings((current) => ({ ...current, enable_audit_logs: checked }))} />
-                      </div>
-                    </div>
-
-                    <div className="settings-action-bar">
-                      <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={save}>保存设置</Button>
-                      <Button icon={<ApiOutlined />} loading={testing} onClick={testConnection}>测试连接</Button>
-                    </div>
-                  </Form>
-                </div>
-              </div>
-            ),
-          },
           {
             key: "system",
             label: <span><SafetyOutlined /> 系统检查</span>,

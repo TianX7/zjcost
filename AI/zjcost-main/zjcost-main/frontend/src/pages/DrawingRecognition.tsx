@@ -730,6 +730,8 @@ export default function DrawingRecognition() {
   const dragLatestRef = useRef<{ dx: number; dy: number } | null>(null);
   const stageTransformRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef(view);
+  const lastGestureTsRef = useRef(0);
+  const zoomSettleTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     return () => {
@@ -784,14 +786,36 @@ export default function DrawingRecognition() {
   }, [taskId, fileName, result, uploading]);
 
   // 缩放/平移视图同步：状态变化时直写 DOM transform。
-  // 必须用 2D translate（而非 translate3d）：3D 变换会把整个 SVG 钉在 GPU 合成层，
-  // 层纹理只按初始比例光栅化一次，scale 放大时变成位图拉伸（模糊）。
-  // 2D 变换走常规绘制路径，浏览器会按当前缩放比例重新光栅化，放大保持清晰。
+  // 混合策略（兼顾核显性能与清晰度）：滚轮/拖拽手势后的 180ms 内用 3D 变换走
+  // GPU 合成层（缩放零重绘，不卡）；停止后由 settle 定时器切回 2D 变换，浏览器
+  // 按最终比例重新光栅化 SVG，放大恢复清晰。
   useEffect(() => {
     viewRef.current = view;
     const node = stageTransformRef.current;
-    if (node) node.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
+    if (!node) return;
+    const interacting = performance.now() - lastGestureTsRef.current < 180;
+    if (zoomSettleTimerRef.current != null) {
+      clearTimeout(zoomSettleTimerRef.current);
+      zoomSettleTimerRef.current = null;
+    }
+    if (interacting) {
+      node.style.willChange = "transform";
+      node.style.transform = `translate3d(${view.x}px, ${view.y}px, 0) scale(${view.scale})`;
+      zoomSettleTimerRef.current = window.setTimeout(() => {
+        zoomSettleTimerRef.current = null;
+        node.style.willChange = "";
+        const v = viewRef.current;
+        node.style.transform = `translate(${v.x}px, ${v.y}px) scale(${v.scale})`;
+      }, 200);
+    } else {
+      node.style.willChange = "";
+      node.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
+    }
   }, [view]);
+
+  useEffect(() => () => {
+    if (zoomSettleTimerRef.current != null) clearTimeout(zoomSettleTimerRef.current);
+  }, []);
 
   useEffect(() => {
     if (revealTimerRef.current) clearInterval(revealTimerRef.current);
@@ -828,9 +852,12 @@ export default function DrawingRecognition() {
   }, [taskId]);
 
   const previewSvg = useMemo(() => {
-    // 只在 result 变化时返回原始 SVG，reveal 由 ref 直接操作 DOM
+    // 只在 result 变化时返回原始 SVG，reveal 由 ref 直接操作 DOM。
+    // 解析进行中不挂载预览 SVG：大图纸的预览有上万图元，弱机器上边解析边渲染
+    // 会把主线程拖死（页面无响应、进度条卡住），等解析完成再一次性挂载。
+    if (result?.status === "processing") return "";
     return result?.preview_svg_hd || result?.preview_svg || "";
-  }, [result?.preview_svg, result?.preview_svg_hd]);
+  }, [result?.preview_svg, result?.preview_svg_hd, result?.status]);
 
   // 直接操作 DOM 推进高亮 reveal，不再重新生成 SVG 字符串
   const svgHostRef = useRef<HTMLDivElement | null>(null);
@@ -849,9 +876,11 @@ export default function DrawingRecognition() {
   const poll = (id: string) => {
     if (timerRef.current) clearInterval(timerRef.current);
     let componentsShown = false;
+    let failures = 0;
     timerRef.current = setInterval(async () => {
       try {
         const data = await api.getDrawingResult(id);
+        failures = 0;
         setResult(data);
         const recognitionDone = data.status === "done" || data.status === "error";
         const valuationDone = data.valuation_status === "done" || data.valuation_status === "error" || data.valuation_status === "skipped";
@@ -882,8 +911,19 @@ export default function DrawingRecognition() {
           }
         }
       } catch (err) {
-        if (timerRef.current) clearInterval(timerRef.current);
-        message.error(err instanceof Error ? err.message : "查询图纸解析任务失败");
+        const msg = err instanceof Error ? err.message : "查询图纸解析任务失败";
+        if (msg.includes("任务不存在")) {
+          // 后端重启会丢失任务，明确告知而不是无限轮询
+          if (timerRef.current) clearInterval(timerRef.current);
+          message.error("解析任务已丢失（后端服务可能重启过），请重新上传图纸");
+          return;
+        }
+        // 瞬时错误容忍：连续 5 次失败才放弃，避免一次网络抖动中断跟踪
+        failures += 1;
+        if (failures >= 5) {
+          if (timerRef.current) clearInterval(timerRef.current);
+          message.error(msg);
+        }
       }
     }, 1200);
   };
@@ -892,6 +932,10 @@ export default function DrawingRecognition() {
     accept: ".dwg,.dxf,.pdf,.png,.jpg,.jpeg",
     showUploadList: false,
     beforeUpload: async (file) => {
+      if (file.size > 100 * 1024 * 1024) {
+        message.error("图纸文件超过 100MB 上限，请压缩或拆分后再上传");
+        return Upload.LIST_IGNORE;
+      }
       setUploading(true);
       setFileName(file.name);
       setResult(null);
@@ -946,6 +990,7 @@ export default function DrawingRecognition() {
     const px = event.clientX - rect.left;
     const py = event.clientY - rect.top;
     const factor = event.deltaY > 0 ? 0.88 : 1.12;
+    lastGestureTsRef.current = performance.now();
     setView((c) => {
       const nextScale = clampDrawingScale(c.scale * factor);
       if (nextScale === c.scale) return c;
@@ -972,6 +1017,7 @@ export default function DrawingRecognition() {
     if (dragRafRef.current != null) return;
     dragRafRef.current = requestAnimationFrame(() => {
       dragRafRef.current = null;
+      lastGestureTsRef.current = performance.now();
       const delta = dragLatestRef.current;
       if (!delta) return;
       const base = dragStartRef.current;

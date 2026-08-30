@@ -1,7 +1,8 @@
 export const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
 export const AUTH_TOKEN_STORAGE_KEY = "zjcost.auth.token";
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
-const UPLOAD_REQUEST_TIMEOUT_MS = 120000;
+// 上传可能涉及大体积图纸/模型（后端默认上限 100MB），给足 10 分钟
+const UPLOAD_REQUEST_TIMEOUT_MS = 600000;
 
 /** 401 时派发的事件名，AuthGate 监听此事件以切换到登录界面 */
 export const AUTH_LOGOUT_EVENT = "zjcost:auth-logout";

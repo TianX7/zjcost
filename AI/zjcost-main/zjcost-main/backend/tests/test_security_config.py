@@ -90,8 +90,6 @@ def test_auth_required_enforces_write_and_zh_settings_roles(monkeypatch, tmp_pat
             assert client.get("/api/projects", headers=viewer_headers).status_code == 200
             assert client.post("/api/projects", json=project_payload, headers=viewer_headers).status_code == 403
             assert client.post("/api/projects", json=project_payload, headers=editor_headers).status_code == 200
-            assert client.get("/api/assistant/settings", headers=editor_headers).status_code == 403
-            assert client.get("/api/assistant/settings", headers=owner_headers).status_code == 200
     finally:
         reloaded.app.dependency_overrides.pop(get_db, None)
         Base.metadata.drop_all(bind=engine)

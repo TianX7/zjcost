@@ -90,14 +90,37 @@ def _frontend_window_likely_open(app_dir: Path) -> bool:
         pid = state.get("pid")
         if not isinstance(pid, int) or pid <= 0:
             return False
-        try:
-            os.kill(pid, 0)
-            return True
-        except PermissionError:
-            return True
-        except OSError:
-            return False
+        return _pid_alive(pid)
     except Exception:
+        return False
+
+
+def _pid_alive(pid: int) -> bool:
+    """进程探活。注意：Windows 上 os.kill(pid, 0) 会以 TerminateProcess 直接杀掉
+    目标进程（信号 0 也被忽略），因此这里用 OpenProcess 只读探测。"""
+    if os.name == "nt":
+        import ctypes
+
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        STILL_ACTIVE = 259
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            # 拒绝访问也说明进程存在（属于其他用户/权限不足）
+            return ctypes.GetLastError() == 5
+        try:
+            exit_code = ctypes.c_ulong()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                return False
+            return exit_code.value == STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+        return True
+    except PermissionError:
+        return True
+    except OSError:
         return False
 
 
@@ -408,6 +431,11 @@ def _open_desktop_window(url: str, app_dir: Path, *, track: bool = True) -> subp
                     "--disable-background-mode",
                     "--no-first-run",
                     "--no-default-browser-check",
+                    # 应用窗口内禁用第三方扩展：部分扩展（如"大学搜题酱"）会自行弹窗干扰
+                    "--disable-extensions",
+                    # 应用崩溃重启后不再弹"恢复页面？"气泡
+                    "--disable-session-crashed-bubble",
+                    "--hide-crash-restore-bubble",
                 ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,

@@ -14,6 +14,7 @@ from typing import Optional
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
+from starlette.concurrency import run_in_threadpool
 import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill
 from pydantic import BaseModel, Field
@@ -712,7 +713,8 @@ async def convert_dxf_to_dwg(
         raise HTTPException(status_code=400, detail="请上传 DXF 文件")
 
     file_bytes = await _read_upload_bytes_limited(file)
-    result = convert_dxf_to_dwg_bytes(file_bytes, filename)
+    # 外部转换器子进程最长可跑数分钟，放线程池执行，避免阻塞事件循环
+    result = await run_in_threadpool(convert_dxf_to_dwg_bytes, file_bytes, filename)
     if result.error or result.dwg_bytes is None:
         raise HTTPException(
             status_code=400,
@@ -734,7 +736,9 @@ async def convert_dxf_to_dwg(
 
 @router.get("/convert/status", response_model=ConverterStatusResponse, summary="查询 CAD 转换器状态")
 async def get_cad_converter_status():
-    return ConverterStatusResponse(**get_converter_status())
+    # 状态探测含磁盘扫描，放线程池执行
+    status = await run_in_threadpool(get_converter_status)
+    return ConverterStatusResponse(**status)
 
 
 @router.get("/{task_id}", response_model=TaskStatusResponse, summary="查询识别结果")
@@ -754,7 +758,8 @@ async def export_recognition_result(task_id: str):
     if task.get("status") == "processing":
         raise HTTPException(status_code=409, detail="图纸仍在解析中，请稍后再导出")
 
-    file_bytes = _export_task_excel(task_id, task)
+    # openpyxl 生成 Excel 是重同步操作，放线程池执行
+    file_bytes = await run_in_threadpool(_export_task_excel, task_id, task)
     return StreamingResponse(
         io.BytesIO(file_bytes),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

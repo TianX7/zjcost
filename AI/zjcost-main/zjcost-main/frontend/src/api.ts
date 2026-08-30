@@ -23,43 +23,6 @@ async function fetchBlob(url: string, init?: RequestInit): Promise<Blob> {
   return res.blob();
 }
 
-async function sseStream(
-  url: string,
-  body: unknown,
-  onEvent: (data: HandlerStep) => void,
-): Promise<void> {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: authHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`Request failed: ${res.status}`);
-  const reader = res.body?.getReader();
-  if (!reader) return;
-  const decoder = new TextDecoder();
-  let buffer = "";
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          try {
-            onEvent(JSON.parse(line.slice(6)) as HandlerStep);
-          } catch {
-            // 跳过格式错误的 SSE 数据行
-          }
-        }
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-}
-
 // ─── Types ───────────────────────────────────────────────────────
 
 export interface Project {
@@ -415,15 +378,6 @@ export interface PaymentCertificateCreate {
   status?: string;
 }
 
-export interface BoqSuggestion {
-  code: string; name: string; characteristics: string; unit: string;
-  quantity: number; division: string; reason: string;
-}
-export interface GenerateBoqResponse {
-  description: string; floors_detected: number;
-  total_items: number; suggestions: BoqSuggestion[];
-}
-
 export interface AutoValuateMatchDetail {
   boq_item_id: number; boq_code: string; boq_name: string;
   quota_item_id: number | null; quota_code: string; quota_name: string;
@@ -556,187 +510,6 @@ export interface PreviewPriceItem {
 export interface PreviewResponse {
   total: number; items: PreviewPriceItem[];
   sources_tried: string[]; duration_s: number; error: string | null;
-}
-
-export interface ZhProviderConfig {
-  api_key: string; api_key_set: boolean; base_url: string; model: string;
-}
-export interface ZhProvidersConfig {
-  provider_a: ZhProviderConfig; provider_b: ZhProviderConfig;
-  provider_c: ZhProviderConfig; provider_d: ZhProviderConfig; compatible: ZhProviderConfig;
-}
-export interface ZhSettingsPayload {
-  provider: string; timeout_seconds: number; enable_audit_logs: boolean;
-  providers: ZhProvidersConfig;
-}
-
-export interface ZhTestConnectionResponse {
-  success: boolean;
-  latency_ms: number;
-  reply: string;
-  error: string;
-}
-
-export interface ZhAnalyzeResponse {
-  insight: string | null;
-  zh_available: boolean;
-}
-
-export interface ZhChatResponse {
-  reply: string | null;
-  zh_available: boolean;
-}
-
-// Batch Review types
-export interface ReviewIssue {
-  boq_item_id: number; boq_code: string; boq_name: string;
-  severity: string; issue_type: string; message: string; suggestion: string;
-}
-export interface BatchReviewResponse {
-  project_id: number; total_items: number; bound_count: number; unbound_count: number;
-  issues: ReviewIssue[]; zh_summary: string | null; error: string | null;
-}
-
-// Coefficient Suggestion types
-export interface CoeffSuggestionItem {
-  binding_id: number | null; quota_code: string; quota_name: string;
-  current_coefficient: number; suggested_coefficient: number; reasoning: string;
-}
-export interface CoeffSuggestResponse {
-  boq_item_id: number; suggestions: CoeffSuggestionItem[];
-}
-
-// Rate Suggestion types
-export interface RateSuggestionResponse {
-  boq_item_id: number; suggested_rate: number; rate_low: number; rate_high: number;
-  currency: string; reasoning: string; confidence: number;
-}
-
-// Handler valuation types
-export interface HandlerStep {
-  type: "thinking" | "tool_call" | "tool_result" | "answer" | "done";
-  content: string;
-  tool_name: string;
-  tool_args: Record<string, unknown>;
-  tool_result: string;
-  // done-specific fields
-  answer?: string;
-  bindings_changed?: boolean;
-  error?: string | null;
-  /** Phase H7: set on the orchestrate stream 'done' event. */
-  auto_saved_memories?: string[];
-}
-
-export interface HandlerValuateResponse {
-  answer: string;
-  steps: HandlerStep[];
-  bindings_changed: boolean;
-  error: string | null;
-}
-
-// ─── Orchestrator & Pipeline Types ────────────────────────────────
-
-export interface OrchestrateResponse {
-  answer: string;
-  tool_calls_made: number;
-  error: string | null;
-  /** Phase H7: keys of memories auto-saved during this run. */
-  auto_saved_memories?: string[];
-}
-
-export interface ConversationTurn {
-  role: "user" | "assistant";
-  content: string;
-}
-
-export interface OrchestrateRequestExtras {
-  /** Phase H8: associate with a user for user-scoped memory. */
-  user_id?: number;
-  /** Phase H7: override ZH_AUTO_SAVE_MEMORY env default for this call. */
-  auto_save_memory?: boolean;
-  /** Prior conversation turns, for multi-turn chat. */
-  conversation_history?: ConversationTurn[];
-}
-
-// ─── Memory Types (Phase H3–H5, H9) ───────────────────────────────
-
-export type MemoryScope = "global" | "user" | "project";
-
-export interface HandlerMemoryDTO {
-  id: number | null;
-  scope: MemoryScope;
-  scope_id: number | null;
-  key: string;
-  content: string;
-  tags: string[];
-  importance: number;
-  created_by_agent: string;
-  created_at: string;
-  updated_at: string;
-  accessed_count: number;
-}
-
-export interface HandlerMemoryWithScore extends HandlerMemoryDTO {
-  score: number;
-}
-
-export interface ListMemoriesResponse {
-  memories: HandlerMemoryDTO[];
-  total: number;
-}
-
-export interface SearchMemoriesResponse {
-  matches: HandlerMemoryDTO[];
-  total: number;
-}
-
-export interface SemanticMemoriesResponse {
-  matches: HandlerMemoryWithScore[];
-  total: number;
-}
-
-export interface UpsertMemoryRequest {
-  scope: MemoryScope;
-  scope_id?: number | null;
-  key: string;
-  content: string;
-  importance?: number;
-  tags?: string[];
-  created_by_agent?: string;
-}
-
-// ─── Extension Types (Phase H4–H5, H9) ────────────────────────────────
-
-export interface ExtensionSummary {
-  name: string;
-  title: string;
-  description: string;
-  triggers: string[];
-  tags: string[];
-  version: string;
-}
-
-export interface ExtensionDetail extends ExtensionSummary {
-  body: string;
-}
-
-export interface ExtensionMatch extends ExtensionSummary {
-  score: number;
-}
-
-export interface ListExtensionsResponse {
-  skills: ExtensionSummary[];
-  total: number;
-}
-
-export interface SearchExtensionsResponse {
-  matches: ExtensionSummary[];
-  total: number;
-}
-
-export interface SemanticExtensionsResponse {
-  matches: ExtensionMatch[];
-  total: number;
 }
 
 export interface QuotaItemDTO {
@@ -908,83 +681,6 @@ export interface RestoreReferenceResponse {
   ok: boolean;
   restored: Record<string, number>;
   message: string;
-}
-
-export interface PipelineStageOut {
-  index: number;
-  handler: string;
-  success: boolean;
-  duration_s: number;
-  tool_calls: number;
-  answer: string;
-}
-
-export interface PipelineResponse {
-  pipeline: string;
-  stages: PipelineStageOut[];
-  final_answer: string;
-  success: boolean;
-  total_duration_s: number;
-  error: string | null;
-}
-
-// ─── Traces & Cost Dashboard Types ───────────────────────────────
-
-export interface TraceOut {
-  id: number;
-  project_id: number | null;
-  handler_name: string;
-  parent_trace_id: number | null;
-  model: string | null;
-  provider: string | null;
-  input_tokens: number;
-  output_tokens: number;
-  total_tokens: number;
-  estimated_cost_cents: number;
-  turns_used: number;
-  tool_calls_made: number;
-  duration_ms: number;
-  success: boolean;
-  error: string | null;
-  answer_preview: string | null;
-  started_at: string;
-  finished_at: string | null;
-}
-
-export interface TraceListResponse {
-  total: number;
-  traces: TraceOut[];
-}
-
-export interface HandlerCostStats {
-  handler_name: string;
-  trace_count: number;
-  total_tokens: number;
-  total_cost_cents: number;
-  avg_duration_ms: number;
-  success_rate: number;
-}
-
-export interface DayCostStats {
-  date: string;
-  trace_count: number;
-  total_tokens: number;
-  total_cost_cents: number;
-}
-
-export interface CostStatsResponse {
-  period: string;
-  total_traces: number;
-  successful_traces: number;
-  failed_traces: number;
-  total_input_tokens: number;
-  total_output_tokens: number;
-  total_tokens: number;
-  total_cost_cents: number;
-  total_tool_calls: number;
-  avg_duration_ms: number;
-  by_agent: HandlerCostStats[];
-  by_day: DayCostStats[];
 }
 
 // ─── Knowledge Graph Types ────────────────────────────────────────
@@ -1313,18 +1009,7 @@ export const api = {
   query: (pid: number, q: string) =>
     request<QueryResponse>(`/projects/${pid}/query`, { method: "POST", body: JSON.stringify({ q }) }),
 
-  //  Generate BOQ
-  generateBoq: (pid: number, description: string) =>
-    request<GenerateBoqResponse>(`/projects/${pid}/zh-generate-boq`, {
-      method: "POST", body: JSON.stringify({ description }),
-    }),
-
   //  Settings
-  getZhSettings: () => request<ZhSettingsPayload>("/assistant/settings"),
-  updateZhSettings: (data: ZhSettingsPayload) =>
-    request<ZhSettingsPayload>("/assistant/settings", { method: "PUT", body: JSON.stringify(data) }),
-  testZhConnection: (data: { provider: string; api_key: string; use_saved_key?: boolean; base_url: string; model: string; timeout_seconds?: number }) =>
-    request<ZhTestConnectionResponse>("/assistant/test-connection", { method: "POST", body: JSON.stringify(data) }),
   getSystemCheck: () => request<SystemCheckResponse>("/system-check"),
   listTasks: (taskType?: string) => {
     const qs = taskType ? `?task_type=${encodeURIComponent(taskType)}` : "";
@@ -1332,43 +1017,9 @@ export const api = {
   },
   getTaskStatus: (taskId: string) => request<TaskStatusOut>(`/tasks/${encodeURIComponent(taskId)}`),
 
-  //  Analyze (insight)
-  zhAnalyze: (pid: number, contextType: string, contextData: Record<string, unknown> = {}) =>
-    request<ZhAnalyzeResponse>(`/projects/${pid}/zh-analyze`, {
-      method: "POST",
-      body: JSON.stringify({ context_type: contextType, context_data: contextData }),
-    }),
-
   //  Auto Valuate (match + bind + calc)
   autoValuate: (pid: number) =>
     request<AutoValuateResponse>(`/projects/${pid}/auto-valuate`, { method: "POST" }),
-
-  //  Chat
-  zhChat: (pid: number, message: string, history: Array<{ role: string; content: string }> = []) =>
-    request<ZhChatResponse>(`/projects/${pid}/zh-chat`, {
-      method: "POST",
-      body: JSON.stringify({ message, history }),
-    }),
-
-  // Handler Valuate (streaming SSE)
-  agentValuateStream: (
-    pid: number,
-    boqItemId: number,
-    instruction: string,
-    onStep: (step: HandlerStep) => void,
-  ): Promise<void> =>
-    sseStream(
-      `${API_BASE}/projects/${pid}/boq-items/${boqItemId}/zh-valuate/stream`,
-      { instruction },
-      onStep,
-    ),
-
-  // Handler Valuate (non-streaming fallback)
-  agentValuate: (pid: number, boqItemId: number, instruction = "") =>
-    request<HandlerValuateResponse>(
-      `/projects/${pid}/boq-items/${boqItemId}/zh-valuate`,
-      { method: "POST", body: JSON.stringify({ instruction }) },
-    ),
 
   // Reorder BOQ items
   reorderBoqItems: (pid: number, items: Array<{ id: number; sort_order: number }>) =>
@@ -1387,18 +1038,6 @@ export const api = {
     request<{ ok: boolean; deleted: number }>(`/projects/${pid}/boq-items:batch-delete`, {
       method: "POST", body: JSON.stringify({ ids }),
     }),
-
-  //  Batch Review
-  aiBatchReview: (pid: number) =>
-    request<BatchReviewResponse>(`/projects/${pid}/zh-batch-review`, { method: "POST" }),
-
-  //  Coefficient Suggestion
-  suggestCoefficients: (boqItemId: number) =>
-    request<CoeffSuggestResponse>(`/boq-items/${boqItemId}/suggest-coefficients`, { method: "POST" }),
-
-  //  Rate Suggestion (HKSMM4)
-  suggestRate: (boqItemId: number) =>
-    request<RateSuggestionResponse>(`/boq-items/${boqItemId}/suggest-rate`, { method: "POST" }),
 
   // ─── Knowledge Graph APIs ──────────────────────────────────────────
 
@@ -1473,136 +1112,6 @@ export const api = {
   },
 
   // ─── Orchestrator & Pipeline APIs ──────────────────────────────────
-
-  orchestrate: (pid: number, instruction: string, extras?: OrchestrateRequestExtras) =>
-    request<OrchestrateResponse>(`/projects/${pid}/orchestrate`, {
-      method: "POST",
-      body: JSON.stringify({ instruction, ...(extras ?? {}) }),
-    }),
-
-  orchestrateStream: (
-    pid: number,
-    instruction: string,
-    onStep: (step: HandlerStep) => void,
-    extras?: OrchestrateRequestExtras,
-  ): Promise<void> =>
-    sseStream(
-      `${API_BASE}/projects/${pid}/orchestrate/stream`,
-      { instruction, ...(extras ?? {}) },
-      onStep,
-    ),
-
-  runPricingPipeline: (pid: number, boqItemId: number) =>
-    request<PipelineResponse>(`/projects/${pid}/boq-items/${boqItemId}/pipeline/pricing`, {
-      method: "POST",
-    }),
-
-  runAuditPipeline: (pid: number) =>
-    request<PipelineResponse>(`/projects/${pid}/pipeline/audit`, {
-      method: "POST",
-    }),
-
-  // ─── Traces & Cost Dashboard APIs ──────────────────────────────────
-
-  listTraces: (params?: { project_id?: number; handler_name?: string; limit?: number; offset?: number }) => {
-    const qs = new URLSearchParams();
-    if (params?.project_id != null) qs.set("project_id", String(params.project_id));
-    if (params?.handler_name) qs.set("handler_name", params.handler_name);
-    if (params?.limit != null) qs.set("limit", String(params.limit));
-    if (params?.offset != null) qs.set("offset", String(params.offset));
-    const q = qs.toString();
-    return request<TraceListResponse>(`/assistant/traces${q ? `?${q}` : ""}`);
-  },
-
-  getTraceStats: (params?: { project_id?: number; days?: number }) => {
-    const qs = new URLSearchParams();
-    if (params?.project_id != null) qs.set("project_id", String(params.project_id));
-    if (params?.days != null) qs.set("days", String(params.days));
-    const q = qs.toString();
-    return request<CostStatsResponse>(`/assistant/traces/stats${q ? `?${q}` : ""}`);
-  },
-
-  // ─── Memory Management APIs (Phase H9) ─────────────────────────────
-
-  listMemories: (params: { scope: MemoryScope; scope_id?: number | null; limit?: number }) => {
-    const qs = new URLSearchParams();
-    qs.set("scope", params.scope);
-    if (params.scope_id != null) qs.set("scope_id", String(params.scope_id));
-    if (params.limit != null) qs.set("limit", String(params.limit));
-    return request<ListMemoriesResponse>(`/memories?${qs.toString()}`);
-  },
-
-  searchMemories: (params: {
-    scope: MemoryScope;
-    scope_id?: number | null;
-    query?: string;
-    tags?: string;
-    min_importance?: number;
-    limit?: number;
-  }) => {
-    const qs = new URLSearchParams();
-    qs.set("scope", params.scope);
-    if (params.scope_id != null) qs.set("scope_id", String(params.scope_id));
-    if (params.query) qs.set("query", params.query);
-    if (params.tags) qs.set("tags", params.tags);
-    if (params.min_importance != null) qs.set("min_importance", String(params.min_importance));
-    if (params.limit != null) qs.set("limit", String(params.limit));
-    return request<SearchMemoriesResponse>(`/memories/search?${qs.toString()}`);
-  },
-
-  searchMemoriesSemantic: (params: {
-    scope: MemoryScope;
-    query: string;
-    scope_id?: number | null;
-    limit?: number;
-    min_similarity?: number;
-  }) => {
-    const qs = new URLSearchParams();
-    qs.set("scope", params.scope);
-    qs.set("query", params.query);
-    if (params.scope_id != null) qs.set("scope_id", String(params.scope_id));
-    if (params.limit != null) qs.set("limit", String(params.limit));
-    if (params.min_similarity != null) qs.set("min_similarity", String(params.min_similarity));
-    return request<SemanticMemoriesResponse>(`/memories/search/semantic?${qs.toString()}`);
-  },
-
-  upsertMemory: (payload: UpsertMemoryRequest) =>
-    request<HandlerMemoryDTO>("/memories", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
-
-  deleteMemory: (memoryId: number) =>
-    request<{ deleted: boolean; memory_id: number }>(`/memories/${memoryId}`, {
-      method: "DELETE",
-    }),
-
-  // ─── Extensions Browsing APIs (Phase H9) ───────────────────────────────
-
-  listExtensions: () => request<ListExtensionsResponse>("/skills"),
-
-  getExtension: (name: string) =>
-    request<ExtensionDetail>(`/skills/${encodeURIComponent(name)}`),
-
-  searchExtensions: (params: { query?: string; tags?: string }) => {
-    const qs = new URLSearchParams();
-    if (params.query) qs.set("query", params.query);
-    if (params.tags) qs.set("tags", params.tags);
-    const q = qs.toString();
-    return request<SearchExtensionsResponse>(`/skills/search${q ? `?${q}` : ""}`);
-  },
-
-  searchExtensionsSemantic: (params: {
-    query: string;
-    limit?: number;
-    min_similarity?: number;
-  }) => {
-    const qs = new URLSearchParams();
-    qs.set("query", params.query);
-    if (params.limit != null) qs.set("limit", String(params.limit));
-    if (params.min_similarity != null) qs.set("min_similarity", String(params.min_similarity));
-    return request<SemanticExtensionsResponse>(`/skills/search/semantic?${qs.toString()}`);
-  },
 
   // ─── Quota Library APIs ─────────────────────────────────────────
 

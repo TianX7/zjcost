@@ -191,3 +191,16 @@
 }
 .ops-donut-legend div { gap: 10px; }
 .ops-donut-legend span { font-size: 11px; color: #64748b; font-variant-numeric: tabular-nums; margin-left: 2px; }
+
+/* ─── 运营面板填充优化：工单统计行 / 环形居中 ───────────────── */
+.ops-order-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.ops-order-stats > div {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 10px 12px; border-radius: 10px;
+  background: rgba(148, 163, 184, 0.06); border: 1px solid rgba(148, 163, 184, 0.1);
+  animation: ops-rise 0.5s ease both;
+}
+.ops-order-stats em { font-style: normal; font-size: 11px; color: #64748b; }
+.ops-order-stats strong { font-size: 15px; font-weight: 800; color: #e2e8f0; font-variant-numeric: tabular-nums; }
+
+.ops-panel .ops-donut-wrap { flex: 1; }

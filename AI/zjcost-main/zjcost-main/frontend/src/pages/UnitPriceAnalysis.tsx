@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button, Empty, Select, Table, Tag, message } from "antd";
-import type { BoqItem, CalcProvenance, Project, RateSuggestionResponse } from "../api";
+import type { BoqItem, CalcProvenance, Project } from "../api";
 import { api } from "../api";
 import PageHeader from "../components/PageHeader";
 
@@ -22,7 +22,6 @@ export default function UnitPriceAnalysis() {
   const [selectedProjectId, setSelectedProjectId] = useState<number | undefined>(asFiniteNumber(projectId));
   const [selectedBoqItemId, setSelectedBoqItemId] = useState<number | undefined>(asFiniteNumber(boqItemId));
   const [provenance, setProvenance] = useState<CalcProvenance | null>(null);
-  const [suggestion, setSuggestion] = useState<RateSuggestionResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingBoq, setLoadingBoq] = useState(false);
 
@@ -80,18 +79,8 @@ export default function UnitPriceAnalysis() {
   }, [selectedBoqItemId]);
 
   useEffect(() => {
-    setSuggestion(null);
     void load();
   }, [load]);
-
-  const suggestRate = async () => {
-    if (!selectedBoqItemId) return;
-    try {
-      setSuggestion(await api.suggestRate(selectedBoqItemId));
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : "建议失败");
-    }
-  };
 
   return (
     <div className="page-container">
@@ -100,10 +89,7 @@ export default function UnitPriceAnalysis() {
         title="综合单价分析"
         subtitle="查看清单综合单价来源、定额组成和建议。"
         actions={
-          <>
-            <Button onClick={() => navigate(selectedProjectId ? `/projects/${selectedProjectId}` : "/projects")}>返回项目</Button>
-            <Button type="primary" loading={loading} disabled={!selectedBoqItemId} onClick={suggestRate}>建议单价</Button>
-          </>
+          <Button onClick={() => navigate(selectedProjectId ? `/projects/${selectedProjectId}` : "/projects")}>返回项目</Button>
         }
       />
 
@@ -187,23 +173,6 @@ export default function UnitPriceAnalysis() {
               </div>
             </div>
           </div>
-
-          {/* 建议单价 */}
-          {suggestion && (
-            <div className="content-card">
-              <div className="content-card-head">
-                <h3 className="content-card-title"><span className="material-symbols-outlined">lightbulb</span>建议</h3>
-              </div>
-              <div className="content-card-body">
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <Tag color="blue">建议 {money(suggestion.suggested_rate)}</Tag>
-                  <Tag>区间 {money(suggestion.rate_low)} - {money(suggestion.rate_high)}</Tag>
-                  <Tag color="green">置信度 {Math.round(suggestion.confidence * 100)}%</Tag>
-                </div>
-                <p style={{ margin: "12px 0 0" }}>{suggestion.reasoning}</p>
-              </div>
-            </div>
-          )}
 
           {/* 定额绑定 */}
           <div className="content-card">

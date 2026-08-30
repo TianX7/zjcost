@@ -4,6 +4,7 @@ import { Button, ConfigProvider, Progress, Space, Tag, Typography, message, them
 import { ArrowLeftOutlined, CloudUploadOutlined, HomeOutlined, ReloadOutlined } from "@ant-design/icons";
 import { api, type IfcElement, type IfcTaskStatus } from "./api";
 import Ifc3DViewer, { type Element3D } from "./components/Ifc3DViewer";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 const WALK_TASK_POLL_LIMIT = 120;
 const WALK_TASK_POLL_INTERVAL_MS = 1000;
@@ -800,15 +801,17 @@ export default function WalkVerify() {
             )}
           </div>
 
-          <Ifc3DViewer
-            elements={sceneElements}
-            initialViewMode="walk"
-            presentationMode
-            materialTheme="museum"
-            sceneTitle={sceneTitle}
-            onExitWalkMode={goBack}
-            style={{ width: "100%", height: "100%", minHeight: "100%", borderRadius: 0 }}
-          />
+          <ErrorBoundary title="3D 视图无法显示" inline>
+            <Ifc3DViewer
+              elements={sceneElements}
+              initialViewMode="walk"
+              presentationMode
+              materialTheme="museum"
+              sceneTitle={sceneTitle}
+              onExitWalkMode={goBack}
+              style={{ width: "100%", height: "100%", minHeight: "100%", borderRadius: 0 }}
+            />
+          </ErrorBoundary>
         </div>
       </div>
     </ConfigProvider>

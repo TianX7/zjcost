@@ -54,6 +54,10 @@ _ODA_EXECUTABLES = ("ODAFileConverter.exe", "ODAFileConverter", "TeighaFileConve
 _DXF_TO_DWG_EXECUTABLES = ("dxf2dwg.exe", "dxf2dwg")
 _DWG_TO_DXF_EXECUTABLES = ("dwgread.exe", "dwgread", "dwg2dxf.exe", "dwg2dxf")
 
+# 打包版是无控制台的 GUI 进程：不隐藏子进程窗口的话，每次 DWG 转换都会在
+# 桌面上弹出一个转换器的控制台/程序窗口。CREATE_NO_WINDOW 让转换完全后台运行。
+_NO_WINDOW_FLAGS = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+
 
 def _looks_like_dxf(file_bytes: bytes) -> bool:
     head = file_bytes[:4096].lstrip()
@@ -255,7 +259,7 @@ def _run_oda_converter(
         "1",
         input_filter,
     ]
-    subprocess.run(command, check=True, capture_output=True, text=True, timeout=_converter_timeout_seconds())
+    subprocess.run(command, check=True, capture_output=True, text=True, timeout=_converter_timeout_seconds(), creationflags=_NO_WINDOW_FLAGS)
     if expected.exists():
         return expected
 
@@ -280,7 +284,7 @@ def _run_libredwg_converter(
         command = [exe, "-O", "DXF", "-o", str(expected), str(input_path)]
     else:
         command = [exe, "-o", str(expected), str(input_path)]
-    result = subprocess.run(command, check=True, capture_output=True, timeout=_converter_timeout_seconds())
+    result = subprocess.run(command, check=True, capture_output=True, timeout=_converter_timeout_seconds(), creationflags=_NO_WINDOW_FLAGS)
     if expected.exists():
         return expected
     if result.stdout:

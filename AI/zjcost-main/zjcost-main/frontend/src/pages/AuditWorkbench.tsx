@@ -1,31 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Button, Empty, Table, Tag, message } from "antd";
-import { AuditOutlined } from "@ant-design/icons";
-import type { PipelineResponse, Project, ValidationReport } from "../api";
+import type { Project, ValidationReport } from "../api";
 import { api } from "../api";
 import { createSampleProject } from "../sampleProject";
-
-const STAGE_LABELS: Record<string, string> = {
-  validation_handler: "规则校验",
-  valuation_handler: "计价复核",
-  report_agent: "审计报告",
-  audit_agent: "审计汇总",
-};
-
-const STAGE_DESCRIPTIONS: Record<string, string> = {
-  validation_handler: "检查清单完整性、定额绑定、工程量和计价口径。",
-  valuation_handler: "复核综合单价、费用构成和异常金额。",
-  report_agent: "汇总审计结论、风险点和整改建议。",
-  audit_agent: "形成可追踪的审计复核结果。",
-};
 
 export default function AuditWorkbench() {
   const [, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState<number>();
   const [validation, setValidation] = useState<ValidationReport | null>(null);
-  const [pipeline, setPipeline] = useState<PipelineResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [auditLoading, setAuditLoading] = useState(false);
   const [creatingSample, setCreatingTour] = useState(false);
 
   // 从校验报告中提取计价类问题（替代原 BatchReviewResponse 死代码）
@@ -70,19 +53,6 @@ export default function AuditWorkbench() {
   }, [projectId]);
 
   useEffect(() => { void validate(); }, [validate]);
-
-  const runPipeline = async () => {
-    if (!projectId) return;
-    setAuditLoading(true);
-    try {
-      setPipeline(await api.runAuditPipeline(projectId));
-      message.success("审计复核执行完成");
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : "审计复核执行失败");
-    } finally {
-      setAuditLoading(false);
-    }
-  };
 
   const startSample = async () => {
     setCreatingTour(true);
@@ -131,13 +101,6 @@ export default function AuditWorkbench() {
           <div className="kpi-card-body">
             <span className="kpi-card-label">警告</span>
             <span className="kpi-card-value">{validation?.warnings ?? 0}<span className="kpi-card-suffix">项</span></span>
-          </div>
-        </div>
-        <div className="kpi-card">
-          <span className="material-symbols-outlined kpi-card-icon">checklist</span>
-          <div className="kpi-card-body">
-            <span className="kpi-card-label">审计阶段</span>
-            <span className="kpi-card-value">{pipeline?.stages?.length ?? 0}<span className="kpi-card-suffix">步</span></span>
           </div>
         </div>
       </div>
@@ -195,42 +158,6 @@ export default function AuditWorkbench() {
                   { title: "建议", dataIndex: "suggestion" },
                 ]}
               />
-            </div>
-          </div>
-        </div>
-
-        {/* 审计汇总 */}
-        <div className="content-card">
-          <div className="content-card-head">
-            <h3 className="content-card-title"><span className="material-symbols-outlined">fact_check</span>审计汇总</h3>
-          </div>
-          <div className="content-card-body">
-            <div style={{ fontSize: 15, fontWeight: 600, color: "#e2e8f0", marginBottom: 12 }}>
-              {pipeline ? (pipeline.success ? "执行成功" : "执行失败") : "尚未执行"}
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {pipeline?.error && <Alert type="error" showIcon title="执行失败" description={pipeline.error} />}
-              {(pipeline?.stages ?? []).length === 0 && (
-                <Empty description="尚未运行审计汇总。">
-                  <Button type="primary" icon={<AuditOutlined />} loading={auditLoading} disabled={!projectId} onClick={runPipeline}>审计汇总</Button>
-                </Empty>
-              )}
-              {(pipeline?.stages ?? []).map((stage) => (
-                <div className="audit-stage" key={stage.index}>
-                  <div className="audit-stage-head">
-                    <div className="audit-stage-title">
-                      <span className="material-symbols-outlined" style={{ color: stage.success ? "#22c55e" : "#ef4444" }}>
-                        {stage.success ? "check_circle" : "error"}
-                      </span>
-                      {STAGE_LABELS[stage.handler] ?? stage.handler}
-                      <Tag color={stage.success ? "green" : "red"}>{stage.success ? "通过" : "需处理"}</Tag>
-                    </div>
-                    <span style={{ fontSize: 12, color: "#64748b" }}>耗时 {stage.duration_s.toFixed(2)} 秒</span>
-                  </div>
-                  <div className="audit-stage-desc">{STAGE_DESCRIPTIONS[stage.handler] ?? "执行审计复核步骤。"}</div>
-                  {stage.answer && <div className="audit-stage-answer">{stage.answer}</div>}
-                </div>
-              ))}
             </div>
           </div>
         </div>

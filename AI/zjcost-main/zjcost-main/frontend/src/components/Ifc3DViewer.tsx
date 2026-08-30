@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
+import { isWeakGpuDevice } from "../utils/deviceCapability";
+
 import { Button, Segmented, Select, Tooltip } from "antd";
 
 import {
@@ -5912,6 +5914,15 @@ function addSolarPanels(
 
   const upVector = new THREE.Vector3(0, 0, 1);
   let panelBudget = 800;
+  // 已铺板位记录：相邻屋面板（平板/斜板、不同标高）各自布阵时避免互相重叠
+  const placedPanels: Array<{ x: number; y: number; z: number }> = [];
+  const isPanelOccupied = (x: number, y: number, z: number) => placedPanels.some((p) =>
+    Math.abs(p.z - z) < 1.6
+    && Math.abs(p.x - x) < panelWidth * 1.1
+    && Math.abs(p.y - y) < panelDepth * 1.1,
+  );
+  const raycaster = new THREE.Raycaster();
+  raycaster.far = 6.5;
 
   const placePanel = (position: THREE.Vector3, quaternion: THREE.Quaternion) => {
     if (panelBudget <= 0) {
@@ -5931,86 +5942,329 @@ function addSolarPanels(
     scene.add(panel);
   };
 
+  // 坡屋面全场最多铺 4 块大面，避免满屋顶零散小阵列
+  let slopedArraysLeft = 4;
+
   clusters.forEach((cluster) => {
-    collectRoofSurfaces(cluster, groundZ).forEach((surface) => {
-      const roofBounds = surface.bounds;
-      const roofSize = roofBounds.getSize(new THREE.Vector3());
-      if (surface.kind === "flat") {
-        if (roofSize.x < panelWidth * 1.1 || roofSize.y < panelDepth * 1.1) {
+    const surfaces = collectRoofSurfaces(cluster, groundZ);
+
+    // ---- 平屋面：同一标高的屋面板合并为一层，整层只铺一块对齐坐标轴的规整阵列 ----
+    const flatLevels: Array<{ z: number; surfaces: RoofSurfaceInfo[] }> = [];
+    surfaces
+      .filter((surface) => surface.kind === "flat")
+      .sort((a, b) => b.bounds.max.z - a.bounds.max.z)
+      .forEach((surface) => {
+        const level = flatLevels.find((entry) => Math.abs(entry.z - surface.bounds.max.z) <= 0.45);
+        if (level) {
+          level.surfaces.push(surface);
+        } else {
+          flatLevels.push({ z: surface.bounds.max.z, surfaces: [surface] });
+        }
+      });
+    flatLevels
+      .sort((a, b) => b.surfaces.reduce((sum, s) => sum + footprintArea(s.bounds), 0)
+        - a.surfaces.reduce((sum, s) => sum + footprintArea(s.bounds), 0))
+      .forEach((level) => {
+        const levelArea = level.surfaces.reduce((sum, s) => sum + footprintArea(s.bounds), 0);
+        if (levelArea < 20) {
+          return;
+        }
+        const unionBox = new THREE.Box3();
+        level.surfaces.forEach((surface) => unionBox.union(surface.bounds));
+        // 边距整体内缩，留出女儿墙/檐口带
+        const margin = Math.max(panelWidth, 1.1);
+        const innerMinX = unionBox.min.x + margin;
+        const innerMaxX = unionBox.max.x - margin;
+        const innerMinY = unionBox.min.y + margin;
+        const innerMaxY = unionBox.max.y - margin;
+        if (innerMaxX <= innerMinX || innerMaxY <= innerMinY) {
           return;
         }
         const quaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), FLAT_PANEL_TILT);
-        const stepX = panelWidth * 1.22;
-        const stepY = panelDepth * 1.32;
-        const columns = clamp(Math.floor(roofSize.x / stepX), 1, 18);
-        const rows = clamp(Math.floor(roofSize.y / stepY), 1, 8);
-        const roofCenter = roofBounds.getCenter(new THREE.Vector3());
-        const roofZ = roofBounds.max.z + 0.06;
+        const stepX = panelWidth * 1.24;
+        const stepY = panelDepth * 1.34;
+        const columns = clamp(Math.floor((innerMaxX - innerMinX) / stepX) + 1, 1, 20);
+        const rows = clamp(Math.floor((innerMaxY - innerMinY) / stepY) + 1, 1, 10);
+        const slabMeshes = level.surfaces.map((surface) => surface.item.mesh);
+        // 单板边缘再退距半块板宽，板缝/边角不放板
+        const edgeInset = Math.max(margin - panelWidth * 0.35, 0.35);
+        const probeZ = level.z + 3;
         for (let row = 0; row < rows; row += 1) {
           for (let col = 0; col < columns; col += 1) {
-            const x = roofCenter.x - ((columns - 1) * stepX) / 2 + col * stepX;
-            const y = roofCenter.y - ((rows - 1) * stepY) / 2 + row * stepY;
-            if (x < roofBounds.min.x + panelWidth * 0.4 || x > roofBounds.max.x - panelWidth * 0.4) continue;
-            if (y < roofBounds.min.y + panelDepth * 0.4 || y > roofBounds.max.y - panelDepth * 0.4) continue;
-            placePanel(new THREE.Vector3(x, y, roofZ), quaternion);
+            const x = columns === 1 ? (innerMinX + innerMaxX) / 2 : innerMinX + ((innerMaxX - innerMinX) * col) / (columns - 1);
+            const y = rows === 1 ? (innerMinY + innerMaxY) / 2 : innerMinY + ((innerMaxY - innerMinY) * row) / (rows - 1);
+            if (isPanelOccupied(x, y, level.z)) {
+              continue;
+            }
+            // 向下投射到本层屋面板上：L 形/拼合屋面自动裁边，只落在实际板上
+            raycaster.set(new THREE.Vector3(x, y, probeZ), new THREE.Vector3(0, 0, -1));
+            const hits = raycaster.intersectObjects(slabMeshes, false);
+            for (const hit of hits) {
+              if (hit.point.z < level.z - 1.2) {
+                continue;
+              }
+              if (hit.face && hit.face.normal.z < 0.5) {
+                continue;
+              }
+              const slab = level.surfaces.find((surface) => surface.item.mesh === hit.object);
+              if (!slab) {
+                continue;
+              }
+              if (
+                hit.point.x < slab.bounds.min.x + edgeInset
+                || hit.point.x > slab.bounds.max.x - edgeInset
+                || hit.point.y < slab.bounds.min.y + edgeInset
+                || hit.point.y > slab.bounds.max.y - edgeInset
+              ) {
+                continue;
+              }
+              placePanel(new THREE.Vector3(hit.point.x, hit.point.y, hit.point.z + 0.02), quaternion);
+              placedPanels.push({ x: hit.point.x, y: hit.point.y, z: level.z });
+              break;
+            }
           }
         }
-        return;
-      }
-      // 坡屋面：以水平屋脊方向 e1、沿坡向上方向 e2 建立面内坐标系，板阵贴附坡面
-      const normal = surface.normal;
-      const e1 = new THREE.Vector3().crossVectors(upVector, normal).normalize();
-      const e2 = new THREE.Vector3().crossVectors(normal, e1).normalize();
-      const quaternion = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(e1, e2, normal));
-      const corners: THREE.Vector3[] = [];
-      [roofBounds.min.x, roofBounds.max.x].forEach((x) => {
-        [roofBounds.min.y, roofBounds.max.y].forEach((y) => {
-          [roofBounds.min.z, roofBounds.max.z].forEach((z) => {
-            corners.push(new THREE.Vector3(x, y, z));
+      });
+
+    // ---- 坡屋面：只铺面积最大的少数几块，板位射线贴合真实坡面 ----
+    surfaces
+      .filter((surface) => surface.kind === "sloped" && footprintArea(surface.bounds) >= 45)
+      .sort((a, b) => footprintArea(b.bounds) - footprintArea(a.bounds))
+      .forEach((surface) => {
+        if (slopedArraysLeft <= 0) {
+          return;
+        }
+        slopedArraysLeft -= 1;
+        const roofBounds = surface.bounds;
+        // 以水平屋脊方向 e1、沿坡向上方向 e2 建立面内坐标系
+        const normal = surface.normal;
+        const e1 = new THREE.Vector3().crossVectors(upVector, normal).normalize();
+        const e2 = new THREE.Vector3().crossVectors(normal, e1).normalize();
+        const quaternion = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(e1, e2, normal));
+        const corners: THREE.Vector3[] = [];
+        [roofBounds.min.x, roofBounds.max.x].forEach((x) => {
+          [roofBounds.min.y, roofBounds.max.y].forEach((y) => {
+            [roofBounds.min.z, roofBounds.max.z].forEach((z) => {
+              corners.push(new THREE.Vector3(x, y, z));
+            });
           });
         });
+        let uMin = Infinity;
+        let uMax = -Infinity;
+        let vMin = Infinity;
+        let vMax = -Infinity;
+        corners.forEach((corner) => {
+          const delta = corner.clone().sub(surface.anchor);
+          uMin = Math.min(uMin, delta.dot(e1));
+          uMax = Math.max(uMax, delta.dot(e1));
+          vMin = Math.min(vMin, delta.dot(e2));
+          vMax = Math.max(vMax, delta.dot(e2));
+        });
+        const inset = 0.9;
+        uMin += inset;
+        uMax -= inset;
+        vMin += inset;
+        vMax -= inset;
+        if (uMax - uMin < panelWidth || vMax - vMin < panelDepth) {
+          return;
+        }
+        const stepU = panelWidth * 1.24;
+        const stepV = panelDepth * 1.34;
+        const columns = clamp(Math.floor((uMax - uMin) / stepU) + 1, 1, 18);
+        const rows = clamp(Math.floor((vMax - vMin) / stepV) + 1, 1, 8);
+        const spanU = (columns - 1) * stepU;
+        const spanV = (rows - 1) * stepV;
+        const startU = uMin + (uMax - uMin - spanU) / 2;
+        const startV = vMin + (vMax - vMin - spanV) / 2;
+        const testBounds = roofBounds.clone().expandByScalar(0.12);
+        // 沿拟合平面法线向下投射到真实坡面取板位，阵列自然收进屋面边界
+        const probeOffset = normal.clone().multiplyScalar(3);
+        for (let row = 0; row < rows; row += 1) {
+          for (let col = 0; col < columns; col += 1) {
+            const planePoint = surface.anchor.clone()
+              .addScaledVector(e1, startU + col * stepU)
+              .addScaledVector(e2, startV + row * stepV);
+            raycaster.set(planePoint.clone().add(probeOffset), normal.clone().negate());
+            const hits = raycaster.intersectObject(surface.item.mesh, false);
+            if (!hits.length) {
+              continue;
+            }
+            const hit = hits[0];
+            // 命中点偏离拟合平面过远，说明该处不属于这块坡面（如檐口外悬空）
+            if (Math.abs(hit.distance - probeOffset.length()) > 2.2) {
+              continue;
+            }
+            // 命中侧面（山墙/檐口板边）而非朝上屋面时跳过
+            if (hit.face && hit.face.normal.z < 0.3) {
+              continue;
+            }
+            const p = hit.point;
+            if (!testBounds.containsPoint(p) || isPanelOccupied(p.x, p.y, p.z)) {
+              continue;
+            }
+            placePanel(p, quaternion);
+            placedPanels.push({ x: p.x, y: p.y, z: p.z });
+          }
+        }
       });
-      let uMin = Infinity;
-      let uMax = -Infinity;
-      let vMin = Infinity;
-      let vMax = -Infinity;
-      corners.forEach((corner) => {
-        const delta = corner.clone().sub(surface.anchor);
-        uMin = Math.min(uMin, delta.dot(e1));
-        uMax = Math.max(uMax, delta.dot(e1));
-        vMin = Math.min(vMin, delta.dot(e2));
-        vMax = Math.max(vMax, delta.dot(e2));
-      });
-      const inset = 0.4;
-      uMin += inset;
-      uMax -= inset;
-      vMin += inset;
-      vMax -= inset;
-      if (uMax - uMin < panelWidth || vMax - vMin < panelDepth) {
+  });
+}
+
+/**
+ * 女儿墙长城造型：沿墙顶生成“连续压顶带 + 等距垛口”的完整垛口剖面。
+ * 沿构件外包矩形周界密集向下射线检测定位墙顶实际走向，
+ * 压顶带沿墙连续铺设，垛块按固定节距立在其上，形成真正的凹凸轮廓。
+ * 仅处理名称含“女儿墙/parapet”的构件，颜色取墙体色略加深。
+ */
+function addParapetCrenellations(
+  scene: THREE.Scene,
+  disposables: DisposableSceneResource[],
+  buildingClusters: BuildingCluster[],
+) {
+  const raycaster = new THREE.Raycaster();
+  raycaster.far = 3.4;
+  const downVector = new THREE.Vector3(0, 0, -1);
+  const materialCache = new Map<string, THREE.MeshStandardMaterial>();
+  let totalMerlons = 0;
+
+  // 生成一块沿 ab 方向铺设、截面 width×height、底面贴地的矩形块
+  const appendParapetBlock = (
+    parts: THREE.BufferGeometry[],
+    ax: number,
+    ay: number,
+    az: number,
+    bx: number,
+    by: number,
+    width: number,
+    height: number,
+  ) => {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const length = Math.hypot(dx, dy);
+    if (length < 1e-3) {
+      return;
+    }
+    const geometry = new THREE.BoxGeometry(length + width * 0.5, width, height);
+    geometry.rotateZ(Math.atan2(dy, dx));
+    geometry.translate((ax + bx) / 2, (ay + by) / 2, az + height / 2);
+    parts.push(geometry);
+  };
+
+  buildingClusters.forEach((cluster) => {
+    cluster.items.forEach((item) => {
+      const text = elementSearchText(item.element);
+      if (!/女儿墙|parapet/i.test(text)) {
         return;
       }
-      const stepU = panelWidth * 1.14;
-      const stepV = panelDepth * 1.28;
-      const columns = clamp(Math.floor((uMax - uMin) / stepU) + 1, 1, 18);
-      const rows = clamp(Math.floor((vMax - vMin) / stepV) + 1, 1, 8);
-      const spanU = (columns - 1) * stepU;
-      const spanV = (rows - 1) * stepV;
-      const startU = uMin + (uMax - uMin - spanU) / 2;
-      const startV = vMin + (vMax - vMin - spanV) / 2;
-      const testBounds = roofBounds.clone().expandByScalar(0.12);
-      for (let row = 0; row < rows; row += 1) {
-        for (let col = 0; col < columns; col += 1) {
-          const position = surface.anchor.clone()
-            .addScaledVector(e1, startU + col * stepU)
-            .addScaledVector(e2, startV + row * stepV);
-          if (!testBounds.containsPoint(position)) {
-            continue;
-          }
-          placePanel(position, quaternion);
-        }
+      const size = item.bounds.getSize(new THREE.Vector3());
+      // 过滤掉矮压顶/超厚构件，只处理真正的带状女儿墙
+      if (Math.max(size.x, size.y) < 2.5 || size.z < 0.35 || size.z > 3) {
+        return;
       }
+      const baseColor = item.material?.color ? item.material.color.clone() : new THREE.Color(0xcfc4ae);
+      baseColor.multiplyScalar(0.88);
+      const colorKey = baseColor.getHexString();
+      let material = materialCache.get(colorKey);
+      if (!material) {
+        material = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.85 });
+        materialCache.set(colorKey, material);
+        disposables.push(material);
+      }
+
+      // 沿墙走向密集采样：每步先内圈后外圈轨迹，取第一个命中，保证点列沿墙有序
+      const wallPoints: Array<{ x: number; y: number; z: number }> = [];
+      const probeZ = item.bounds.max.z + 0.55;
+      const marchEdge = (ax: number, ay: number, bx: number, by: number) => {
+        const length = Math.hypot(bx - ax, by - ay);
+        const steps = Math.max(2, Math.round(length / 0.3));
+        const ox = ax - bx;
+        const oy = ay - by;
+        const edgeLen = Math.max(Math.abs(ox), Math.abs(oy), 1e-3);
+        for (let i = 1; i < steps; i += 1) {
+          const t = i / steps;
+          const px = ax + (bx - ax) * t;
+          const py = ay + (by - ay) * t;
+          for (const inset of [0.14, 0.34]) {
+            const x = px + (oy / edgeLen) * inset;
+            const y = py + (-ox / edgeLen) * inset;
+            raycaster.set(new THREE.Vector3(x, y, probeZ), downVector);
+            const hits = raycaster.intersectObject(item.mesh, false);
+            if (!hits.length) {
+              continue;
+            }
+            const hit = hits[0];
+            // 只认墙顶附近的命中，侧面/底部的命中跳过
+            if (hit.point.z < item.bounds.max.z - 0.5) {
+              continue;
+            }
+            wallPoints.push({ x, y, z: hit.point.z });
+            break;
+          }
+        }
+      };
+      const minX = item.bounds.min.x;
+      const maxX = item.bounds.max.x;
+      const minY = item.bounds.min.y;
+      const maxY = item.bounds.max.y;
+      marchEdge(minX, minY, maxX, minY);
+      marchEdge(maxX, minY, maxX, maxY);
+      marchEdge(maxX, maxY, minX, maxY);
+      marchEdge(minX, maxY, minX, minY);
+      if (wallPoints.length < 4) {
+        return;
+      }
+
+      const parts: THREE.BufferGeometry[] = [];
+      // 连续压顶带：相邻命中点间距小于 0.85 视为同一段墙，逐段铺设
+      for (let i = 1; i < wallPoints.length; i += 1) {
+        const p0 = wallPoints[i - 1];
+        const p1 = wallPoints[i];
+        if (Math.hypot(p1.x - p0.x, p1.y - p0.y) > 0.85 || Math.abs(p1.z - p0.z) > 0.4) {
+          continue;
+        }
+        appendParapetBlock(parts, p0.x, p0.y, p0.z + 0.01, p1.x, p1.y, 0.34, 0.16);
+      }
+      // 垛口：沿墙走向每约 0.9m 立一块，块间留缺口，凹凸分明
+      let merlonCount = 0;
+      for (let i = 0; i < wallPoints.length - 1 && merlonCount < 400; i += 3) {
+        const p0 = wallPoints[i];
+        const p1 = wallPoints[Math.min(i + 1, wallPoints.length - 1)];
+        const dx = p1.x - p0.x;
+        const dy = p1.y - p0.y;
+        if (Math.hypot(dx, dy) > 0.7) {
+          continue;
+        }
+        const half = 0.18;
+        appendParapetBlock(
+          parts,
+          p0.x - dx * half,
+          p0.y - dy * half,
+          p0.z + 0.15,
+          p0.x + dx * half,
+          p0.y + dy * half,
+          0.36,
+          0.52,
+        );
+        merlonCount += 1;
+      }
+      if (parts.length === 0) {
+        return;
+      }
+      const merged = mergeGeometries(parts);
+      parts.forEach((part) => part.dispose());
+      if (!merged) {
+        return;
+      }
+      const mesh = new THREE.Mesh(merged, material);
+      mesh.castShadow = true;
+      scene.add(mesh);
+      disposables.push(merged);
+      totalMerlons += merlonCount;
     });
   });
+  if (totalMerlons > 0) {
+    console.log(`[Parapet] 女儿墙垛口 ${totalMerlons} 个`);
+  }
 }
 
 /** 在两点之间生成一根方形截面杆件几何，追加到待合并列表。 */
@@ -7752,6 +8006,8 @@ function addSceneEnhancements(
 
   addSolarPanels(scene, disposables, buildingClusters, groundZ);
 
+  addParapetCrenellations(scene, disposables, buildingClusters);
+
   addConstructionSiteProps(scene, disposables, buildingClusters, walkBounds, groundZ, radius);
 
   addClusteredMuseumExhibits(scene, disposables, sceneItems, mainClusters, groundZ);
@@ -8015,7 +8271,8 @@ export default function Ifc3DViewer({
 
   const [renderMode, setRenderMode] = useState<RenderMode>("solid");
 
-  const [qualityMode, setQualityMode] = useState<QualityMode>("cinematic");
+  // 核显/低配设备默认从"均衡"起步（影院画质的 PostFX+高像素比在核显上明显卡顿），用户仍可手动切换
+  const [qualityMode, setQualityMode] = useState<QualityMode>(() => (isWeakGpuDevice() ? "balanced" : "cinematic"));
 
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
 
@@ -8389,6 +8646,24 @@ export default function Ifc3DViewer({
         ? DRAG_LARGE_MODEL_MIN_PIXEL_RATIO
         : DRAG_MIN_PIXEL_RATIO;
     let currentPixelRatio = pixelRatio;
+
+    // 自适应分辨率：核显等弱 GPU 上持续掉帧时由渲染循环调低（乘数），流畅后回升。
+    // 与拖拽降倍率相互独立（拖拽按各自下限乘 adaptiveScale）。
+    let adaptiveScale = 1;
+    let adaptiveSlowFrames = 0;
+    let adaptiveFastFrames = 0;
+
+    const applyAdaptivePixelRatio = () => {
+      const host = containerRef.current;
+      if (!host) return;
+      const next = Math.max(dragMinPixelRatio, pixelRatio * adaptiveScale);
+      if (Math.abs(currentPixelRatio - next) < 1e-3) return;
+      currentPixelRatio = next;
+      renderer.setPixelRatio(next);
+      renderer.setSize(Math.max(host.clientWidth, 1), Math.max(host.clientHeight, 1));
+      composer?.setSize(Math.max(host.clientWidth, 1), Math.max(host.clientHeight, 1));
+      needsRender = true;
+    };
 
     const applyPixelRatio = (nextRatio: number): boolean => {
       const host = containerRef.current;
@@ -11636,12 +11911,12 @@ export default function Ifc3DViewer({
 
     const onOrbitStart = () => {
       if (isWalkMode) return;
-      applyPixelRatio(dragMinPixelRatio);
+      applyPixelRatio(dragMinPixelRatio * adaptiveScale);
       needsRender = true;
     };
     const onOrbitEnd = () => {
       if (isWalkMode) return;
-      applyPixelRatio(pixelRatio);
+      applyPixelRatio(pixelRatio * adaptiveScale);
       needsRender = true;
     };
     controls.addEventListener("start", onOrbitStart);
@@ -12163,6 +12438,32 @@ export default function Ifc3DViewer({
       const deltaSeconds = Math.min((now - lastFrameAt) / 1000, 0.05);
 
       lastFrameAt = now;
+
+      // ── 自适应分辨率（核显兜底）：持续掉帧逐级降低渲染倍率，恢复流畅后逐步回升。
+      // 只在真实渲染的帧上计量（needsRender 关闭时空转帧不计）。30 帧慢 → 降 0.15，
+      // 150 帧流畅 → 升 0.15，下限 0.55×，避免画质抖动。
+      if (needsRender) {
+        const frameMs = deltaSeconds * 1000;
+        if (frameMs > 24) {
+          adaptiveSlowFrames += 1;
+          adaptiveFastFrames = 0;
+        } else if (frameMs < 15) {
+          adaptiveFastFrames += 1;
+          adaptiveSlowFrames = 0;
+        } else {
+          adaptiveSlowFrames = 0;
+          adaptiveFastFrames = 0;
+        }
+        if (adaptiveSlowFrames >= 30 && adaptiveScale > 0.55) {
+          adaptiveScale = Math.max(0.55, adaptiveScale - 0.15);
+          applyAdaptivePixelRatio();
+          adaptiveSlowFrames = 0;
+        } else if (adaptiveFastFrames >= 150 && adaptiveScale < 1) {
+          adaptiveScale = Math.min(1, adaptiveScale + 0.15);
+          applyAdaptivePixelRatio();
+          adaptiveFastFrames = 0;
+        }
+      }
 
       // 上帝视角：相机绕展馆中心自动环绕
       if (showcaseActiveRef.current) {

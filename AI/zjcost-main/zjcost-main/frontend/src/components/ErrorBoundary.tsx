@@ -3,6 +3,10 @@ import { message } from "antd";
 
 interface Props {
   children: ReactNode;
+  /** 降级提示标题，默认"应用出现异常" */
+  title?: string;
+  /** 内联模式：只降级这块区域（如 3D 视图），不占满整页 */
+  inline?: boolean;
 }
 
 interface State {
@@ -32,6 +36,39 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
+      if (this.props.inline) {
+        return (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              width: "100%",
+              height: "100%",
+              minHeight: 220,
+              background: "var(--bg, #0c1017)",
+              color: "var(--text-secondary, #94a3b8)",
+              fontFamily: "system-ui, sans-serif",
+              padding: "1.5rem",
+              textAlign: "center",
+              gap: 8,
+            }}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 36 }}>
+              view_in_ar_off
+            </span>
+            <strong style={{ color: "var(--text-primary, #e2e8f0)" }}>
+              {this.props.title || "该区域暂无法显示"}
+            </strong>
+            <span style={{ fontSize: 13, maxWidth: 420 }}>
+              {this.state.error?.message === "Error creating WebGL context."
+                ? "当前设备的浏览器无法创建 3D 渲染上下文（WebGL），其余功能不受影响。可尝试更新显卡驱动，或重装/更新 Chrome、Edge 后再试。"
+                : this.state.error?.message || "未知错误"}
+            </span>
+          </div>
+        );
+      }
       return (
         <div
           style={{

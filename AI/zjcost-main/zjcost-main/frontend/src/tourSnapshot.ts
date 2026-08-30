@@ -11,7 +11,7 @@
 import type {
   Project, ProjectListResponse, BoqItem, CalcSummary,
   DashboardSummary, ValidationReport, ValuationOverview,
-  PipelineResponse, ReportData,
+  ReportData,
 } from "./api";
 
 export const SAMPLE_PROJECT_ID = 9999;
@@ -109,22 +109,6 @@ export const SAMPLE_VALIDATION_REPORT: ValidationReport = {
     { code: "MISSING_DIVISION", severity: "warning", boq_item_id: null, message: "措施项目费未录入，当前措施费为系统估算值", suggestion: "建议补充脚手架、模板等措施项目清单" },
     { code: "SNAPSHOT_STALE", severity: "info", boq_item_id: null, message: "最近一次快照距今 18 天，期间有 3 项清单变更", suggestion: "建议生成新快照以保留版本对比基线" },
   ],
-};
-
-// ─── 审计流水线 ─────────────────────────────────────────────────
-
-export const SAMPLE_PIPELINE_RESPONSE: PipelineResponse = {
-  pipeline: "audit",
-  stages: [
-    { index: 0, handler: "数据校验", success: true, duration_s: 0.8, tool_calls: 3, answer: "校验 8 项清单，发现 5 个问题（1 错误 / 3 警告 / 1 提示）" },
-    { index: 1, handler: "计价审查", success: true, duration_s: 1.2, tool_calls: 5, answer: "HRB400 钢筋单价偏高 6.1%，建议复核市场信息价" },
-    { index: 2, handler: "风险扫描", success: true, duration_s: 0.6, tool_calls: 2, answer: "识别 2 项中风险：措施费缺失、快照过期" },
-    { index: 3, handler: "汇总报告", success: true, duration_s: 0.4, tool_calls: 1, answer: "审计完成，生成 5 条审计发现，建议优先处理 1 项错误" },
-  ],
-  final_answer: "审计流水线完成。共校验 8 项清单，发现 5 个问题。优先处理：HRB400 钢筋综合单价偏高 6.1%（错误级）。建议复核人材机消耗量或确认信息价来源。",
-  success: true,
-  total_duration_s: 3.0,
-  error: null,
 };
 
 // ─── 造价管理概览 ───────────────────────────────────────────────
@@ -265,7 +249,7 @@ export const SAMPLE_UPLOAD_TASK_ID = { taskId: "tour-drawing-001" };
  * 返回 null 表示无匹配，请求将走真实 API。
  */
 export function matchTourSnapshot(path: string, method: string): unknown | null {
-  // 仅拦截 GET 和部分 POST（审计流水线）
+  // 仅拦截 GET 和部分 POST
   const isPost = method === "POST";
 
   // 项目列表
@@ -283,7 +267,6 @@ export function matchTourSnapshot(path: string, method: string): unknown | null 
     if (path === `/projects/${pid}/validation-issues`) return SAMPLE_VALIDATION_REPORT;
     if (path === `/projects/${pid}/valuation-management/overview`) return SAMPLE_VALUATION_OVERVIEW;
     if (path === `/projects/${pid}/report` || path.startsWith(`/projects/${pid}/report?`)) return SAMPLE_REPORT_DATA;
-    if (isPost && path === `/projects/${pid}/pipeline/audit`) return SAMPLE_PIPELINE_RESPONSE;
     if (isPost && path === `/projects/${pid}/calculate`) return { ok: true, message: "导览模式：计价已完成" };
     if (isPost && path === `/projects/${pid}/calculate:dirty`) return { ok: true, updated: 0, message: "导览模式：无待重算项" };
   }

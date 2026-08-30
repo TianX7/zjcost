@@ -5,6 +5,7 @@ import type { UploadProps } from "antd";
 import { CloudUploadOutlined, ClearOutlined, DownloadOutlined, FolderAddOutlined, PlayCircleOutlined, SaveOutlined } from "@ant-design/icons";
 import { api, type IfcElement, type IfcTaskStatus, type Project } from "../api";
 import Ifc3DViewer from "../components/Ifc3DViewer";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import ValuationReview from "../components/ValuationReview";
 import { createSampleProject } from "../sampleProject";
 
@@ -280,9 +281,11 @@ export default function IfcParser() {
 
   const poll = (id: string) => {
     if (timerRef.current) clearInterval(timerRef.current);
+    let failures = 0;
     timerRef.current = setInterval(async () => {
       try {
         const data = await api.getIfcParseResult(id);
+        failures = 0;
         applyStatus(data);
         if (data.status === "done" || data.status === "error") {
           if (timerRef.current) clearInterval(timerRef.current);
@@ -293,8 +296,19 @@ export default function IfcParser() {
           }
         }
       } catch (err) {
-        if (timerRef.current) clearInterval(timerRef.current);
-        message.error(err instanceof Error ? err.message : "查询 IFC 解析任务失败");
+        const msg = err instanceof Error ? err.message : "查询 IFC 解析任务失败";
+        if (msg.includes("任务不存在")) {
+          // 后端重启会丢失内存任务，明确告知而不是无限轮询
+          if (timerRef.current) clearInterval(timerRef.current);
+          message.error("解析任务已丢失（后端服务可能重启过），请重新上传 IFC 文件");
+          return;
+        }
+        // 瞬时错误容忍：连续 5 次失败才放弃，避免一次网络抖动中断跟踪
+        failures += 1;
+        if (failures >= 5) {
+          if (timerRef.current) clearInterval(timerRef.current);
+          message.error(msg);
+        }
       }
     }, 1200);
   };
@@ -303,6 +317,10 @@ export default function IfcParser() {
     accept: ".ifc,.ifczip",
     showUploadList: false,
     beforeUpload: async (file) => {
+      if (file.size > 150 * 1024 * 1024) {
+        message.error("IFC 文件超过 150MB 上限，请先拆分或压缩模型");
+        return Upload.LIST_IGNORE;
+      }
       setUploading(true);
       setFileName(file.name);
       setResult(null);
@@ -441,11 +459,13 @@ export default function IfcParser() {
       <div className="ifc-stage">
         {viewerElements.length > 0 ? (
           <div className="ifc-viewer-host">
-            <Ifc3DViewer
-              elements={viewerElements}
-              sceneTitle={fileName ? `IFC 构件预览 - ${fileName}` : "IFC 构件预览"}
-              initialViewMode="model"
-            />
+            <ErrorBoundary title="3D 视图无法显示" inline>
+              <Ifc3DViewer
+                elements={viewerElements}
+                sceneTitle={fileName ? `IFC 构件预览 - ${fileName}` : "IFC 构件预览"}
+                initialViewMode="model"
+              />
+            </ErrorBoundary>
           </div>
         ) : (
           <div className="ifc-empty">
