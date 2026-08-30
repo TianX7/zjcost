@@ -783,11 +783,14 @@ export default function DrawingRecognition() {
     }
   }, [taskId, fileName, result, uploading]);
 
-  // 缩放/平移视图同步：状态变化时直写 DOM transform
+  // 缩放/平移视图同步：状态变化时直写 DOM transform。
+  // 必须用 2D translate（而非 translate3d）：3D 变换会把整个 SVG 钉在 GPU 合成层，
+  // 层纹理只按初始比例光栅化一次，scale 放大时变成位图拉伸（模糊）。
+  // 2D 变换走常规绘制路径，浏览器会按当前缩放比例重新光栅化，放大保持清晰。
   useEffect(() => {
     viewRef.current = view;
     const node = stageTransformRef.current;
-    if (node) node.style.transform = `translate3d(${view.x}px, ${view.y}px, 0) scale(${view.scale})`;
+    if (node) node.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
   }, [view]);
 
   useEffect(() => {
@@ -974,7 +977,9 @@ export default function DrawingRecognition() {
       const base = dragStartRef.current;
       const next = { ...viewRef.current, x: base.viewX + delta.dx, y: base.viewY + delta.dy };
       viewRef.current = next;
-      // 拖拽期间直接写 DOM，绕过 React 渲染；松手后一次性同步回状态
+      // 拖拽期间直接写 DOM，绕过 React 渲染；松手后一次性同步回状态。
+      // 这里故意用 3D translate：拖拽走 GPU 合成层纯平移（纹理已按当前缩放比例光栅化，
+      // 不会糊），避免每帧全量重绘大 SVG 造成卡顿；松手后视图同步 effect 会切回 2D 变换。
       const node = stageTransformRef.current;
       if (node) node.style.transform = `translate3d(${next.x}px, ${next.y}px, 0) scale(${next.scale})`;
     });
@@ -1122,7 +1127,7 @@ export default function DrawingRecognition() {
         </div>
 
         {previewSvg ? (
-          <div ref={stageTransformRef} className="dr-stage-transform" style={{ transform: `translate3d(${view.x}px, ${view.y}px, 0) scale(${view.scale})` }}>
+          <div ref={stageTransformRef} className="dr-stage-transform" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}>
             <div
               ref={svgHostRef}
               className={`dr-svg-preview is-hd is-revealing${result?.status === "processing" ? " is-fast" : ""}${result?.status === "done" ? " is-done" : ""}`}

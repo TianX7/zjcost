@@ -250,7 +250,7 @@ COMPONENT_RULES: tuple[ComponentRule, ...] = (
         code="030412001",
         boq_name="电气设备器具安装",
         unit="个",
-        keywords=("DB", "AL", "AP", "配电箱", "动力箱", "照明箱", "灯具", "开关", "插座", "照明灯", "应急灯"),
+        keywords=("DB", "AL", "AP", "配电箱", "动力箱", "照明箱", "灯具", "开关", "插座", "照明灯", "应急灯", "应急照明", "吸顶灯", "筒灯", "射灯", "LIGHT", "LIGHTING", "LAMP", "SOCKET", "RECEPTACLE", "LUMIN"),
         metric="count",
         default_spec="综合电气设备器具",
         confidence=80.0,
@@ -1260,7 +1260,7 @@ def _build_annotation_profile(texts: Iterable[str]) -> AnnotationProfile:
 DISCIPLINE_KEYWORDS: dict[str, tuple[str, ...]] = {
     "civil": ("柱", "梁", "墙", "板", "基础", "楼梯", "阳台", "雨篷", "COLUMN", "BEAM", "WALL", "SLAB", "FOUNDATION", "STAIR", "KZ", "KL", "Q", "LB"),
     "water": ("给水", "排水", "雨水", "污水", "废水", "PPR", "HDPE", "UPVC", "PVC", "PLUMB", "WATER", "DRAIN", "SEWER", "DN", "洁具", "阀门"),
-    "electrical": ("电缆", "电线", "配电", "桥架", "YJV", "BV", "WDZ", "JDG", "KBG", "SC", "CABLE", "WIRE", "CONDUIT", "ELEC", "照明", "开关", "插座"),
+    "electrical": ("电缆", "电线", "配电", "桥架", "YJV", "BV", "WDZ", "JDG", "KBG", "SC", "CABLE", "WIRE", "CONDUIT", "ELEC", "照明", "开关", "插座", "灯具", "LIGHT", "LIGHTING", "LAMP", "SOCKET", "RECEPTACLE", "LUMIN", "POWER"),
     "hvac": ("风管", "空调", "风机", "通风", "AHU", "FCU", "DUCT", "HVAC", "送风", "回风", "排风", "新风", "防排烟"),
     "fire": ("消防", "喷淋", "消火栓", "FIRE", "SPRINKLER", "HYDRANT", "烟感", "温感", "报警"),
     "decoration": ("涂料", "抹灰", "吊顶", "楼地面", "PAINT", "PLASTER", "CEILING", "COATING", "地砖", "地板", "石材"),

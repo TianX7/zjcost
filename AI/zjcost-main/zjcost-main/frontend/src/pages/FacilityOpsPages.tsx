@@ -238,7 +238,7 @@ const MONTH_PV = [6.2, 7.0, 9.1, 10.4, 11.2, 10.8, 10.6, 10.1, 9.4, 7.8, 6.0, 5.
 const MONTH_PLAN = 9.2;
 
 export function PvPowerPage() {
-  const t = useTick(1200);
+  const t = useTick(3000);
   // 白昼出力包络：晨 → 午 → 暮（约 1 分钟一个日循环）
   const dayPhase = (t % 50) / 50;
   const hourFactor = Math.max(0.1, Math.sin(dayPhase * Math.PI));
@@ -317,7 +317,7 @@ export function PvPowerPage() {
             <svg viewBox="0 0 560 250" width="100%">
               <defs>
                 <linearGradient id="pv-sky" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="rgba(56,130,246,0.16)" />
+                  <stop offset="0%" stopColor="rgba(56,130,246,0.2)" />
                   <stop offset="100%" stopColor="rgba(8,20,40,0)" />
                 </linearGradient>
                 <radialGradient id="pv-sun">
@@ -325,23 +325,42 @@ export function PvPowerPage() {
                   <stop offset="70%" stopColor="#fbbf24" />
                   <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.4" />
                 </radialGradient>
+                <linearGradient id="pv-shimmer" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stopColor="#ffffff" stopOpacity="0" />
+                  <stop offset="50%" stopColor="#ffffff" stopOpacity="0.3" />
+                  <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
+                </linearGradient>
               </defs>
-              <rect x="0" y="0" width="560" height="250" fill="url(#pv-sky)" />
-              {/* 太阳沿日轨迹运行（光线随行） */}
+              {/* 天光随日照强度明暗（晨昏变暗） */}
+              <rect x="0" y="0" width="560" height="250" fill="url(#pv-sky)" opacity={0.3 + 0.7 * hourFactor} />
+              {/* 太阳沿日轨迹运行：光晕 + 光线随行旋转 */}
               <g>
-                <animateMotion dur="25s" repeatCount="indefinite" path="M 60 120 Q 280 18 500 120" />
+                <animateMotion dur="40s" repeatCount="indefinite" path="M 60 108 Q 280 14 500 108" />
+                <circle r="26" fill="#fbbf24" opacity="0.16">
+                  <animate attributeName="r" values="22;30;22" dur="3.2s" repeatCount="indefinite" />
+                </circle>
                 <circle r="15" fill="url(#pv-sun)" />
-                {Array.from({ length: 8 }).map((_, i) => {
-                  const a = (i / 8) * Math.PI * 2;
-                  return (
-                    <line
-                      key={i} x1={Math.cos(a) * 20} y1={Math.sin(a) * 20} x2={Math.cos(a) * 28} y2={Math.sin(a) * 28}
-                      stroke="#fde68a" strokeWidth="2" strokeLinecap="round" opacity="0.6"
-                    >
-                      <animate attributeName="opacity" values="0.15;0.8;0.15" dur="2s" begin={`${i * 0.22}s`} repeatCount="indefinite" />
-                    </line>
-                  );
-                })}
+                <g>
+                  <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="14s" repeatCount="indefinite" />
+                  {Array.from({ length: 8 }).map((_, i) => {
+                    const a = (i / 8) * Math.PI * 2;
+                    return (
+                      <line
+                        key={i} x1={Math.cos(a) * 20} y1={Math.sin(a) * 20} x2={Math.cos(a) * 28} y2={Math.sin(a) * 28}
+                        stroke="#fde68a" strokeWidth="2" strokeLinecap="round" opacity="0.6"
+                      />
+                    );
+                  })}
+                </g>
+              </g>
+              {/* 漂移云朵 */}
+              <g fill="#e2e8f0" opacity="0.08">
+                <ellipse cx="150" cy="50" rx="34" ry="9">
+                  <animateTransform attributeName="transform" type="translate" values="0 0; 42 4; 0 0" dur="22s" repeatCount="indefinite" />
+                </ellipse>
+                <ellipse cx="418" cy="32" rx="26" ry="7">
+                  <animateTransform attributeName="transform" type="translate" values="0 0; -34 3; 0 0" dur="26s" repeatCount="indefinite" />
+                </ellipse>
               </g>
               {/* 厂房与屋面光伏阵列 */}
               <rect x="330" y="138" width="140" height="82" rx="3" fill="rgba(15,40,72,0.85)" stroke="rgba(80,160,255,0.35)" />
@@ -353,22 +372,33 @@ export function PvPowerPage() {
                 )),
               )}
               <text x="400" y="234" textAnchor="middle" fill="#64748b" fontSize="10">厂区负荷</text>
-              {/* 地面阵列 */}
-              <g transform="translate(50 150) skewX(-12)">
-                {Array.from({ length: 2 }).map((_, r) =>
-                  Array.from({ length: 6 }).map((_, c) => (
-                    <rect key={`${r}-${c}`} x={c * 26} y={r * 20} width="22" height="16" rx="2"
+              {/* 地面阵列 3×7：支架 + 高光扫掠 */}
+              <g transform="translate(40 126) skewX(-12)">
+                {Array.from({ length: 3 }).map((_, r) =>
+                  Array.from({ length: 7 }).map((_, c) => (
+                    <rect key={`${r}-${c}`} x={c * 26} y={r * 18} width="22" height="14" rx="2"
                       fill="#0e2a4a" stroke="#38bdf8" strokeWidth="1" opacity="0.85">
-                      <animate attributeName="fill" values="#0e2a4a;#1d4e7e;#0e2a4a" dur="2.6s" begin={`${(r + c) * 0.18}s`} repeatCount="indefinite" />
+                      <animate attributeName="fill" values="#0e2a4a;#1d4e7e;#0e2a4a" dur="3s" begin={`${(r + c) * 0.14}s`} repeatCount="indefinite" />
                     </rect>
                   )),
                 )}
+                <rect x="-26" y="0" width="24" height="52" fill="url(#pv-shimmer)">
+                  <animate attributeName="x" values="-26;216" dur="3.6s" repeatCount="indefinite" />
+                </rect>
+                {[30, 104, 166].map((lx) => (
+                  <line key={lx} x1={lx} y1={54} x2={lx} y2={66} stroke="#475569" strokeWidth="2" />
+                ))}
+                <line x1="0" y1="66" x2="180" y2="66" stroke="#475569" strokeWidth="1.5" opacity="0.6" />
               </g>
-              <text x="128" y="196" textAnchor="middle" fill="#7dd3fc" fontSize="10">光伏阵列 68 kWp</text>
-              {/* 逆变器 */}
-              <rect x="216" y="152" width="52" height="40" rx="6" fill="rgba(19,45,82,0.9)" stroke="#38bdf8" strokeWidth="1.2" />
-              <text x="242" y="176" textAnchor="middle" fill="#7dd3fc" fontSize="10">逆变器</text>
-              <circle cx="242" cy="186" r="2.5" fill="#34d399">
+              <text x="132" y="208" textAnchor="middle" fill="#7dd3fc" fontSize="10">光伏阵列 68 kWp</text>
+              {/* 逆变器（含实时出力负载条） */}
+              <rect x="230" y="148" width="54" height="46" rx="6" fill="rgba(19,45,82,0.9)" stroke="#38bdf8" strokeWidth="1.2" />
+              <text x="257" y="164" textAnchor="middle" fill="#7dd3fc" fontSize="10">逆变器</text>
+              <rect x="236" y="172" width="42" height="5" rx="2.5" fill="rgba(148,163,184,0.18)" />
+              <rect x="236" y="172" width={Math.max(3, 42 * clamp(power / 60, 0, 1))} height="5" rx="2.5" fill="#34d399">
+                <animate attributeName="opacity" values="0.7;1;0.7" dur="2s" repeatCount="indefinite" />
+              </rect>
+              <circle cx="257" cy="186" r="2.5" fill="#34d399">
                 <animate attributeName="opacity" values="0.3;1;0.3" dur="1.5s" repeatCount="indefinite" />
               </circle>
               {/* 电网塔杆 */}
@@ -376,28 +406,27 @@ export function PvPowerPage() {
                 <line x1="492" y1="236" x2="506" y2="168" /><line x1="520" y1="236" x2="506" y2="168" />
                 <line x1="492" y1="196" x2="520" y2="196" /><line x1="497" y1="182" x2="515" y2="182" />
               </g>
-              <text x="506" y="250" textAnchor="middle" fill="#64748b" fontSize="10">公共电网</text>
-              {/* 能量流动：阵列 → 逆变器 → 负荷 / 电网 */}
-              {[0, 1, 2].map((i) => (
+              <text x="506" y="248" textAnchor="middle" fill="#64748b" fontSize="10">公共电网</text>
+              {/* 能量流动：阵列 → 逆变器 → 负荷 / 电网（余电经架空线上网） */}
+              {[0, 1].map((i) => (
                 <circle key={`a${i}`} r="3" fill="#fde68a">
-                  <animateMotion dur={`${1.5 + i * 0.3}s`} begin={`${i * 0.4}s`} repeatCount="indefinite" path="M 120 158 C 160 140, 190 150, 216 164" />
-                  <animate attributeName="opacity" values="0;1;0" dur={`${1.5 + i * 0.3}s`} begin={`${i * 0.4}s`} repeatCount="indefinite" />
+                  <animateMotion dur={`${1.1 + i * 0.35}s`} begin={`${i * 0.45}s`} repeatCount="indefinite" path="M 222 140 C 226 150, 228 154, 232 162" />
+                  <animate attributeName="opacity" values="0;1;0" dur={`${1.1 + i * 0.35}s`} begin={`${i * 0.45}s`} repeatCount="indefinite" />
                 </circle>
               ))}
               {[0, 1].map((i) => (
                 <circle key={`b${i}`} r="3" fill="#7dd3fc">
-                  <animateMotion dur={`${1.2 + i * 0.4}s`} begin={`${i * 0.5}s`} repeatCount="indefinite" path="M 268 172 C 292 180, 306 172, 328 168" />
-                  <animate attributeName="opacity" values="0;1;0" dur={`${1.2 + i * 0.4}s`} begin={`${i * 0.5}s`} repeatCount="indefinite" />
+                  <animateMotion dur={`${1.1 + i * 0.4}s`} begin={`${i * 0.5}s`} repeatCount="indefinite" path="M 284 168 C 300 172, 314 172, 328 170" />
+                  <animate attributeName="opacity" values="0;1;0" dur={`${1.1 + i * 0.4}s`} begin={`${i * 0.5}s`} repeatCount="indefinite" />
                 </circle>
               ))}
+              <path d="M 284 150 C 330 116, 420 110, 494 166" stroke="#64748b" strokeWidth="1.5" fill="none" opacity="0.7" />
               {[0, 1].map((i) => (
                 <circle key={`c${i}`} r="3" fill="#c4b5fd">
-                  <animateMotion dur={`${1.6 + i * 0.5}s`} begin={`${0.3 + i * 0.6}s`} repeatCount="indefinite" path="M 268 186 C 330 212, 420 212, 490 196" />
+                  <animateMotion dur={`${1.6 + i * 0.5}s`} begin={`${0.3 + i * 0.6}s`} repeatCount="indefinite" path="M 284 150 C 330 116, 420 110, 494 166" />
                   <animate attributeName="opacity" values="0;1;0" dur={`${1.6 + i * 0.5}s`} begin={`${0.3 + i * 0.6}s`} repeatCount="indefinite" />
                 </circle>
               ))}
-              <text x="196" y="140" textAnchor="middle" fill="#64748b" fontSize="9">直流</text>
-              <text x="380" y="222" textAnchor="middle" fill="#64748b" fontSize="9">余电上网</text>
             </svg>
             <div className="ops-scene-caption">
               今日发电 {fmt(todayKwh, 0)} kWh · 自发自用 {fmt(selfUse, 0)}% · 余电上网 {fmt(gridExport, 1)} kW · 逆变器 3/3 在线
@@ -458,34 +487,8 @@ export function PvPowerPage() {
 
 /* ═══════════════ 净水与中水回用 ═══════════════ */
 
-/** 工艺单元盒子 */
-function ProcessUnit({ x, y, name, icon, color }: { x: number; y: number; name: string; icon: string; color: string }) {
-  return (
-    <g transform={`translate(${x} ${y})`}>
-      <rect width="110" height="76" rx="10" fill="rgba(19,45,82,0.85)" stroke={color} strokeWidth="1.2" />
-      <text x="55" y="32" textAnchor="middle" fontSize="18" fill={color} opacity="0.9">{icon}</text>
-      <text x="55" y="56" textAnchor="middle" fontSize="12" fill="#e2e8f0">{name}</text>
-      <circle cx="55" cy="88" r="4" fill="#34d399">
-        <animate attributeName="opacity" values="0.3;1;0.3" dur="1.6s" begin={`${(x / 175) * 0.3}s`} repeatCount="indefinite" />
-      </circle>
-    </g>
-  );
-}
-
-/** 工艺管线（流动虚线） */
-function FlowPipe({ d, color }: { d: string; color: string }) {
-  return (
-    <g>
-      <path d={d} stroke="#1e3a5f" strokeWidth="9" fill="none" strokeLinecap="round" />
-      <path d={d} stroke={color} strokeWidth="2.5" fill="none" strokeDasharray="9 13">
-        <animate attributeName="stroke-dashoffset" values="0;-44" dur="1.15s" repeatCount="indefinite" />
-      </path>
-    </g>
-  );
-}
-
 export function WaterReusePage() {
-  const t = useTick(1500);
+  const t = useTick(3200);
   const rawIntake = wave(t, 42, 5, 10);        // 原水取水 m³/h
   const supply = wave(t, 20.8, 1.8, 9);        // 净水供水量 m³/h
   const reuseDaily = wave(t, 58, 4, 12);       // 中水回用量 m³/d
@@ -521,13 +524,6 @@ export function WaterReusePage() {
     { label: "景观补水", value: 8 },
   ];
 
-  // 工艺管线坐标
-  const lane1 = { y: 40, pipe: 78 };
-  const lane2 = { y: 196, pipe: 234 };
-  const unitX = [20, 175, 330, 485, 640, 795];
-  const pipes1 = unitX.slice(0, -1).map((x) => `M ${x + 110} ${lane1.pipe} L ${x + 155} ${lane1.pipe}`);
-  const pipes2 = unitX.slice(0, -1).map((x) => `M ${x + 110} ${lane2.pipe} L ${x + 155} ${lane2.pipe}`);
-
   return (
     <div className="page-container">
       <PageHeader icon="water_drop" title="净水与中水回用" subtitle="净水处理与中水回用双系统运行监测 · GB 50336-2018 / GB/T 18920-2020" />
@@ -546,50 +542,6 @@ export function WaterReusePage() {
           <GaugeRing value={reuseDaily} max={90} label="中水回用量" unit="m³/d" color="#34d399" />
           <GaugeRing value={reuseRate} max={50} label="中水回用率" unit="%" color="#7dd3fc" />
           <GaugeRing value={turbidity} max={2} label="出水浊度" unit="NTU" color="#fbbf24" />
-        </div>
-      </div>
-
-      {/* 双系统工艺流程动效 */}
-      <div className="ops-panel">
-        <div className="ops-panel-head">
-          <h3><span className="material-symbols-outlined">route</span>水处理工艺流程</h3>
-          <div className="ops-flow-legend">
-            <span style={{ color: "#7dd3fc", borderColor: "rgba(56,189,248,0.35)" }}><i style={{ background: "#38bdf8" }} />净水处理线 {fmt(supply, 1)} m³/h</span>
-            <span style={{ color: "#6ee7b7", borderColor: "rgba(52,211,153,0.35)" }}><i style={{ background: "#34d399" }} />中水回用线 {fmt(reuseDaily, 0)} m³/d</span>
-          </div>
-        </div>
-        <div className="ops-water-scene ops-scene">
-          <svg viewBox="0 0 920 300" width="100%">
-            <text x="20" y="26" fontSize="12" fontWeight="700" fill="#7dd3fc">净水处理线 · 直饮水 / 生活用水</text>
-            {pipes1.map((d, i) => <FlowPipe key={`p1-${i}`} d={d} color="#38bdf8" />)}
-            {[
-              { name: "市政原水", icon: "⬇" },
-              { name: "石英砂过滤", icon: "▦" },
-              { name: "活性炭吸附", icon: "❋" },
-              { name: "保安精滤", icon: "◎" },
-              { name: "紫外消毒", icon: "☀" },
-              { name: "净水箱", icon: "▣" },
-            ].map((u, i) => (
-              <ProcessUnit key={u.name} x={unitX[i]} y={lane1.y} name={u.name} icon={u.icon} color="#38bdf8" />
-            ))}
-            {/* 反冲洗排水跨线 */}
-            <path d="M 540 128 C 540 168, 360 176, 232 192" stroke="#64748b" strokeWidth="1.5" fill="none" strokeDasharray="4 6">
-              <animate attributeName="stroke-dashoffset" values="0;-20" dur="1.6s" repeatCount="indefinite" />
-            </path>
-            <text x="392" y="172" textAnchor="middle" fontSize="10" fill="#64748b">反冲洗排水</text>
-            <text x="20" y="186" fontSize="12" fontWeight="700" fill="#6ee7b7">中水回用线 · 杂排水再生利用</text>
-            {pipes2.map((d, i) => <FlowPipe key={`p2-${i}`} d={d} color="#34d399" />)}
-            {[
-              { name: "杂排水收集", icon: "▤" },
-              { name: "格栅调节池", icon: "⚙" },
-              { name: "MBR 膜反应", icon: "◈" },
-              { name: "加氯消毒", icon: "✚" },
-              { name: "中水池", icon: "▣" },
-              { name: "回用输配", icon: "⇄" },
-            ].map((u, i) => (
-              <ProcessUnit key={u.name} x={unitX[i]} y={lane2.y} name={u.name} icon={u.icon} color="#34d399" />
-            ))}
-          </svg>
         </div>
       </div>
 
@@ -689,7 +641,7 @@ export function WaterReusePage() {
 /* ═══════════════ 设施运维管理 ═══════════════ */
 
 export function FacilityOpsPage() {
-  const t = useTick(1600);
+  const t = useTick(3400);
 
   const [co2Series, setCo2Series] = useState<number[]>(() => Array.from({ length: 30 }, (_, i) => 620 + Math.sin(i / 4) * 60));
   const [tempSeries, setTempSeries] = useState<number[]>(() => Array.from({ length: 30 }, (_, i) => 24 + Math.sin(i / 6) * 1.1));

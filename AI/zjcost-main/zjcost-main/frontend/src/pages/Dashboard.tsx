@@ -273,17 +273,18 @@ export default function Dashboard() {
   }, []);
 
   const now = new Date(opsClock);
-  const opsNow = opsClock / 1000;
+  // 曲线按 3 秒节拍推进（与专题页一致的舒缓节奏），时钟仍每秒跳动
+  const opsTick = Math.floor(opsClock / 3000);
   const pvSeries = Array.from({ length: 24 }, (_, i) => {
-    const x = opsNow - (23 - i) * 45;
+    const x = opsTick * 3 - (23 - i) * 45;
     return 40 + Math.sin(x / 9) * 9 + Math.sin(x / 2.7) * 3 + Math.sin(x / 31) * 4;
   });
   const waterSeries = Array.from({ length: 24 }, (_, i) => {
-    const x = opsNow - (23 - i) * 45;
+    const x = opsTick * 3 - (23 - i) * 45;
     return 32.2 + Math.sin(x / 11) * 2.4 + Math.sin(x / 3.3) * 0.9;
   });
   const healthSeries = Array.from({ length: 24 }, (_, i) => {
-    const x = opsNow - (23 - i) * 45;
+    const x = opsTick * 3 - (23 - i) * 45;
     return 93 + Math.sin(x / 13) * 1.6 + Math.sin(x / 4.1) * 0.5;
   });
   const pvPower = pvSeries[pvSeries.length - 1];

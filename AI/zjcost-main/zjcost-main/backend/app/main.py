@@ -9,6 +9,7 @@ import time
 import sqlite3
 from pathlib import Path
 from contextlib import asynccontextmanager
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -228,6 +229,59 @@ def _ensure_quota_item_old_material_columns() -> None:
         logger.exception("quota_items 旧材料扩展列兼容迁移失败")
 
 
+def _sqlite_not_null_default_suffix(col: Any) -> str:
+    """为 NOT NULL 列生成 ADD COLUMN 必需的 DEFAULT 子句。"""
+    default = col.default.arg if col.default is not None and getattr(col.default, "is_scalar", False) else None
+    if isinstance(default, bool):
+        return f" NOT NULL DEFAULT {int(default)}"
+    if default is not None:
+        if isinstance(default, str):
+            escaped = default.replace("'", "''")
+            return f" NOT NULL DEFAULT '{escaped}'"
+        return f" NOT NULL DEFAULT {default}"
+    type_name = type(col.type).__name__.lower()
+    if "float" in type_name or "numeric" in type_name or "decimal" in type_name:
+        return " NOT NULL DEFAULT 0"
+    if "int" in type_name or "bool" in type_name:
+        return " NOT NULL DEFAULT 0"
+    if "date" in type_name or "time" in type_name:
+        return " NOT NULL DEFAULT CURRENT_TIMESTAMP"
+    return " NOT NULL DEFAULT ''"
+
+
+def _ensure_sqlite_schema() -> None:
+    """兼容旧库的通用结构同步：模型新增的列自动 ALTER TABLE 补齐。
+
+    逐表比对 Base.metadata 与实际 SQLite 结构，缺失的列按模型类型补上，
+    防止版本漂移导致 `no such column` 查询失败。缺失的整表由 create_all 负责。
+    """
+    if engine.dialect.name != "sqlite":
+        return
+    from sqlalchemy import inspect, text
+
+    try:
+        inspector = inspect(engine)
+        existing_tables = set(inspector.get_table_names())
+        added = 0
+        with engine.begin() as conn:
+            for table in Base.metadata.sorted_tables:
+                if table.name not in existing_tables:
+                    continue
+                existing_cols = {col["name"] for col in inspector.get_columns(table.name)}
+                for col in table.columns:
+                    if col.name in existing_cols:
+                        continue
+                    ddl = str(col.type)
+                    if not col.nullable:
+                        ddl += _sqlite_not_null_default_suffix(col)
+                    conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {ddl}'))
+                    added += 1
+        if added:
+            logger.info("通用结构同步完成：补齐 %d 个缺失列", added)
+    except Exception:
+        logger.exception("通用结构同步失败")
+
+
 def _copy_table_rows_from_seed(db_path: Path, seed_path: Path, table: str) -> int:
     """Copy all rows for one reference table from the portable seed database."""
     with sqlite3.connect(db_path) as conn, sqlite3.connect(seed_path) as seed_conn:
@@ -403,6 +457,7 @@ async def _lifespan(app: FastAPI):
     _ensure_project_valuation_config_datetime_values()
     _ensure_boq_item_timestamps()
     _ensure_quota_item_old_material_columns()
+    _ensure_sqlite_schema()
     _ensure_reference_seed_data()
     _load_zh_settings_from_db()
     # 上一进程遗留的"进行中"后台任务已无工作线程，启动时统一标记为失败

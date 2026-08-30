@@ -78,7 +78,10 @@
   pointer-events: none;
 }
 
-/* Zoom/Pan transform wrapper */
+/* Zoom/Pan transform wrapper.
+   不要给该元素加 will-change: transform 或 3D 变换常驻提示：那会让 SVG 按
+   初始比例只光栅化一次，scale 放大时变成位图拉伸（模糊）。缩放路径用 2D
+   translate+scale 走常规重绘；拖拽平滑度由拖拽期间的 translate3d 临时保证。 */
 .dr-stage-transform {
   position: absolute;
   inset: 0;
@@ -87,7 +90,6 @@
   justify-content: center;
   transform-origin: center center;
   transition: none;
-  will-change: transform;
   padding: 8px;
   touch-action: none;
 }

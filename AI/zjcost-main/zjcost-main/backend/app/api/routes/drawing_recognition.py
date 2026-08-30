@@ -174,6 +174,8 @@ class TaskStatusResponse(BaseModel):
     boq_suggestions: list[BoqSuggestionOut] = Field(default_factory=list)
     diagnostics: list[str] = Field(default_factory=list)
     layer_summary: list[LayerSummaryOut] = Field(default_factory=list)
+    disciplines: list[dict] = Field(default_factory=list)
+    quality_score: Optional[dict] = None
     preview_svg: str = ""
     preview_svg_hd: str = ""
     valuation: DrawingValuationOut | None = None
@@ -573,6 +575,8 @@ def _run_recognition(
                 "boq_suggestions": suggestions,
                 "diagnostics": raw.get("diagnostics", []),
                 "layer_summary": raw.get("layer_summary", []),
+                "disciplines": raw.get("disciplines", []),
+                "quality_score": raw.get("quality_score"),
                 "preview_svg": raw.get("preview_svg", ""),
                 "preview_svg_hd": raw.get("preview_svg_hd", ""),
                 "valuation": None,
