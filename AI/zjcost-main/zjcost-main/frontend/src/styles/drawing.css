@@ -1503,6 +1503,169 @@
   to { background-position: 0 48px, 48px 0; }
 }
 
+/* ===== 自动构建模型进度浮层 ===== */
+.dr-build-wrap {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse 70% 60% at 50% 40%, rgba(13, 60, 130, 0.35), rgba(3, 11, 28, 0.92));
+}
+
+.dr-build-card {
+  position: relative;
+  width: min(440px, calc(100vw - 48px));
+  padding: 26px 28px 24px;
+  border-radius: 14px;
+  background: rgba(10, 26, 54, 0.78);
+  border: 1px solid rgba(77, 212, 255, 0.24);
+  box-shadow: 0 0 0 1px rgba(3, 11, 28, 0.5), 0 24px 60px rgba(2, 8, 22, 0.55), 0 0 42px rgba(56, 189, 248, 0.12);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  text-align: center;
+}
+
+.dr-build-card-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 14px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #7dd3fc;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  box-shadow: 0 0 22px rgba(56, 189, 248, 0.22) inset;
+}
+
+.dr-build-card-icon .material-symbols-outlined {
+  font-size: 28px;
+  animation: dr-build-spin 2.8s linear infinite;
+}
+
+.dr-build-card h2 {
+  margin: 0 0 6px;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: #e2f3ff;
+}
+
+.dr-build-card > p {
+  margin: 0 0 18px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(165, 210, 255, 0.82);
+}
+
+.dr-build-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.dr-build-progress strong {
+  min-width: 44px;
+  font-size: 13px;
+  color: #7dd3fc;
+}
+
+.dr-build-track {
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(15, 42, 82, 0.9);
+  border: 1px solid rgba(77, 212, 255, 0.18);
+  overflow: hidden;
+}
+
+.dr-build-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #0ea5e9, #38bdf8, #7dd3fc);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.7);
+  transition: width 0.22s ease;
+}
+
+.dr-build-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dr-build-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: rgba(180, 215, 255, 0.62);
+  background: rgba(15, 42, 82, 0.4);
+  border: 1px solid rgba(77, 212, 255, 0.12);
+  text-align: left;
+}
+
+.dr-build-step.done {
+  color: #a5f3fc;
+  border-color: rgba(56, 189, 248, 0.3);
+}
+
+.dr-build-step.current {
+  color: #e0f6ff;
+  border-color: rgba(56, 189, 248, 0.55);
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.14);
+}
+
+.dr-build-step-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(30, 64, 175, 0.55);
+  color: #7dd3fc;
+}
+
+.dr-build-step.done .dr-build-step-dot,
+.dr-build-step.current .dr-build-step-dot {
+  background: rgba(56, 189, 248, 0.22);
+}
+
+.dr-build-step-dot .material-symbols-outlined { font-size: 13px; }
+.dr-build-step.current .dr-build-step-dot .material-symbols-outlined { animation: dr-build-spin 1.2s linear infinite; }
+
+@keyframes dr-build-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ===== 3D 模型全屏展示容器 ===== */
+.dr-model-host {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  min-height: 0;
+  background: #0a1c38;
+}
+
+.dr-model-host .ifc-walk-host {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border-radius: 0;
+}
+
+.dr-model-host .ifc-walk-host .ifc-walk-scene,
+.dr-model-host .ifc-walk-host .ifc-walk-tools {
+  top: 12px;
+}
+
 /* ===== 构件分组展开表格 ===== */
 .dr-group-row {
   cursor: pointer;

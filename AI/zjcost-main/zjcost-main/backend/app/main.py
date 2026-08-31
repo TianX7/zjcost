@@ -282,6 +282,71 @@ def _ensure_sqlite_schema() -> None:
         logger.exception("通用结构同步失败")
 
 
+def _bundled_seed_db_path() -> Path | None:
+    """定位打包/开发布局下随包携带的定额种子库。"""
+    exe_dir = Path(sys.executable).resolve().parent
+    meipass = getattr(sys, "_MEIPASS", None)
+    candidates: list[Path] = []
+    if meipass:
+        candidates.append(Path(meipass) / "data" / "valuation.seed.db")
+    candidates.extend([
+        exe_dir / "_internal" / "data" / "valuation.seed.db",
+        exe_dir / "data" / "valuation.seed.db",
+        Path(__file__).resolve().parents[1] / "portable_seed" / "valuation.seed.db",
+    ])
+    for path in candidates:
+        if path.exists():
+            return path
+    return None
+
+
+def _ensure_old_material_quota_seed() -> None:
+    """旧材利用定额：旧版便携种子库不含 discipline='旧材料' 的行，启动时从内置种子补齐。
+
+    只在本地库完全没有旧材料行时才补，避免覆盖用户在页面上编辑过的数据。
+    """
+    if engine.dialect.name != "sqlite":
+        return
+    try:
+        db_path = engine.url.database
+        if not db_path:
+            return
+        db_file = Path(db_path)
+        if not db_file.is_absolute():
+            db_file = Path.cwd() / db_file
+        if not db_file.exists():
+            return
+        seed_path = _bundled_seed_db_path()
+        if seed_path is None:
+            return
+        with sqlite3.connect(str(db_file)) as conn, sqlite3.connect(str(seed_path)) as seed_conn:
+            existing = conn.execute(
+                "SELECT count(*) FROM quota_items WHERE discipline = '旧材料'"
+            ).fetchone()[0]
+            if existing:
+                return
+            main_cols = {row[1] for row in conn.execute("PRAGMA table_info(quota_items)")}
+            seed_cols = [row[1] for row in seed_conn.execute("PRAGMA table_info(quota_items)")]
+            shared = [col for col in seed_cols if col in main_cols]
+            if not shared:
+                return
+            collist = ", ".join(f'"{col}"' for col in shared)
+            rows = seed_conn.execute(
+                f"SELECT {collist} FROM quota_items WHERE discipline = '旧材料'"
+            ).fetchall()
+            if not rows:
+                return
+            placeholders = ", ".join("?" for _ in shared)
+            cur = conn.executemany(
+                f"INSERT OR IGNORE INTO quota_items ({collist}) VALUES ({placeholders})",
+                rows,
+            )
+            conn.commit()
+            logger.info("旧材利用定额：从内置种子补齐 %d 条", cur.rowcount)
+    except Exception:
+        logger.exception("旧材利用定额补齐失败")
+
+
 def _copy_table_rows_from_seed(db_path: Path, seed_path: Path, table: str) -> int:
     """Copy all rows for one reference table from the portable seed database."""
     with sqlite3.connect(db_path) as conn, sqlite3.connect(seed_path) as seed_conn:
@@ -458,6 +523,7 @@ async def _lifespan(app: FastAPI):
     _ensure_boq_item_timestamps()
     _ensure_quota_item_old_material_columns()
     _ensure_sqlite_schema()
+    _ensure_old_material_quota_seed()
     _ensure_reference_seed_data()
     _load_zh_settings_from_db()
     # 上一进程遗留的"进行中"后台任务已无工作线程，启动时统一标记为失败

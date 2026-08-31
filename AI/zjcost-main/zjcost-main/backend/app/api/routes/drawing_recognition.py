@@ -742,10 +742,15 @@ async def get_cad_converter_status():
 
 
 @router.get("/{task_id}", response_model=TaskStatusResponse, summary="查询识别结果")
-async def get_recognition_result(task_id: str):
+async def get_recognition_result(task_id: str, include_svg: bool = Query(True)):
     task = _get_task(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
+
+    if not include_svg or task.get("status") == "processing":
+        # 预览 SVG 可达数 MB：解析阶段前端用不到，轮询反复传输会把页面拖卡，
+        # 仅在终态且显式请求时返回
+        task = {**task, "preview_svg": "", "preview_svg_hd": ""}
 
     return TaskStatusResponse(taskId=task_id, **task)
 

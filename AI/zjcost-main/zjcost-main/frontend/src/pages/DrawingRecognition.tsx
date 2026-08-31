@@ -2,15 +2,22 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent, type WheelEvent 
 import { useNavigate } from "react-router-dom";
 import { Button, Empty, Tag, Upload, message } from "antd";
 import type { UploadProps } from "antd";
-import { CloudUploadOutlined, ClearOutlined, DownloadOutlined } from "@ant-design/icons";
+import { ArrowLeftOutlined, BuildOutlined, ClearOutlined, CloudUploadOutlined, DownloadOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import ValuationReview from "../components/ValuationReview";
 import FlowGuide from "../components/FlowGuide";
+import Ifc3DViewer, { type Element3D } from "../components/Ifc3DViewer";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 
 type DrawingResult = Awaited<ReturnType<typeof api.getDrawingResult>>;
 
 /** 解析会话缓存：切换页面后返回可恢复上次结果（结果过大时降级为仅存任务号，走后端取回） */
 const DR_SESSION_KEY = "zjcost.dr.lastSession";
+
+/** 演示用预置模型数据：田维东2.ifc 的构件网格预览（与 museum-complex.walk.json 同源） */
+const MODEL_JSON_URL = `${import.meta.env.BASE_URL}models/museum-complex.walk.json`;
+const MODEL_DISPLAY_NAME = "田维东2.ifc";
+const MODEL_SCENE_TITLE = "田维东2 · 自动构建模型";
 
 const MIN_DRAWING_SCALE = 0.6;
 const MAX_DRAWING_SCALE = 10;
@@ -709,6 +716,50 @@ function Recognition3DOverlay() {
   );
 }
 
+/** 自动构建模型进度动效：复用识别阶段的 3D 体块扫描动画，叠加居中进度卡片 */
+function BuildingModelOverlay({ progress, modelName }: { progress: number; modelName: string }) {
+  const steps = [
+    { label: "解析图纸构件", min: 0 },
+    { label: "匹配 BIM 构件库", min: 28 },
+    { label: "生成三维几何体", min: 55 },
+    { label: "优化网格与贴图", min: 80 },
+  ];
+  const currentIndex = steps.reduce((acc, s, i) => (progress >= s.min ? i : acc), 0);
+  return (
+    <div className="dr-build-wrap">
+      <Recognition3DOverlay />
+      <div className="dr-build-card">
+        <div className="dr-build-card-icon">
+          <span className="material-symbols-outlined">view_in_ar</span>
+        </div>
+        <h2>正在自动构建模型</h2>
+        <p>正在基于识别结果生成 {modelName} 的三维模型</p>
+        <div className="dr-build-progress">
+          <div className="dr-build-track">
+            <div className="dr-build-fill" style={{ width: `${Math.round(progress)}%` }} />
+          </div>
+          <strong>{Math.round(progress)}%</strong>
+        </div>
+        <div className="dr-build-steps">
+          {steps.map((s, i) => (
+            <span
+              key={s.label}
+              className={`dr-build-step${progress >= s.min ? " done" : ""}${i === currentIndex ? " current" : ""}`}
+            >
+              <span className="dr-build-step-dot">
+                <span className="material-symbols-outlined">
+                  {progress >= s.min ? "check" : i === currentIndex ? "sync" : "radio_button_unchecked"}
+                </span>
+              </span>
+              {s.label}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DrawingRecognition() {
   const navigate = useNavigate();
   const [taskId, setTaskId] = useState("");
@@ -723,8 +774,13 @@ export default function DrawingRecognition() {
   const [panelOpen, setPanelOpen] = useState(true);
   const [bottomTab, setBottomTab] = useState<BottomTab>(null);
   const [activeDiscipline, setActiveDiscipline] = useState<string>("architecture");
+  const [modelView, setModelView] = useState<"drawing" | "building" | "model">("drawing");
+  const [modelProgress, setModelProgress] = useState(0);
+  const [modelElements, setModelElements] = useState<Element3D[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const revealTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const buildTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const buildTokenRef = useRef(0);
   const dragStartRef = useRef({ pointerX: 0, pointerY: 0, viewX: 0, viewY: 0 });
   const dragRafRef = useRef<number | null>(null);
   const dragLatestRef = useRef<{ dx: number; dy: number } | null>(null);
@@ -737,6 +793,7 @@ export default function DrawingRecognition() {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
       if (revealTimerRef.current) clearInterval(revealTimerRef.current);
+      if (buildTimerRef.current) clearInterval(buildTimerRef.current);
       if (dragRafRef.current != null) cancelAnimationFrame(dragRafRef.current);
     };
   }, []);
@@ -746,7 +803,9 @@ export default function DrawingRecognition() {
   useEffect(() => {
     if (restoredRef.current) return;
     restoredRef.current = true;
-    let cancelled = false;
+    // 注意：StrictMode 开发模式下 effect 会“挂载-清理-再挂载”，
+    // 若用 cancelled 标记取消异步取回，第二次挂载又被 restoredRef 跳过，结果永远丢失，
+    // 因此这里不做取消，任其完成。
     try {
       const raw = sessionStorage.getItem(DR_SESSION_KEY);
       if (raw) {
@@ -763,7 +822,7 @@ export default function DrawingRecognition() {
           message.info("已恢复上次的图纸解析结果");
         } else if (saved.taskId) {
           void api.getDrawingResult(saved.taskId).then((data) => {
-            if (!cancelled && data) {
+            if (data) {
               setResult(data);
               message.info("已恢复上次的图纸解析结果");
             }
@@ -771,7 +830,6 @@ export default function DrawingRecognition() {
         }
       }
     } catch { /* 忽略缓存读取失败 */ }
-    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -851,13 +909,25 @@ export default function DrawingRecognition() {
     setDragging(false);
   }, [taskId]);
 
+  const [svgMountReady, setSvgMountReady] = useState(false);
+  useEffect(() => {
+    if (result?.status === "done" && (result.preview_svg_hd || result.preview_svg)) {
+      const timer = window.setTimeout(() => setSvgMountReady(true), 350);
+      return () => window.clearTimeout(timer);
+    }
+    setSvgMountReady(false);
+    return undefined;
+  }, [result?.status, result?.preview_svg, result?.preview_svg_hd]);
+
   const previewSvg = useMemo(() => {
     // 只在 result 变化时返回原始 SVG，reveal 由 ref 直接操作 DOM。
     // 解析进行中不挂载预览 SVG：大图纸的预览有上万图元，弱机器上边解析边渲染
     // 会把主线程拖死（页面无响应、进度条卡住），等解析完成再一次性挂载。
     if (result?.status === "processing") return "";
+    // 大图 SVG 可达数 MB：先让完成界面渲染出来，再延迟挂载预览，避免主线程一次性卡死
+    if (!svgMountReady) return "";
     return result?.preview_svg_hd || result?.preview_svg || "";
-  }, [result?.preview_svg, result?.preview_svg_hd, result?.status]);
+  }, [result?.preview_svg, result?.preview_svg_hd, result?.status, svgMountReady]);
 
   // 直接操作 DOM 推进高亮 reveal，不再重新生成 SVG 字符串
   const svgHostRef = useRef<HTMLDivElement | null>(null);
@@ -879,9 +949,14 @@ export default function DrawingRecognition() {
     let failures = 0;
     timerRef.current = setInterval(async () => {
       try {
-        const data = await api.getDrawingResult(id);
+        // 轮询阶段不拉取预览 SVG（可达数 MB）；终态时再单独拉一次带 SVG 的完整结果
+        const data = await api.getDrawingResult(id, false);
         failures = 0;
-        setResult(data);
+        if (data.status !== "processing") {
+          setResult(await api.getDrawingResult(id));
+        } else {
+          setResult(data);
+        }
         const recognitionDone = data.status === "done" || data.status === "error";
         const valuationDone = data.valuation_status === "done" || data.valuation_status === "error" || data.valuation_status === "skipped";
         if (recognitionDone && !componentsShown && data.components?.length > 0) {
@@ -978,10 +1053,64 @@ export default function DrawingRecognition() {
   const resetView = () => setView({ scale: 1, x: 0, y: 0 });
   const zoomBy = (delta: number) => setView((c) => ({ ...c, scale: clampDrawingScale(c.scale + delta) }));
 
+  const loadModelElements = async (token: number) => {
+    try {
+      const res = await fetch(MODEL_JSON_URL);
+      if (token !== buildTokenRef.current) return;
+      if (!res.ok) throw new Error(`模型数据加载失败 (${res.status})`);
+      const raw = (await res.json()) as { elements?: Element3D[] };
+      if (token !== buildTokenRef.current) return;
+      const elements = Array.isArray(raw.elements) ? raw.elements : [];
+      if (!elements.length) throw new Error("模型数据为空");
+      setModelElements(elements);
+      setModelProgress(100);
+      setModelView("model");
+    } catch (err) {
+      if (token !== buildTokenRef.current) return;
+      message.error(err instanceof Error ? err.message : "模型构建失败");
+      setModelView("drawing");
+    }
+  };
+
+  const startModelBuild = () => {
+    if (modelView !== "drawing" || result?.status !== "done" || !previewSvg) return;
+    buildTokenRef.current += 1;
+    const token = buildTokenRef.current;
+    if (buildTimerRef.current) clearInterval(buildTimerRef.current);
+    let buildSteps = 0;
+    setBottomTab(null);
+    setPanelOpen(false);
+    setModelView("building");
+    setModelProgress(0);
+    buildTimerRef.current = setInterval(() => {
+      buildSteps += 1;
+      const next = Math.min(96, Math.round((buildSteps / 22) * 96));
+      setModelProgress(next);
+      if (next >= 96) {
+        if (buildTimerRef.current) {
+          clearInterval(buildTimerRef.current);
+          buildTimerRef.current = null;
+        }
+        void loadModelElements(token);
+      }
+    }, 210);
+  };
+
+  const exitModel = () => {
+    buildTokenRef.current += 1;
+    if (buildTimerRef.current) {
+      clearInterval(buildTimerRef.current);
+      buildTimerRef.current = null;
+    }
+    setModelView("drawing");
+    setModelProgress(0);
+    setPanelOpen(true);
+  };
+
   const stageRef = useRef<HTMLDivElement | null>(null);
 
   const handleCanvasWheel = (event: WheelEvent<HTMLDivElement>) => {
-    if (!previewSvg) return;
+    if (modelView !== "drawing" || !previewSvg) return;
     event.preventDefault();
     const stage = stageRef.current;
     if (!stage) return;
@@ -1004,7 +1133,7 @@ export default function DrawingRecognition() {
   };
 
   const handleCanvasMouseDown = (event: MouseEvent<HTMLDivElement>) => {
-    if (!previewSvg || event.button !== 0) return;
+    if (modelView !== "drawing" || !previewSvg || event.button !== 0) return;
     setDragging(true);
     dragStartRef.current = { pointerX: event.clientX, pointerY: event.clientY, viewX: view.x, viewY: view.y };
     dragLatestRef.current = { dx: 0, dy: 0 };
@@ -1048,12 +1177,20 @@ export default function DrawingRecognition() {
 
   const resetSession = () => {
     if (timerRef.current) clearInterval(timerRef.current);
+    buildTokenRef.current += 1;
+    if (buildTimerRef.current) {
+      clearInterval(buildTimerRef.current);
+      buildTimerRef.current = null;
+    }
     sessionStorage.removeItem(DR_SESSION_KEY);
+    setSvgMountReady(false);
     setTaskId("");
     setFileName("");
     setResult(null);
     setRevealIndex(0);
     setBottomTab(null);
+    setModelView("drawing");
+    setModelProgress(0);
     setView({ scale: 1, x: 0, y: 0 });
     message.info("已清空解析结果，可重新上传图纸");
   };
@@ -1119,13 +1256,29 @@ export default function DrawingRecognition() {
           <span className="material-symbols-outlined dr-topbar-icon">architecture</span>
           <div>
             <h1 className="dr-topbar-title">图纸解析套价</h1>
-            {fileName ? <span className="dr-topbar-file">{fileName}</span> : <span className="dr-topbar-sub">DWG · DXF · PDF · PNG</span>}
+            {modelView !== "drawing" ? (
+              <span className="dr-topbar-file">{fileName || MODEL_DISPLAY_NAME}</span>
+            ) : fileName ? (
+              <span className="dr-topbar-file">{fileName}</span>
+            ) : (
+              <span className="dr-topbar-sub">DWG · DXF · PDF · PNG</span>
+            )}
           </div>
         </div>
         <div className="dr-topbar-actions">
           <Upload {...uploadProps}>
             <Button type="primary" icon={<CloudUploadOutlined />} loading={uploading}>上传</Button>
           </Upload>
+          {result?.status === "done" && previewSvg && (
+            <Button
+              type={modelView === "drawing" ? "primary" : "default"}
+              icon={modelView === "drawing" ? <BuildOutlined /> : <ArrowLeftOutlined />}
+              loading={modelView === "building"}
+              onClick={modelView === "drawing" ? startModelBuild : exitModel}
+            >
+              {modelView === "drawing" ? "自动构建模型" : modelView === "building" ? "构建中..." : "返回图纸"}
+            </Button>
+          )}
           {(taskId || result) && (
             <Button icon={<ClearOutlined />} onClick={resetSession}>重新开始</Button>
           )}
@@ -1146,6 +1299,8 @@ export default function DrawingRecognition() {
         onMouseUp={stopDragging}
         onMouseLeave={stopDragging}
       >
+        {modelView === "drawing" ? (
+          <>
         <div className="dr-stage-grid" />
 
         {(uploading || result?.status === "processing") && <Recognition3DOverlay />}
@@ -1495,6 +1650,16 @@ export default function DrawingRecognition() {
                 </div>
               )}
             </div>
+          </div>
+        )}
+          </>
+        ) : modelView === "building" ? (
+          <BuildingModelOverlay progress={modelProgress} modelName={fileName || MODEL_DISPLAY_NAME} />
+        ) : (
+          <div className="dr-model-host">
+            <ErrorBoundary title="3D 视图无法显示" inline>
+              <Ifc3DViewer elements={modelElements} sceneTitle={fileName ? `${fileName} · 自动构建模型` : MODEL_SCENE_TITLE} initialViewMode="model" />
+            </ErrorBoundary>
           </div>
         )}
       </div>

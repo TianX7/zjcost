@@ -1231,7 +1231,7 @@ export const api = {
     }>("/drawing-recognition/convert/status");
   },
 
-  getDrawingResult: (taskId: string) => {
+  getDrawingResult: (taskId: string, includeSvg = true) => {
     return request<{
       taskId: string;
       status: "processing" | "done" | "error";
@@ -1296,7 +1296,7 @@ export const api = {
       preview_svg: string;
       preview_svg_hd: string;
       error: string | null;
-    }>(`/drawing-recognition/${taskId}`);
+    }>(`/drawing-recognition/${taskId}${includeSvg ? "" : "?include_svg=false"}`);
   },
 
   // ─── IFC Parse ─────────────────────────────────────────────────
