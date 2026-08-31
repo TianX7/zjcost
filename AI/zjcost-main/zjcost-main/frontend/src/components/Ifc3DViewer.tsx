@@ -8824,6 +8824,16 @@ export default function Ifc3DViewer({
 
     const grid = new THREE.GridHelper(120, 40, 0x7f8580, 0x9ba19a);
 
+    // 网格随模型包围盒自适应：水平方向铺满建筑投影并留 1.5 倍边距
+    const fitGridToModel = () => {
+      if (grid.parent == null || bounds.isEmpty()) return;
+      const foot = Math.max(size.x, size.y, 12);
+      const span = Math.ceil((foot * 1.5) / 6) * 6;
+      grid.scale.set(span / 120, span / 120, span / 120);
+      if (useZUp) grid.position.set(center.x, center.y, 0);
+      else grid.position.set(center.x, 0, center.z);
+    };
+
     if (useZUp) {
 
       grid.rotation.x = Math.PI / 2;
@@ -9517,6 +9527,8 @@ export default function Ifc3DViewer({
     const center = bounds.isEmpty() ? new THREE.Vector3(0, 0, 0) : bounds.getCenter(new THREE.Vector3());
 
     const size = bounds.isEmpty() ? new THREE.Vector3(10, 10, 10) : bounds.getSize(new THREE.Vector3());
+
+    fitGridToModel();
 
     const radius = Math.max(size.x, size.y, size.z, 10);
 

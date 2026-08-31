@@ -16,7 +16,7 @@ from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from starlette.concurrency import run_in_threadpool
 import openpyxl
-from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from pydantic import BaseModel, Field
 
 from app.db.session import session_scope
@@ -185,6 +185,7 @@ class TaskStatusResponse(BaseModel):
     valuation_progress_percent: int = 0
     valuation_error: Optional[str] = None
     progress: str = ""
+    progress_percent: Optional[int] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
     error: Optional[str] = None
@@ -391,7 +392,330 @@ def _start_drawing_valuation(task_id: str) -> None:
     threading.Thread(target=_run_drawing_valuation, args=(task_id,), daemon=True).start()
 
 
+def _shixun_cn_upper(amount: float) -> str:
+    """数字金额转中文大写（演示精度到分）。"""
+    units = ["", "拾", "佰", "仟", "万", "拾万", "佰万", "仟万", "亿"]
+    digits = "零壹贰叁肆伍陆柒捌玖"
+    if amount is None or amount <= 0:
+        return "零元整"
+    try:
+        amt = int(round(float(amount) * 100))
+    except (TypeError, ValueError):
+        return "零元整"
+    yuan = amt // 100
+    jiao = (amt % 100) // 10
+    fen = amt % 10
+    if yuan == 0:
+        out = ""
+    else:
+        parts = []
+        i = 0
+        while yuan:
+            n = yuan % 10
+            if n:
+                parts.insert(0, digits[n] + units[i])
+            elif parts and (not parts[0] or parts[0][0] != "零"):
+                parts.insert(0, "零")
+            yuan //= 10
+            i += 1
+        out = "".join(parts) + "元"
+    if jiao == 0 and fen == 0:
+        return out + "整" if out else "零元整"
+    if jiao:
+        out += digits[jiao] + "角"
+    if fen:
+        out += digits[fen] + "分"
+    return out
+
+
+def _shixun_border(ws, r1: int, r2: int, c1: int, c2: int) -> None:
+    thin = Side(style="thin", color="999999")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    for r in range(r1, r2 + 1):
+        for c in range(c1, c2 + 1):
+            cell = ws.cell(row=r, column=c)
+            cell.border = border
+            cell.alignment = Alignment(
+                horizontal="center" if c <= 1 else "left",
+                vertical="center",
+                wrap_text=(c in (3, 4)),
+            )
+
+
+def _shixun_title(ws, row: int, end_col: int, text: str, size: int = 16, bold: bool = True) -> None:
+    ws.cell(row=row, column=1, value=text).font = Font(bold=bold, size=size)
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=end_col)
+    ws.cell(row=row, column=1).alignment = Alignment(horizontal="center", vertical="center")
+
+
+def _shixun_header(ws, row: int, headers: list[str], fill: str = "D9EAF7") -> None:
+    for i, h in enumerate(headers, 1):
+        cell = ws.cell(row=row, column=i, value=h)
+        cell.font = Font(bold=True, size=10)
+        cell.fill = PatternFill(start_color=fill, end_color=fill, fill_type="solid")
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+
+def _build_shixun_workbook_bytes(task_id: str, task: dict) -> bytes:
+    wb = openpyxl.Workbook()
+    valuation = task.get("valuation") or {}
+    items = valuation.get("items", []) or []
+    suggestions = task.get("boq_suggestions", []) or []
+    grand = float(valuation.get("grand_total") or 0)
+    subtotal = float(sum((it.get("total") or 0) for it in items)) if items else 0
+    tax = round(grand * 0.09, 2) if grand else 0
+    summary = (task.get("summary") or "识别完成").strip()
+    project_name = f"图纸智能识别工程量报表（任务 {task_id[:8]}）"
+    generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+
+    # ================= 封-2 招标控制价封面 =================
+    ws = wb.active
+    ws.title = "封-2 招标控制价封面"
+    ws.merge_cells("C1:E1"); ws["C1"] = "工程"
+    ws["A2"] = "招标控制价"; ws["A2"].font = Font(bold=True, size=24); ws.merge_cells("A2:G2")
+    ws["A2"].alignment = Alignment(horizontal="center", vertical="center")
+    ws["A3"] = f"工程名称：{project_name}"; ws.merge_cells("A3:G3")
+    ws["A4"] = "招  标  人：____________________"; ws.merge_cells("A4:F4")
+    ws["A5"] = f"招标控制价（小写）：{grand:,.2f} 元"; ws.merge_cells("A5:G5")
+    ws["A6"] = f"（大写）：{_shixun_cn_upper(grand)}"; ws.merge_cells("A6:G6")
+    ws["A7"] = f"编制时间：{generated}"; ws.merge_cells("A7:G7")
+    ws["E8"] = "封-2"; ws["E8"].font = Font(size=9)
+    _shixun_border(ws, 2, 6, 1, 7)
+    for col, w in zip("ABCDEFG", [14, 14, 16, 16, 16, 16, 16]):
+        ws.column_dimensions[col].width = w
+
+    # ================= 扉-2 招标控制价扉页 =================
+    ws = wb.create_sheet("扉-2 招标控制价扉页")
+    ws["A1"] = "工程"; ws.merge_cells("C1:G1")
+    ws["C2"] = "招标控制价"; ws.merge_cells("C2:G2"); ws["C2"].font = Font(bold=True, size=20)
+    ws["C2"].alignment = Alignment(horizontal="center", vertical="center")
+    ws["A3"] = "招标控制价（小写）："; ws.merge_cells("A3:C3")
+    ws["D3"] = f"{grand:,.2f} 元"; ws.merge_cells("D3:G3")
+    ws["A4"] = "（大写）："; ws.merge_cells("A4:C4")
+    ws["D4"] = _shixun_cn_upper(grand); ws.merge_cells("D4:G4")
+    ws["A5"] = f"项目名称：{project_name}"; ws.merge_cells("A5:G5")
+    ws["A6"] = f"编制时间：{generated}"; ws.merge_cells("A6:G6")
+    ws["H6"] = "扉—2"; ws["H6"].font = Font(size=9)
+    _shixun_border(ws, 3, 6, 1, 7)
+    for col, w in zip("ABCDEFGH", [14, 14, 16, 16, 16, 16, 16, 8]):
+        ws.column_dimensions[col].width = w
+
+    # ================= 表-01 总说明 =================
+    ws = wb.create_sheet("表-01 总说明")
+    _shixun_title(ws, 1, 4, "总  说  明", size=16)
+    ws["A2"] = f"工程名称：{project_name}"; ws.merge_cells("A2:D2")
+    ws["E5"] = "表-01"; ws["E5"].font = Font(size=9)
+    notes = [summary] + (task.get("diagnostics") or [])
+    for i, note in enumerate(notes):
+        ws.cell(row=4 + i, column=1, value=("　" * 2 + note if i > 0 else f"　　{summary}")).alignment = Alignment(
+            vertical="top", wrap_text=True
+        )
+        ws.merge_cells(start_row=4 + i, start_column=1, end_row=4 + i, end_column=5)
+    _shixun_border(ws, 4, 4 + max(len(notes), 1) - 1, 1, 5)
+    ws.cell(row=4, column=1).alignment = Alignment(vertical="top", wrap_text=True)
+    for idx, w in enumerate([14, 30, 30, 30, 10], 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(idx)].width = w
+
+    # ================= 表-04 单位工程招标控制价汇总表 =================
+    ws = wb.create_sheet("表-04 单位工程招标控制价汇总表")
+    _shixun_title(ws, 2, 5, "单位工程招标控制价汇总表", size=14)
+    ws["A3"] = f"工程名称：{project_name}"; ws.merge_cells("A3:C3")
+    ws["E3"] = "第  1  页  共  1  页"
+    _shixun_header(ws, 4, ["序号", "汇总内容", "金额（元）", "其中：暂估价（元）", "备注"])
+    rows4 = [
+        ("一", "分部分项工程费", subtotal, 0, ""),
+        ("二", "措施项目费", 0, 0, "演示暂缺"),
+        ("三", "其他项目费", 0, 0, "演示暂缺"),
+        ("四", "规费", 0, 0, ""),
+        ("五", "税金", tax, 0, "按 9% 演示"),
+        ("", "招标控制价合计", grand, 0, ""),
+    ]
+    for i, (seq, name, val, temp, note) in enumerate(rows4, 5):
+        ws.cell(row=i, column=1, value=seq)
+        ws.cell(row=i, column=2, value=name)
+        ws.cell(row=i, column=3, value=round(val, 2) if val else 0)
+        ws.cell(row=i, column=4, value=temp)
+        ws.cell(row=i, column=5, value=note)
+    _shixun_border(ws, 4, 4 + len(rows4), 1, 5)
+    for col, w in zip("ABCDEF", [8, 26, 16, 18, 30, 14]):
+        ws.column_dimensions[col].width = w
+
+    # ================= 表-08 分部分项工程和单价措施项目清单与计价表 =================
+    ws = wb.create_sheet("表-08 分部分项工程清单与计价表")
+    _shixun_title(ws, 2, 7, "分部分项工程和单价措施项目清单与计价表", size=14)
+    ws["A3"] = f"工程名称：{project_name}"
+    _shixun_header(ws, 4, ["序号", "项目编码", "项目名称", "项目特征描述", "计量单位", "工程量", "综合单价", "合价", "备注"])
+    ws.merge_cells("G4:I4")
+    empty_note = "识别结果不含有效清单项，金额按 0 填报" if not items and not suggestions else ""
+    data_rows = []
+    if items:
+        for it in items:
+            qty = float(it.get("quantity") or 1) or 1
+            data_rows.append(
+                (it.get("code") or "", it.get("name") or "", "", it.get("unit") or "",
+                 float(it.get("quantity") or 0), round(float(it.get("total") or 0) / qty, 2), float(it.get("total") or 0))
+            )
+    elif suggestions:
+        for s in suggestions:
+            data_rows.append(
+                (s.get("suggested_code") or "", s.get("suggested_name") or "",
+                 s.get("characteristics") or f"材料：{s.get('material') or ''}", s.get("suggested_unit") or "",
+                 float(s.get("suggested_quantity") or 0), 0, 0)
+            )
+    if not data_rows:
+        data_rows.append(("", "——", "（空）", "项", 0, 0, 0))
+    for i, (code, name, feat, unit, qty, price, total) in enumerate(data_rows, 5):
+        ws.cell(row=i, column=1, value=i - 4)
+        ws.cell(row=i, column=2, value=code)
+        ws.cell(row=i, column=3, value=name)
+        ws.cell(row=i, column=4, value=feat or empty_note)
+        ws.cell(row=i, column=5, value=unit)
+        ws.cell(row=i, column=6, value=qty)
+        ws.cell(row=i, column=7, value=price)
+        ws.cell(row=i, column=8, value=total)
+        ws.cell(row=i, column=9, value="")
+    _shixun_border(ws, 4, 4 + len(data_rows), 1, 9)
+    for idx, w in enumerate([8, 16, 26, 40, 10, 12, 12, 14, 12], 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(idx)].width = w
+
+    # ================= 表-09 综合单价分析表（每清单项一块） =================
+    ws = wb.create_sheet("表-09 综合单价分析表")
+    _shixun_title(ws, 1, 10, "综合单价分析表", size=14)
+    ws["A2"] = f"工程名称：{project_name}"; ws.merge_cells("A2:F2")
+    _shixun_header(ws, 5, ["定额编号", "定额项目名称", "定额单位", "数量", "单价", "合价"])
+    row = 6
+    if not items:
+        ws.cell(row=row, column=2, value="识别结果不含可计价清单项，按 0 填报")
+        _shixun_border(ws, 6, 6, 1, 10)
+    else:
+        for it in items:
+            ws.cell(row=row, column=1, value="项目编码"); ws.cell(row=row, column=3, value=it.get("code") or "")
+            ws.cell(row=row, column=5, value="项目名称"); ws.cell(row=row, column=7, value=it.get("name") or "")
+            ws.cell(row=row, column=9, value="计量单位"); ws.cell(row=row, column=11, value=it.get("unit") or "")
+            _shixun_border(ws, row, row, 1, 11)
+            row += 1
+            ws.cell(row=row, column=1, value=(it.get("quota_code") or "") or "—")
+            ws.cell(row=row, column=2, value=(it.get("quota_name") or "") or "（未匹配定额）")
+            ws.cell(row=row, column=3, value=it.get("unit") or "")
+            ws.cell(row=row, column=4, value=1)
+            qty = float(it.get("quantity") or 1) or 1
+            ws.cell(row=row, column=5, value=round(float(it.get("total") or 0) / qty, 2))
+            ws.cell(row=row, column=6, value=round(float(it.get("total") or 0), 2))
+            _shixun_border(ws, row, row, 1, 11)
+            row += 2
+    for idx, w in enumerate([12, 26, 12, 10, 12, 14, 12, 22, 12, 14, 12], 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(idx)].width = w
+
+    # ================= 表-11 总价措施项目清单与计价表 =================
+    ws = wb.create_sheet("表-11 总价措施项目清单与计价表")
+    _shixun_title(ws, 2, 10, "总价措施项目清单与计价表", size=14)
+    ws["A3"] = f"工程名称：{project_name}"; ws.merge_cells("A3:C3")
+    ws["E3"] = "第  1  页  共  1  页"
+    _shixun_header(ws, 4, ["序号", "项目编码", "项目名称", "计算基础", "费率(%)", "金额(元)", "调整后金额(元)", "备注"])
+    measures = [
+        (9, "011707001001", "安全文明施工", "分部分项人工费+分部分项机械费", 0, 0, "演示默认"),
+        (10, "011707001002", "其中：临时设施费", "分部分项人工费+分部分项机械费", 0, 0, ""),
+        (13, "011707002001", "夜间施工增加费", "按实际发生计取", 0, 0, "不发生不计取"),
+    ]
+    for i, (seq, code, name, base, rate, val, note) in enumerate(measures, 5):
+        ws.cell(row=i, column=1, value=seq); ws.cell(row=i, column=2, value=code)
+        ws.cell(row=i, column=3, value=name); ws.cell(row=i, column=4, value=base)
+        ws.cell(row=i, column=5, value=rate); ws.cell(row=i, column=6, value=val)
+        ws.cell(row=i, column=7, value=val); ws.cell(row=i, column=8, value=note)
+    _shixun_border(ws, 4, 4 + len(measures), 1, 8)
+    for idx, w in enumerate([8, 16, 30, 36, 10, 12, 14, 20], 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(idx)].width = w
+
+    # ================= 表-12 其他项目清单与计价汇总表 =================
+    ws = wb.create_sheet("表-12 其他项目清单与计价汇总表")
+    _shixun_title(ws, 2, 6, "其他项目清单与计价汇总表", size=14)
+    ws["A3"] = f"工程名称：{project_name}"; ws.merge_cells("A3:C3")
+    ws["E3"] = "第  1  页  共  1  页"
+    _shixun_header(ws, 4, ["序号", "项目名称", "金额(元)", "结算金额(元)", "备注"])
+    others = [
+        ("1", "暂列金额", 0, 0, "明细详见表-12-1"),
+        ("2", "计税暂估价", 0, 0, ""),
+        ("2.1", "材料暂估价", 0, 0, "明细详见表-12-2"),
+        ("2.2", "专业工程暂估价", 0, 0, "明细详见表-12-3"),
+        ("3", "计日工", 0, 0, "明细详见表-12-4"),
+        ("4", "总承包服务费", 0, 0, "明细详见表-12-5"),
+        ("", "合计", 0, 0, ""),
+    ]
+    for i, (seq, name, val, settle, note) in enumerate(others, 5):
+        ws.cell(row=i, column=1, value=seq); ws.cell(row=i, column=2, value=name)
+        ws.cell(row=i, column=3, value=val); ws.cell(row=i, column=4, value=settle)
+        ws.cell(row=i, column=5, value=note)
+    _shixun_border(ws, 4, 4 + len(others), 1, 5)
+    for idx, w in enumerate([8, 26, 14, 14, 26], 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(idx)].width = w
+
+    # ============ 表-12-1 ~ 表-12-5 明细与表-13（统一生成） ============
+    def _blank_detail(name: str, headers: list[str], widths: list[int], rows: list[list]) -> None:
+        w_ = wb.create_sheet(name)
+        _shixun_title(w_, 2, len(headers), name, size=14)
+        w_["A3"] = f"工程名称：{project_name}"; w_.merge_cells(f"A3:{openpyxl.utils.get_column_letter(len(headers))}3")
+        _shixun_header(w_, 4, headers)
+        for i, r in enumerate(rows, 5):
+            for j, v in enumerate(r, 1):
+                w_.cell(row=i, column=j, value=v)
+        _shixun_border(w_, 4, 4 + len(rows), 1, len(headers))
+        for idx, w in enumerate(widths, 1):
+            w_.column_dimensions[openpyxl.utils.get_column_letter(idx)].width = w
+
+    _blank_detail(
+        "表-12-1 暂列金额明细表",
+        ["序号", "项目名称", "计量单位", "暂定金额(元)", "备注"],
+        [8, 30, 12, 16, 22],
+        [[1, "工程造价上涨", "项", 0, ""], [2, "建筑工程", "项", 0, ""], [3, "装饰工程", "项", 0, ""]],
+    )
+    _blank_detail(
+        "表-12-3 专业工程暂估价及结算价表",
+        ["序号", "工程名称", "工程内容", "暂估金额（元）", "结算金额(元)", "差额±(元)", "备注"],
+        [8, 22, 30, 16, 16, 16, 24],
+        [[1, "地基处理", "本项目未涉及，按 0 填报", 0, 0, 0, ""]],
+    )
+    _blank_detail(
+        "表-12-4 计日工表",
+        ["编号", "项目名称", "单位", "暂定数量", "实际数量", "综合单价(元)", "合价(暂定)", "备注"],
+        [8, 24, 10, 12, 12, 14, 14, 22],
+        [
+            ["1", "人工", "", "", "", "", "", ""],
+            ["1.1", "土建综合工日", "工日", 0, None, 0, 0, "本项目未发生"],
+            ["2", "材料", "", "", "", "", "", ""],
+            ["2.1", "材料小计", "", 0, None, 0, 0, "本项目未发生"],
+        ],
+    )
+    _blank_detail(
+        "表-12-5 总承包服务费计价表",
+        ["序号", "项目名称", "项目价值(元)", "服务内容", "金额(元)", "备注"],
+        [8, 26, 16, 40, 14, 22],
+        [
+            [1, "专业发包工程管理费", 0, "施工质量、进度管理；竣工资料管理", 0, "本项目未发生"],
+            [2, "甲供材料设备保管费", 0, "", 0, "本项目未发生"],
+        ],
+    )
+    _blank_detail(
+        "表-13 规费税金项目清单与计价表",
+        ["序号", "项目名称", "计算基础", "金额（元）", "备注"],
+        [8, 30, 44, 14, 24],
+        [
+            ["1", "规费", "社会保险费+住房公积金", 0, ""],
+            ["1.1", "社会保险费", "养老+失业+医疗+工伤", 0, ""],
+            ["1.11", "养老保险费", "分部分项人工费+分部分项机械费", 0, ""],
+            ["1.12", "失业保险费", "同上", 0, ""],
+            ["1.13", "医疗保险费", "同上", 0, ""],
+            ["2", "税金", f"招标控制价合计 × 9%（演示 {tax:,.2f} 元）", tax, "增值税"],
+        ],
+    )
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
 def _export_task_excel(task_id: str, task: dict) -> bytes:
+    return _build_shixun_workbook_bytes(task_id, task)
+    # ===== 以下为旧导出逻辑，保留作对照，不再执行 =====
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "工程量识别"
@@ -561,8 +885,19 @@ def _run_recognition(
         if is_cad:
             _store_result(task_id, {"progress": "正在解析 CAD 图层和图元..."})
 
+            _phase_pct = {"转换": 30, "读取 CAD": 32, "图层和模型空间": 40, "标记构件": 78, "生成图纸预览": 78, "高清预览": 88, "整理识别结果": 95}
+            _prog_state: dict[str, int] = {"last": 40}
             def _cad_progress(payload: dict) -> None:
-                _store_result(task_id, payload)
+                text = payload.get("progress", "")
+                pct = 40
+                for key, val in _phase_pct.items():
+                    if key in text:
+                        pct = val
+                        break
+                else:
+                    pct = min(_prog_state["last"] + 4, 93)
+                _prog_state["last"] = pct
+                _store_result(task_id, {**payload, "progress_percent": pct})
 
             raw = analyze_dxf_bytes(file_bytes, filename, progress_callback=_cad_progress)
             components = [_dump_model(ComponentOut(**item)) for item in raw.get("components", [])]

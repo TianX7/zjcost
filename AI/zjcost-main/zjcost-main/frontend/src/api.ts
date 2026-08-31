@@ -468,6 +468,7 @@ export interface IfcTaskStatus {
   valuation_progress_percent: number;
   valuation_error: string | null;
   progress: string;
+  progress_percent?: number;
   created_at: string | null;
   updated_at: string | null;
   timeout_seconds: number;
@@ -1291,6 +1292,7 @@ export const api = {
       valuation_progress_percent: number;
       valuation_error: string | null;
       progress: string;
+      progress_percent?: number;
       created_at: string | null;
       updated_at: string | null;
       preview_svg: string;

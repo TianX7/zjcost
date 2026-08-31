@@ -31,7 +31,7 @@ function percentFromResult(result: DrawingResult | null) {
   if (result.status === "error") return 0;
   if (result.valuation_progress_percent) return result.valuation_progress_percent;
   if (result.status === "done") return 100;
-  if (result.status === "processing") return 35;
+  if (result.status === "processing") return result.progress_percent ?? 35;
   return 0;
 }
 
@@ -1084,7 +1084,7 @@ export default function DrawingRecognition() {
     setModelProgress(0);
     buildTimerRef.current = setInterval(() => {
       buildSteps += 1;
-      const next = Math.min(96, Math.round((buildSteps / 22) * 96));
+      const next = Math.min(96, Math.round((buildSteps / 32) * 96));
       setModelProgress(next);
       if (next >= 96) {
         if (buildTimerRef.current) {
@@ -1093,7 +1093,7 @@ export default function DrawingRecognition() {
         }
         void loadModelElements(token);
       }
-    }, 210);
+    }, 340);
   };
 
   const exitModel = () => {

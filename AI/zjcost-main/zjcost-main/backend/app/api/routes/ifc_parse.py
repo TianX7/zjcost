@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 import openpyxl
-from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -731,9 +731,44 @@ def _export_excel(task_id: str, task: dict) -> bytes:
     center = Alignment(horizontal="center", vertical="center")
     wrap = Alignment(vertical="top", wrap_text=True)
 
+    # --- Sheet 0: 封面（实训手册版式） ---
+    cover = wb.active
+    cover.title = "封-2 工程量清单封面"
+    cover.merge_cells("C1:E1"); cover["C1"] = "工程"
+    cover["A2"] = "工程量清单"; cover["A2"].font = Font(bold=True, size=24); cover.merge_cells("A2:G2")
+    cover["A2"].alignment = Alignment(horizontal="center", vertical="center")
+    cover["A3"] = f"工程名称：IFC 模型解析工程量清单（任务 {task_id[:8]}）"; cover.merge_cells("A3:G3")
+    cover["A4"] = "发  包  人：____________________"; cover.merge_cells("A4:F4")
+    n_elems = len(task.get("elements", []))
+    cover["A5"] = f"清单内容：解析构件 {n_elems} 类，生成构件清单、清单建议与统计表"; cover.merge_cells("A5:G5")
+    cover["A6"] = f"编制时间：{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}"; cover.merge_cells("A6:G6")
+    cover["E7"] = "封-2"; cover["E7"].font = Font(size=9)
+    _thin = Side(style="thin", color="999999")
+    _bd = Border(left=_thin, right=_thin, top=_thin, bottom=_thin)
+    for r in range(2, 7):
+        for c in range(1, 8):
+            cover.cell(row=r, column=c).border = _bd
+    for col, w in zip("ABCDEFG", [14, 14, 16, 16, 16, 16, 16]):
+        cover.column_dimensions[col].width = w
+
+    # --- Sheet 00: 总说明 ---
+    s_total = wb.create_sheet("表-01 总说明")
+    s_total.merge_cells("A1:D1")
+    s_total["A1"] = "总  说  明"; s_total["A1"].font = Font(bold=True, size=16)
+    s_total["A1"].alignment = Alignment(horizontal="center", vertical="center")
+    s_total["A2"] = f"工程名称：IFC 模型解析工程量清单（任务 {task_id[:8]}）"
+    s_total["E4"] = "表-01"; s_total["E4"].font = Font(size=9)
+    notes = [task.get("summary", "")] + (task.get("diagnostics") or [])
+    for i, note in enumerate(notes):
+        c = s_total.cell(row=4 + i, column=1, value=("　　" + note) if note else "")
+        c.alignment = Alignment(vertical="top", wrap_text=True)
+        s_total.merge_cells(start_row=4 + i, start_column=1, end_row=4 + i, end_column=5)
+    s_total.column_dimensions["A"].width = 14
+    for col in "BCDE":
+        s_total.column_dimensions[col].width = 30
+
     # --- Sheet 1: 构件清单 ---
-    ws = wb.active
-    ws.title = "IFC构件清单"
+    ws = wb.create_sheet(title="IFC构件清单")
     ws.merge_cells("A1:L1")
     ws["A1"] = "IFC模型构件解析报表"
     ws["A1"].font = title_font
