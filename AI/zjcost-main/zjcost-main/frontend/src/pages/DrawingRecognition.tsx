@@ -7,6 +7,7 @@ import { api } from "../api";
 import ValuationReview from "../components/ValuationReview";
 import FlowGuide from "../components/FlowGuide";
 import Ifc3DViewer, { type Element3D } from "../components/Ifc3DViewer";
+import CadCanvasViewer, { type CadCanvasViewerHandle, type CadGeometry, type CadRaster } from "../components/CadCanvasViewer";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 
 type DrawingResult = Awaited<ReturnType<typeof api.getDrawingResult>>;
@@ -720,9 +721,9 @@ function Recognition3DOverlay() {
 function BuildingModelOverlay({ progress, modelName }: { progress: number; modelName: string }) {
   const steps = [
     { label: "解析图纸构件", min: 0 },
-    { label: "匹配 BIM 构件库", min: 28 },
-    { label: "生成三维几何体", min: 55 },
-    { label: "优化网格与贴图", min: 80 },
+    { label: "匹配 BIM 构件库", min: 30 },
+    { label: "定位基础与轴网", min: 62 },
+    { label: "准备施工模拟", min: 85 },
   ];
   const currentIndex = steps.reduce((acc, s, i) => (progress >= s.min ? i : acc), 0);
   return (
@@ -785,6 +786,7 @@ export default function DrawingRecognition() {
   const dragRafRef = useRef<number | null>(null);
   const dragLatestRef = useRef<{ dx: number; dy: number } | null>(null);
   const stageTransformRef = useRef<HTMLDivElement | null>(null);
+  const cadViewerRef = useRef<CadCanvasViewerHandle | null>(null);
   const viewRef = useRef(view);
   const lastGestureTsRef = useRef(0);
   const zoomSettleTimerRef = useRef<number | null>(null);
@@ -878,7 +880,7 @@ export default function DrawingRecognition() {
   useEffect(() => {
     if (revealTimerRef.current) clearInterval(revealTimerRef.current);
     const count = result?.components?.length ?? 0;
-    if (!count || !result?.preview_svg_hd && !result?.preview_svg) {
+    if (!count || (!result?.preview_svg_hd && !result?.preview_svg && !result?.cad_geometry?.bbox)) {
       setRevealIndex(0);
       return;
     }
@@ -902,7 +904,7 @@ export default function DrawingRecognition() {
     return () => {
       if (revealTimerRef.current) clearInterval(revealTimerRef.current);
     };
-  }, [result?.components?.length, result?.preview_svg, result?.preview_svg_hd, result?.status, dragging]);
+  }, [result?.components?.length, result?.preview_svg, result?.preview_svg_hd, result?.cad_geometry, result?.status, dragging]);
 
   useEffect(() => {
     setView({ scale: 1, x: 0, y: 0 });
@@ -911,26 +913,87 @@ export default function DrawingRecognition() {
 
   const [svgMountReady, setSvgMountReady] = useState(false);
   useEffect(() => {
-    if (result?.status === "done" && (result.preview_svg_hd || result.preview_svg)) {
+    if (result?.status === "done" && (result.preview_svg_hd || result.preview_svg || result.cad_geometry?.bbox)) {
       const timer = window.setTimeout(() => setSvgMountReady(true), 350);
       return () => window.clearTimeout(timer);
     }
     setSvgMountReady(false);
     return undefined;
-  }, [result?.status, result?.preview_svg, result?.preview_svg_hd]);
+  }, [result?.status, result?.preview_svg, result?.preview_svg_hd, result?.cad_geometry]);
+
+  // 内置 CAD 快速看图（WebGL）几何数据：优先于 SVG 预览使用，
+  // 数万图元一次 draw call 渲染，缩放平移不卡顿
+  const cadGeometry = useMemo<CadGeometry | null>(() => {
+    if (result?.status === "processing") return null;
+    if (!svgMountReady) return null;
+    const geo = result?.cad_geometry;
+    if (!geo || !geo.bbox) return null;
+    return geo;
+  }, [result?.cad_geometry, result?.status, svgMountReady]);
+
+  // ezdxf 专业绘图引擎渲染的高清原图：优先于 WebGL 几何模式显示
+  const cadRaster = useMemo<CadRaster | null>(() => {
+    if (result?.status === "processing") return null;
+    if (!svgMountReady) return null;
+    const r = result?.cad_raster;
+    if (!r || !r.data_url) return null;
+    return r;
+  }, [result?.cad_raster, result?.status, svgMountReady]);
 
   const previewSvg = useMemo(() => {
-    // 只在 result 变化时返回原始 SVG，reveal 由 ref 直接操作 DOM。
-    // 解析进行中不挂载预览 SVG：大图纸的预览有上万图元，弱机器上边解析边渲染
-    // 会把主线程拖死（页面无响应、进度条卡住），等解析完成再一次性挂载。
+    // 解析进行中不挂载预览 SVG：大图纸的预览有上万图元，边解析边渲染会拖死主线程。
+    // 完成后由分帧挂载（svgChunkMount effect）逐块插入，避免一次性 innerHTML 卡死。
     if (result?.status === "processing") return "";
-    // 大图 SVG 可达数 MB：先让完成界面渲染出来，再延迟挂载预览，避免主线程一次性卡死
     if (!svgMountReady) return "";
-    return result?.preview_svg_hd || result?.preview_svg || "";
+    const hd = result?.preview_svg_hd || "";
+    const sd = result?.preview_svg || "";
+    // 高清版超过 4.5MB 时退回标清版（分帧也扛不住的超大图，牺牲清晰度保流畅）
+    if (hd.length > 4_500_000 && sd) return sd;
+    return hd || sd;
   }, [result?.preview_svg, result?.preview_svg_hd, result?.status, svgMountReady]);
 
-  // 直接操作 DOM 推进高亮 reveal，不再重新生成 SVG 字符串
+  // 有可显示的图纸内容（WebGL 看图优先，SVG 兜底）
+  const hasDrawing = cadGeometry != null || cadRaster != null || previewSvg !== "";
+
+  // 预览挂载：常规图直接 innerHTML（源头已压缩，节点数可控）；
+  // 超大 SVG（>800KB 兜底）走 Blob URL + <img> 光栅化，避免数万节点拖死渲染。
   const svgHostRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const host = svgHostRef.current;
+    if (!host) return;
+    if (!previewSvg) {
+      host.innerHTML = "";
+      return;
+    }
+    if (previewSvg.length > 800_000) {
+      let blobUrl = "";
+      try {
+        const blob = new Blob([previewSvg], { type: "image/svg+xml;charset=utf-8" });
+        blobUrl = URL.createObjectURL(blob);
+      } catch {
+        blobUrl = "";
+      }
+      if (blobUrl) {
+        host.innerHTML = "";
+        const img = document.createElement("img");
+        img.src = blobUrl;
+        img.alt = "图纸预览";
+        img.className = "dr-svg-bitmap";
+        img.draggable = false;
+        host.appendChild(img);
+        return () => {
+          img.src = "";
+          URL.revokeObjectURL(blobUrl);
+        };
+      }
+    }
+    host.innerHTML = previewSvg;
+    return () => {
+      host.innerHTML = "";
+    };
+  }, [previewSvg]);
+
+  // 直接操作 DOM 推进高亮 reveal
   useEffect(() => {
     const host = svgHostRef.current;
     if (!host) return;
@@ -947,18 +1010,36 @@ export default function DrawingRecognition() {
     if (timerRef.current) clearInterval(timerRef.current);
     let componentsShown = false;
     let failures = 0;
+    // 完整结果（含数 MB 预览 SVG）只在识别完成与计价完成时各拉一次；
+    // 识别完成后计价仍在进行期间，若每 1.2s 都重拉完整结果，7MB 下载+解析
+    // 会反复打满主线程，页面表现为卡死。中间轮询一律用轻量数据。
+    let fullFetched = false;
+    let finalFetched = false;
     timerRef.current = setInterval(async () => {
       try {
-        // 轮询阶段不拉取预览 SVG（可达数 MB）；终态时再单独拉一次带 SVG 的完整结果
         const data = await api.getDrawingResult(id, false);
         failures = 0;
-        if (data.status !== "processing") {
-          setResult(await api.getDrawingResult(id));
-        } else {
-          setResult(data);
-        }
         const recognitionDone = data.status === "done" || data.status === "error";
         const valuationDone = data.valuation_status === "done" || data.valuation_status === "error" || data.valuation_status === "skipped";
+        if (data.status !== "processing" && !fullFetched) {
+          fullFetched = true;
+          setResult(await api.getDrawingResult(id));
+        } else if (recognitionDone && valuationDone && !finalFetched) {
+          finalFetched = true;
+          setResult(await api.getDrawingResult(id));
+        } else if (data.status === "processing") {
+          setResult(data);
+        } else {
+          // 识别已完成：只同步计价进度字段，不重复挂载大 SVG
+          setResult((prev) => prev ? {
+            ...prev,
+            valuation: data.valuation ?? prev.valuation,
+            valuation_status: data.valuation_status,
+            valuation_progress: data.valuation_progress,
+            valuation_progress_percent: data.valuation_progress_percent,
+            valuation_error: data.valuation_error,
+          } : data);
+        }
         if (recognitionDone && !componentsShown && data.components?.length > 0) {
           setBottomTab("components");
           // 解析结果包含给排水/电气/暖通/消防等安装专业时，自动切换到对应专业底图
@@ -1073,7 +1154,7 @@ export default function DrawingRecognition() {
   };
 
   const startModelBuild = () => {
-    if (modelView !== "drawing" || result?.status !== "done" || !previewSvg) return;
+    if (modelView !== "drawing" || result?.status !== "done" || !hasDrawing) return;
     buildTokenRef.current += 1;
     const token = buildTokenRef.current;
     if (buildTimerRef.current) clearInterval(buildTimerRef.current);
@@ -1084,7 +1165,7 @@ export default function DrawingRecognition() {
     setModelProgress(0);
     buildTimerRef.current = setInterval(() => {
       buildSteps += 1;
-      const next = Math.min(96, Math.round((buildSteps / 32) * 96));
+      const next = Math.min(96, Math.round((buildSteps / 12) * 96));
       setModelProgress(next);
       if (next >= 96) {
         if (buildTimerRef.current) {
@@ -1093,7 +1174,7 @@ export default function DrawingRecognition() {
         }
         void loadModelElements(token);
       }
-    }, 340);
+    }, 320);
   };
 
   const exitModel = () => {
@@ -1110,7 +1191,8 @@ export default function DrawingRecognition() {
   const stageRef = useRef<HTMLDivElement | null>(null);
 
   const handleCanvasWheel = (event: WheelEvent<HTMLDivElement>) => {
-    if (modelView !== "drawing" || !previewSvg) return;
+    // CAD 看图组件自带滚轮缩放，这里不接管
+    if (modelView !== "drawing" || !previewSvg || cadGeometry || cadRaster) return;
     event.preventDefault();
     const stage = stageRef.current;
     if (!stage) return;
@@ -1133,7 +1215,8 @@ export default function DrawingRecognition() {
   };
 
   const handleCanvasMouseDown = (event: MouseEvent<HTMLDivElement>) => {
-    if (modelView !== "drawing" || !previewSvg || event.button !== 0) return;
+    // CAD 看图组件自带拖拽平移，这里不接管
+    if (modelView !== "drawing" || !previewSvg || cadGeometry || cadRaster || event.button !== 0) return;
     setDragging(true);
     dragStartRef.current = { pointerX: event.clientX, pointerY: event.clientY, viewX: view.x, viewY: view.y };
     dragLatestRef.current = { dx: 0, dy: 0 };
@@ -1269,7 +1352,7 @@ export default function DrawingRecognition() {
           <Upload {...uploadProps}>
             <Button type="primary" icon={<CloudUploadOutlined />} loading={uploading}>上传</Button>
           </Upload>
-          {result?.status === "done" && previewSvg && (
+          {result?.status === "done" && hasDrawing && (
             <Button
               type={modelView === "drawing" ? "primary" : "default"}
               icon={modelView === "drawing" ? <BuildOutlined /> : <ArrowLeftOutlined />}
@@ -1327,12 +1410,24 @@ export default function DrawingRecognition() {
           })}
         </div>
 
-        {previewSvg ? (
+        {cadGeometry || cadRaster ? (
+          /* 内置 CAD 快速看图：优先专业绘图引擎渲染的高清原图，
+             WebGL 几何模式兜底；自带滚轮缩放/拖拽平移/双击复位 */
+          <ErrorBoundary inline title="CAD 快速看图初始化失败">
+            <CadCanvasViewer
+              ref={cadViewerRef}
+              geometry={cadGeometry ?? { bbox: null, groups: {}, highlights: [], texts: [] }}
+              raster={cadRaster}
+              revealIndex={revealIndex}
+              revealTotal={compCount}
+              className="dr-cad-viewer-host"
+            />
+          </ErrorBoundary>
+        ) : previewSvg ? (
           <div ref={stageTransformRef} className="dr-stage-transform" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}>
             <div
               ref={svgHostRef}
               className={`dr-svg-preview is-hd is-revealing${result?.status === "processing" ? " is-fast" : ""}${result?.status === "done" ? " is-done" : ""}`}
-              dangerouslySetInnerHTML={{ __html: previewSvg }}
             />
           </div>
         ) : (
@@ -1358,8 +1453,8 @@ export default function DrawingRecognition() {
               <span className="dr-cad-status-wait"><span className="material-symbols-outlined">hourglass_empty</span>等待图纸</span>
             </div>
 
-            {/* 中央上传提示 */}
-            <div className="dr-cad-empty-hint">
+            {/* 中央上传提示（解析中隐藏，避免挡住底图） */}
+            <div className={`dr-cad-empty-hint${uploading || (progress > 0 && result?.status !== "done") ? " is-parsing" : ""}`}>
               <div className="dr-cad-hint-icon">
                 <span className="material-symbols-outlined">upload_file</span>
               </div>
@@ -1384,14 +1479,24 @@ export default function DrawingRecognition() {
           </div>
         )}
 
-        {/* 缩放控件 */}
-        {previewSvg && (
+        {/* 缩放控件（仅 SVG 预览模式；CAD 看图组件自带缩放控制） */}
+        {previewSvg && !cadGeometry && !cadRaster && (
           <div className="dr-zoom-bar" onMouseDown={(e) => e.stopPropagation()}>
             <button type="button" className="dr-zoom-btn" onClick={() => zoomBy(-0.2)}><span className="material-symbols-outlined">zoom_out</span></button>
             <strong>{Math.round(view.scale * 100)}%</strong>
             <button type="button" className="dr-zoom-btn" onClick={() => zoomBy(0.2)}><span className="material-symbols-outlined">zoom_in</span></button>
             <span className="dr-zoom-sep" />
             <button type="button" className="dr-zoom-btn" onClick={resetView}><span className="material-symbols-outlined">fit_screen</span></button>
+          </div>
+        )}
+
+        {/* 图纸复位（CAD 看图模式） */}
+        {(cadGeometry || cadRaster) && (
+          <div className="dr-zoom-bar" onMouseDown={(e) => e.stopPropagation()}>
+            <button type="button" className="dr-zoom-btn" onClick={() => cadViewerRef.current?.reset()} title="图纸复位">
+              <span className="material-symbols-outlined">fit_screen</span>
+            </button>
+            <strong>复位</strong>
           </div>
         )}
 
@@ -1415,9 +1520,9 @@ export default function DrawingRecognition() {
           </div>
         </div>
 
-        {/* 左下进度浮层 */}
+        {/* 解析进度：底部细条，不遮挡底图 */}
         {(progress > 0 || uploading) && result?.status !== "done" && (
-          <div className="dr-float-progress">
+          <div className="dr-float-progress is-parsing">
             <div className="dr-float-progress-head">
               <span>{uploading ? "上传中..." : result?.progress || result?.valuation_progress || "解析中"}</span>
               <strong>{progress}%</strong>
@@ -1658,7 +1763,7 @@ export default function DrawingRecognition() {
         ) : (
           <div className="dr-model-host">
             <ErrorBoundary title="3D 视图无法显示" inline>
-              <Ifc3DViewer elements={modelElements} sceneTitle={fileName ? `${fileName} · 自动构建模型` : MODEL_SCENE_TITLE} initialViewMode="model" />
+              <Ifc3DViewer elements={modelElements} sceneTitle={fileName ? `${fileName} · 自动构建模型` : MODEL_SCENE_TITLE} initialViewMode="model" buildAnimation />
             </ErrorBoundary>
           </div>
         )}

@@ -404,6 +404,8 @@ interface Props {
 
   materialTheme?: "museum";
 
+  buildAnimation?: boolean;
+
 }
 
 
@@ -419,6 +421,8 @@ interface SceneItem {
   baseOpacity: number;
 
   bounds: THREE.Box3;
+
+  edge?: THREE.LineSegments;
 
 }
 
@@ -8244,6 +8248,7 @@ export default function Ifc3DViewer({
 
   materialTheme,
 
+  buildAnimation = false,
 
 }: Props) {
 
@@ -8268,6 +8273,8 @@ export default function Ifc3DViewer({
   const [orientationMode, setOrientationMode] = useState<OrientationMode>("z-up");
 
   const [viewMode, setViewMode] = useState<ViewMode>(initialViewMode);
+
+  const [buildStageLabel, setBuildStageLabel] = useState<string | null>(null);
 
   const [renderMode, setRenderMode] = useState<RenderMode>("solid");
 
@@ -9089,6 +9096,7 @@ export default function Ifc3DViewer({
     const sceneItems: SceneItem[] = [];
 
     const enableModelMerge = !isWalkMode
+      && !buildAnimation
       && renderMode === "solid"
       && previewElements.length > MODEL_MERGE_MIN_ELEMENTS;
 
@@ -9423,6 +9431,8 @@ export default function Ifc3DViewer({
 
         group.add(edge);
 
+        if (buildAnimation) sceneItem.edge = edge;
+
         renderedEdges += 1;
 
         if (isMeshPreview) {
@@ -9529,6 +9539,84 @@ export default function Ifc3DViewer({
     const size = bounds.isEmpty() ? new THREE.Vector3(10, 10, 10) : bounds.getSize(new THREE.Vector3());
 
     fitGridToModel();
+
+    // ── 施工模拟动画：基础 → 柱 → 梁 → 板 → 墙体 → 屋面装饰，自下而上逐构件生长
+    let buildAnimFrame = 0;
+    if (buildAnimation && sceneItems.length > 0) {
+      const zValues = sceneItems.map((it) => it.element.pos_z).sort((a, b) => a - b);
+      const zMin = zValues[0];
+      const zSpan = Math.max(zValues[zValues.length - 1] - zMin, 1e-6);
+      const stageOf = (item: SceneItem): number => {
+        const text = `${item.element.label} ${item.element.name} ${item.element.element_type || ""} ${item.element.predefined_type || ""}`.toLowerCase();
+        if (/foundation|footing|pile|基础/.test(text)) return 0;
+        if (item.element.pos_z - zMin <= zSpan * 0.04) return 0;
+        if (/column|柱/.test(text)) return 1;
+        if (/beam|梁/.test(text)) return 2;
+        if (/roof|屋面|parapet|压顶|coping/.test(text)) return 5;
+        if (/slab|floor|板/.test(text)) return 3;
+        return 4;
+      };
+      const stageNames = ["基础施工", "主体柱网吊装", "梁体就位", "楼板浇筑", "墙体砌筑", "屋面与装饰收尾"];
+      const buckets: SceneItem[][] = [[], [], [], [], [], []];
+      sceneItems.forEach((it) => buckets[stageOf(it)].push(it));
+      buckets.forEach((b) => b.sort((p, q) => p.element.pos_z - q.element.pos_z || p.element.pos_y - q.element.pos_y));
+      sceneItems.forEach((it) => {
+        it.mesh.visible = false;
+        if (it.edge) it.edge.visible = false;
+      });
+      const STAGE_MS = 1500;
+      const fades: { mat: THREE.MeshStandardMaterial; at: number }[] = [];
+      const shown = new Set<SceneItem>();
+      let lastLabel = "";
+      const buildStartAt = performance.now();
+      setBuildStageLabel("施工准备");
+      const buildTick = () => {
+        const now = performance.now();
+        const elapsed = now - buildStartAt;
+        let finishedStages = 0;
+        buckets.forEach((bucket, si) => {
+          const stageT = Math.min(Math.max((elapsed - si * STAGE_MS) / STAGE_MS, 0), 1);
+          const count = Math.round(stageT * bucket.length);
+          for (let k = 0; k < count; k += 1) {
+            const item = bucket[k];
+            if (shown.has(item)) continue;
+            shown.add(item);
+            item.mesh.visible = true;
+            if (item.edge) item.edge.visible = true;
+            if (!item.material.transparent && item.material.opacity >= 1) {
+              item.material.transparent = true;
+              item.material.opacity = 0.05;
+              fades.push({ mat: item.material, at: now });
+            }
+          }
+          if (stageT >= 1) finishedStages += 1;
+        });
+        for (let i = fades.length - 1; i >= 0; i -= 1) {
+          const f = fades[i];
+          const t = Math.min((now - f.at) / 400, 1);
+          f.mat.opacity = 0.05 + 0.95 * t;
+          if (t >= 1) {
+            f.mat.opacity = 1;
+            f.mat.transparent = false;
+            fades.splice(i, 1);
+          }
+        }
+        const stageIdx = Math.min(Math.floor(elapsed / STAGE_MS), stageNames.length - 1);
+        const label = finishedStages >= stageNames.length ? "模型构建完成" : stageNames[stageIdx];
+        if (label !== lastLabel) {
+          lastLabel = label;
+          setBuildStageLabel(label);
+        }
+        needsRender = true;
+        if (finishedStages >= stageNames.length && fades.length === 0) {
+          window.setTimeout(() => setBuildStageLabel(null), 1000);
+          return;
+        }
+        buildAnimFrame = window.requestAnimationFrame(buildTick);
+      };
+      buildAnimFrame = window.requestAnimationFrame(buildTick);
+    }
+
 
     const radius = Math.max(size.x, size.y, size.z, 10);
 
@@ -12847,6 +12935,8 @@ export default function Ifc3DViewer({
 
       window.cancelAnimationFrame(frameId);
 
+      window.cancelAnimationFrame(buildAnimFrame);
+
       window.removeEventListener("resize", onResize);
 
       document.removeEventListener("keydown", onKeyDown, true);
@@ -12977,6 +13067,35 @@ export default function Ifc3DViewer({
       style={style}
     >
       <div ref={containerRef} className="ifc-walk-canvas" />
+
+      {buildStageLabel && (
+        <div
+          style={{
+            position: "absolute",
+            top: 70,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 30,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "10px 22px",
+            borderRadius: 14,
+            background: "rgba(15, 23, 42, 0.82)",
+            backdropFilter: "blur(6px)",
+            color: "#fff",
+            pointerEvents: "none",
+            boxShadow: "0 8px 28px rgba(0,0,0,.35)",
+          }}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: 26, color: "#7dd3fc" }}>construction</span>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: 2 }}>{buildStageLabel}</div>
+            <div style={{ fontSize: 11, opacity: 0.75, letterSpacing: 1 }}>BIM 自动构建 · 施工模拟</div>
+          </div>
+        </div>
+      )}
+
 
       {/* 顶部场景信息条（非紧凑、非导览模式） */}
       {!isCompactViewer && !presentationMode && !isWalkView && (

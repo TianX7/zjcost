@@ -196,22 +196,27 @@
 .dr-float-kpi-item.highlight .material-symbols-outlined { color: #818cf8; }
 .dr-float-kpi-item.highlight strong { color: #a5b4fc; }
 
-/* Floating progress (center overlay) */
+/* Floating progress：解析中居中显示细条进度，不遮挡底图 */
 .dr-float-progress {
   position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
   z-index: 60;
-  width: min(360px, calc(100% - 32px));
-  padding: 16px 18px;
-  border-radius: 12px;
-  background: rgba(15, 23, 42, 0.92);
-  backdrop-filter: blur(8px);
+  width: min(480px, calc(100% - 32px));
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(8, 14, 24, 0.78);
+  backdrop-filter: blur(6px);
   border: 1px solid rgba(56, 189, 248, 0.18);
-  box-shadow: 0 8px 24px rgba(3, 7, 18, 0.4);
+  box-shadow: 0 4px 14px rgba(3, 7, 18, 0.35);
   pointer-events: none;
 }
+
+.dr-float-progress.is-parsing .dr-float-progress-head { margin-bottom: 4px; }
+.dr-float-progress.is-parsing .dr-float-progress-head span { font-size: 11px; }
+.dr-float-progress.is-parsing .dr-float-progress-head strong { font-size: 12px; }
+.dr-float-progress.is-parsing .dr-float-reveal { margin-top: 4px; }
 
 .dr-float-progress-head {
   display: flex;
@@ -441,6 +446,16 @@
   width: 100%;
   height: 100%;
   pointer-events: none;
+}
+
+/* 超大图纸：光栅化位图预览（Blob URL），替代数万节点的 DOM SVG */
+.dr-svg-preview .dr-svg-bitmap {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
 }
 
 /* High quality when idle — crisp vector at all zoom levels */
@@ -830,6 +845,9 @@
   z-index: 6;
   pointer-events: auto;
 }
+
+/* 解析中隐藏中央大卡片，让底图完整可见 */
+.dr-cad-empty-hint.is-parsing { display: none; }
 
 @keyframes dr-cad-hint-pulse {
   0%, 100% {
@@ -1771,4 +1789,11 @@
 @keyframes dr-build-slide {
   from { background-position: 0% 0; }
   to { background-position: 200% 0; }
+}
+
+/* WebGL CAD 快速看图容器：撑满画布区 */
+.dr-cad-viewer-host {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
 }

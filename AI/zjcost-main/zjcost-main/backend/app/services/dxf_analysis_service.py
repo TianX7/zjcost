@@ -8,6 +8,7 @@ import math
 import os
 import re
 import tempfile
+import time
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -496,6 +497,20 @@ COMPONENT_RULES: tuple[ComponentRule, ...] = (
     ),
 )
 
+_RULES_BY_KEY: dict[str, ComponentRule] = {rule.key: rule for rule in COMPONENT_RULES}
+
+# 几何兜底识别的尺寸阈值（图纸单位：mm）。命名未命中时按形状推断构件类型。
+GEO_COLUMN_SIDE_MIN, GEO_COLUMN_SIDE_MAX = 180.0, 1400.0      # 柱边长/直径范围
+GEO_COLUMN_ASPECT_MAX = 2.0                                    # 柱截面宽高比上限
+GEO_BEAM_ASPECT_MIN = 2.5                                      # 梁矩形长宽比下限
+GEO_BEAM_THICK_MIN, GEO_BEAM_THICK_MAX = 180.0, 800.0          # 梁短边（梁宽）范围
+GEO_DOOR_MIN, GEO_DOOR_MAX = 500.0, 2600.0                     # 门块长边范围
+GEO_DOOR_SWEEP_MIN, GEO_DOOR_SWEEP_MAX = 40.0, 130.0           # 门扇圆弧扫角范围
+GEO_WINDOW_MIN, GEO_WINDOW_MAX = 400.0, 4200.0                 # 窗块长边范围
+GEO_WINDOW_MIN_LINES = 3                                       # 窗块内最少平行线数量
+GEO_WINDOW_ANGLE_TOL = 18.0                                    # 平行线角度容差（度）
+GEO_WINDOW_LENGTH_TOL = 0.65                                   # 平行线长度相近度下限
+
 ANNOTATION_KEYWORDS = (
     "TEXT",
     "标注",
@@ -579,15 +594,16 @@ PREVIEW_HD_STROKE_WIDTH = 2.0
 PREVIEW_TEXT_COLOR = "#dbeafe"
 PREVIEW_PRIMARY_LINE = "#f1f7ff"
 PREVIEW_SECONDARY_LINE = "#b6d7f0"
-PREVIEW_MAX_RENDERED_ENTITIES = 5200
-PREVIEW_HD_RENDERED_ENTITIES = 12000
-PREVIEW_COLLECTION_LIMIT = 24000
+PREVIEW_MAX_RENDERED_ENTITIES = 7000
+PREVIEW_HD_RENDERED_ENTITIES = 14000
+# 收集上限与看图几何上限一致，保证底图原样完整
+PREVIEW_COLLECTION_LIMIT = 80000
 PREVIEW_MAX_POINTS_PER_ENTITY = 140
-PREVIEW_HD_MAX_POINTS_PER_ENTITY = 240
-PREVIEW_MAX_TEXT_ENTITIES = 450
-PREVIEW_HD_TEXT_ENTITIES = 2000
+PREVIEW_HD_MAX_POINTS_PER_ENTITY = 160
+PREVIEW_MAX_TEXT_ENTITIES = 260
+PREVIEW_HD_TEXT_ENTITIES = 600
 PREVIEW_PATH_CHUNK_LENGTH = 120000
-PREVIEW_MAX_HIGHLIGHT_BOXES = 1600
+PREVIEW_MAX_HIGHLIGHT_BOXES = 400
 PREVIEW_HIGHLIGHT_RULES = frozenset(rule.key for rule in COMPONENT_RULES)
 
 CANDIDATE_UNIT_SCALES: tuple[tuple[float, str], ...] = (
@@ -599,25 +615,34 @@ CANDIDATE_UNIT_SCALES: tuple[tuple[float, str], ...] = (
 )
 
 
+def _clean_str(value: Any) -> str:
+    """清洗实体字符串：中文图纸常含非 UTF-8 字节（GBK 等），ezdxf 读出后为
+    代理字符（surrogate），会导致 JSON 序列化崩溃，统一替换为安全字符。"""
+    try:
+        return str(value).encode("utf-8", errors="replace").decode("utf-8")
+    except Exception:
+        return ""
+
+
 def _read_text(entity: Any) -> str:
     try:
         if entity.dxftype() == "MTEXT":
-            return str(entity.text).strip()
-        return str(entity.dxf.text).strip()
+            return _clean_str(entity.text).strip()
+        return _clean_str(entity.dxf.text).strip()
     except Exception:
         return ""
 
 
 def _layer(entity: Any) -> str:
     try:
-        return str(entity.dxf.layer)
+        return _clean_str(entity.dxf.layer)
     except Exception:
         return ""
 
 
 def _name(entity: Any) -> str:
     try:
-        return str(entity.dxf.name)
+        return _clean_str(entity.dxf.name)
     except Exception:
         return ""
 
@@ -658,6 +683,164 @@ def _classify_entity(entity: Any, inherited_rule: ComponentRule | None = None) -
     if inherited_rule is not None:
         return inherited_rule
     return _classify_text(_layer(entity), _name(entity))
+
+
+def _insert_attrib_texts(entity: Any) -> list[str]:
+    """读取 INSERT 块的属性值（ATTRIB）。门窗等块的型号/尺寸常存于此。"""
+    texts: list[str] = []
+    try:
+        for attrib in entity.attribs:
+            try:
+                value = _clean_str(attrib.dxf.text).strip()
+                if value:
+                    texts.append(value)
+            except Exception:
+                continue
+    except Exception:
+        return []
+    return texts
+
+
+def _arc_sweep_deg(entity: Any) -> float:
+    try:
+        start = float(entity.dxf.start_angle)
+        end = float(entity.dxf.end_angle)
+        sweep = (end - start) % 360.0
+        return 360.0 if sweep == 0.0 else sweep
+    except Exception:
+        return 0.0
+
+
+def _segment_lines(entity: Any) -> list[tuple[tuple[float, float], tuple[float, float]]]:
+    """把实体离散为线段序列 (起点, 终点)。"""
+    kind = entity.dxftype()
+    points = _points_from_entity(entity)
+    segs: list[tuple[tuple[float, float], tuple[float, float]]] = []
+    if kind == "ARC":
+        if len(points) >= 2:
+            segs.append((points[0], points[-1]))
+            return segs
+    for a, b in zip(points, points[1:]):
+        if a != b:
+            segs.append((a, b))
+    return segs
+
+
+def _line_angle_deg(seg: tuple[tuple[float, float], tuple[float, float]]) -> float:
+    (x1, y1), (x2, y2) = seg
+    return math.degrees(math.atan2(y2 - y1, x2 - x1)) % 180.0
+
+
+def _angle_diff_deg(a: float, b: float) -> float:
+    diff = abs(a - b) % 180.0
+    return min(diff, 180.0 - diff)
+
+
+def _window_line_signature(lines: list[tuple[tuple[float, float], tuple[float, float]]], long_side: float) -> bool:
+    """窗的几何签名：存在一组 ≥3 条平行、横贯块长边的线。"""
+    n = len(lines)
+    lengths = [math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in lines]
+    for base in range(n):
+        group = [base]
+        for j in range(n):
+            if j == base:
+                continue
+            if _angle_diff_deg(_line_angle_deg(lines[base]), _line_angle_deg(lines[j])) <= GEO_WINDOW_ANGLE_TOL:
+                group.append(j)
+        if len(group) >= GEO_WINDOW_MIN_LINES:
+            ref = max(lengths[i] for i in group)
+            if ref >= long_side * 0.5:
+                return True
+    return False
+
+
+def _classify_insert_by_geometry(entity: Any) -> ComponentRule | None:
+    """按 INSERT 块的几何组成推断门窗（命名未命中时兜底）。"""
+    try:
+        virtuals = _iter_virtual_entities(entity)
+    except Exception:
+        return None
+    if not virtuals:
+        return None
+
+    try:
+        bbox = _collect_bbox([entity])
+    except Exception:
+        return None
+    if bbox is None:
+        return None
+    w = bbox[2] - bbox[0]
+    h = bbox[3] - bbox[1]
+    if w <= 0 or h <= 0:
+        return None
+    long_side = max(w, h)
+
+    arcs = [v for v in virtuals if v.dxftype() == "ARC"]
+    lines: list[tuple[tuple[float, float], tuple[float, float]]] = []
+    for v in virtuals:
+        if v.dxftype() == "LINE":
+            lines.extend(_segment_lines(v))
+
+    # 门：含近似 1/4 圆的圆弧（门扇摆动弧）
+    if arcs and GEO_DOOR_MIN <= long_side <= GEO_DOOR_MAX:
+        for arc in arcs:
+            sweep = _arc_sweep_deg(arc)
+            if GEO_DOOR_SWEEP_MIN <= sweep <= GEO_DOOR_SWEEP_MAX:
+                return _RULES_BY_KEY.get("door")
+
+    # 窗：块内多条近似平行、横贯块长边的线
+    if len(lines) >= GEO_WINDOW_MIN_LINES and GEO_WINDOW_MIN <= long_side <= GEO_WINDOW_MAX:
+        if _window_line_signature(lines, long_side):
+            return _RULES_BY_KEY.get("window")
+
+    return None
+
+
+def _classify_closed_poly_by_geometry(entity: Any) -> ComponentRule | None:
+    """按闭合轮廓的几何比例推断柱/梁（命名未命中时兜底）。"""
+    try:
+        points = _points_from_entity(entity)
+    except Exception:
+        return None
+    if not _is_closed(entity, points) or len(points) < 4:
+        return None
+    bbox = _bbox_from_points(points)
+    if bbox is None:
+        return None
+    w = bbox[2] - bbox[0]
+    h = bbox[3] - bbox[1]
+    if w <= 0 or h <= 0:
+        return None
+    shorter = min(w, h)
+    longer = max(w, h)
+    aspect = longer / shorter
+
+    # 柱：接近方形、边长在柱截面范围
+    if GEO_COLUMN_SIDE_MIN <= shorter and longer <= GEO_COLUMN_SIDE_MAX and aspect <= GEO_COLUMN_ASPECT_MAX:
+        return _RULES_BY_KEY.get("column")
+
+    # 梁：细长矩形、短边（梁宽）在范围内
+    if aspect >= GEO_BEAM_ASPECT_MIN and GEO_BEAM_THICK_MIN <= shorter <= GEO_BEAM_THICK_MAX:
+        return _RULES_BY_KEY.get("beam")
+
+    return None
+
+
+def _classify_by_geometry(entity: Any) -> ComponentRule | None:
+    """几何兜底识别入口：命名/文字未命中时按图元形状推断构件类型。"""
+    kind = entity.dxftype()
+    try:
+        if kind == "INSERT":
+            return _classify_insert_by_geometry(entity)
+        if kind == "CIRCLE":
+            radius = float(entity.dxf.radius)
+            if GEO_COLUMN_SIDE_MIN / 2 <= radius <= GEO_COLUMN_SIDE_MAX / 2:
+                return _RULES_BY_KEY.get("column")
+        if kind in {"LWPOLYLINE", "POLYLINE"}:
+            return _classify_closed_poly_by_geometry(entity)
+    except Exception:
+        return None
+    return None
 
 
 def _as_xy(value: Any) -> tuple[float, float] | None:
@@ -1659,7 +1842,7 @@ def _svg_polyline(
 ) -> str:
     if len(points) < 2:
         return ""
-    pts = " ".join(f"{x:.2f},{-y:.2f}" for x, y in points)
+    pts = " ".join(f"{x:.1f},{-y:.1f}" for x, y in points)
     tag = "polygon" if closed else "polyline"
     return (
         f'<{tag} points="{pts}" fill="none" stroke="{color}" '
@@ -1671,9 +1854,9 @@ def _svg_polyline(
 def _path_commands(points: list[tuple[float, float]], closed: bool) -> str:
     if len(points) < 2:
         return ""
-    coords = " ".join(f"L{x:.2f},{-y:.2f}" for x, y in points[1:])
+    coords = " ".join(f"L{x:.1f},{-y:.1f}" for x, y in points[1:])
     close = " Z" if closed else ""
-    return f"M{points[0][0]:.2f},{-points[0][1]:.2f} {coords}{close}"
+    return f"M{points[0][0]:.1f},{-points[0][1]:.1f} {coords}{close}"
 
 
 def _append_path_chunk(
@@ -1850,6 +2033,508 @@ def _preview_svg_snapshot(
     return sanitize_preview_svg("".join(snapshot))
 
 
+CAD_GEOMETRY_MAX_ENTITIES = 80000
+CAD_GEOMETRY_MAX_POINTS = 400
+CAD_GEOMETRY_MAX_HIGHLIGHTS = 2500
+CAD_GEOMETRY_MAX_TEXTS = 800
+# 线段总量上限：WebGL 一次 draw call 足够流畅，超出即截断，避免超大图纸导出过慢
+CAD_GEOMETRY_MAX_SEGMENTS = 800000
+# 导出耗时兜底：后台线程异步导出，预算放宽，尽量原样完整呈现图纸
+CAD_GEOMETRY_TIME_BUDGET_SECONDS = 30.0
+
+
+# AutoCAD 标准 ACI 色号 → RGB（覆盖常用前 40 号，其余回退白/灰）
+_ACI_COLORS: dict[int, int] = {
+    1: 0xFF0000, 2: 0xFFFF00, 3: 0x00FF00, 4: 0x00FFFF, 5: 0x0000FF,
+    6: 0xFF00FF, 7: 0xFFFFFF, 8: 0x808080, 9: 0xC0C0C0, 10: 0xFF0000,
+    30: 0xFF7F00, 40: 0xFFAA00, 41: 0xFFBFFF, 42: 0xFFD4AA, 43: 0xFFEAAA,
+    50: 0xBFAF7F, 60: 0x9F7F5F, 70: 0x7F5F3F, 80: 0xBF9F7F, 90: 0x9F7F5F,
+    110: 0xFF7F7F, 120: 0xFF007F, 130: 0xFF7FFF, 140: 0xFF00BF, 150: 0xBF00BF,
+    170: 0xBF7F7F, 180: 0xAF6F5F, 190: 0xFF9F7F, 200: 0xBF9F9F, 210: 0xFF0000,
+    220: 0x7F3F00, 230: 0xFFBF7F, 240: 0x9F5F2F, 250: 0x5F3F1F,
+}
+
+
+def _layer_color_map(doc: Any) -> dict[str, int]:
+    """图层名 → RGB 整数，供实体按图层取原色。"""
+    colors: dict[str, int] = {}
+    try:
+        for layer in doc.layers:
+            try:
+                name = _clean_str(layer.dxf.name)
+                true_color = int(getattr(layer.dxf, "true_color", -1) or -1)
+                aci = int(getattr(layer.dxf, "color", 7) or 7)
+                colors[name] = _resolve_dxf_color(true_color, aci)
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return colors
+
+
+def _resolve_dxf_color(true_color: int, aci: int) -> int:
+    """实体/图层颜色 → RGB 整数。
+
+    true_color 传 -1 表示属性不存在；0 是合法的纯黑真彩色。
+    返回 -1 表示 BYLAYER，由调用方按图层色解析。
+    """
+    if true_color >= 0:
+        return true_color & 0xFFFFFF
+    if aci == 256:  # BYLAYER
+        return -1
+    if aci == 0:  # BYBLOCK：继承块引用颜色，此处按白处理
+        return 0xFFFFFF
+    return _ACI_COLORS.get(aci, 0xFFFFFF)
+
+
+def _entity_color_hex(entity: Any, layer_colors: dict[str, int]) -> str:
+    """实体原色：优先 true_color，其次 ACI 色号，最后图层色，回退白色。"""
+    try:
+        true_color = int(getattr(entity.dxf, "true_color", -1) or -1)
+        aci = int(getattr(entity.dxf, "color", 256) or 256)
+        rgb = _resolve_dxf_color(true_color, aci)
+        if rgb == -1:  # BYLAYER：取图层色
+            rgb = layer_colors.get(_layer(entity), 0xFFFFFF)
+        # 黑底看图：纯黑线条提亮为深灰，避免看不见
+        if rgb == 0x000000:
+            rgb = 0x9AA7B8
+        return f"#{rgb:06x}"
+    except Exception:
+        return "#ffffff"
+
+
+def build_cad_raster(
+    doc: Any,
+    max_dim: int = 4200,
+    progress_callback: DxfProgressCallback | None = None,
+) -> dict[str, Any] | None:
+    """用 ezdxf 官方绘图引擎把整个模型空间渲染成一张高清 PNG（黑底原色）。
+
+    与自研重画不同：尺寸标注、块、填充、文字、线宽等全部图元按图面原样呈现，
+    前端平铺显示该位图，等效于 CAD 快速看图的完整原样显示。渲染较重，
+    只在后台分析线程内调用；失败时返回 None，前端回退到 WebGL 几何模式。
+    """
+
+    try:
+        import base64
+        import io
+
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from ezdxf.addons.drawing import Frontend, RenderContext
+        from ezdxf.addons.drawing.config import BackgroundPolicy, Configuration
+        from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
+    except Exception as exc:
+        logger.warning("CAD 高清渲染不可用（matplotlib 后端缺失）：%s", exc)
+        return None
+
+    # 中文标注字体：优先微软雅黑/黑体/宋体，避免中文文字渲染成方框
+    plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "SimSun", "DejaVu Sans"]
+    plt.rcParams["axes.unicode_minus"] = False
+
+    # ezdxf 在加载海量虚拟图元（如 DWG 转出的不可见 ATTRIB）时会逐条打 INFO 日志，
+    # 数万条日志刷屏显著拖慢渲染，这里临时压制，渲染结束后恢复
+    import logging as _logging
+
+    _ezdxf_log = _logging.getLogger("ezdxf")
+    _ezdxf_prev_level = _ezdxf_log.level
+    _ezdxf_log.setLevel(_logging.ERROR)
+
+    _t0 = time.perf_counter()
+
+    # ---- 渲染前：近黑实体临时提亮为白（渲染后恢复）----
+    # DWG 转 DXF 的转换器常把"白/黑自适应"的 ACI 7 转成真彩色纯黑，
+    # 黑底渲染时黑线不可见导致整图漆黑，这里按 CAD 快速看图的惯例提亮近黑实体
+    brightened: list[tuple[Any, bool, int]] = []
+    try:
+        from ezdxf import bbox as ez_bbox
+
+        # ---- 图层强制全开：LibreDWG 转出的 DXF 常把全部图层标记为 off，
+        # FastLayout 渲染引擎会跳过不可见图层的所有实体导致画面空白。
+        # 本函数是分析管线最后一步，doc 之后不再使用，无需恢复
+        layers_forced = 0
+        for layer in doc.layers:
+            try:
+                if layer.is_off():
+                    layer.on()
+                    layers_forced += 1
+                if layer.is_frozen():
+                    layer.thaw()
+                    layers_forced += 1
+            except Exception:
+                continue
+        logger.info("CAD 渲染诊断：强制打开图层 %s 个", layers_forced)
+
+        # ---- 离群图元剔除：垃圾实体坐落在极远坐标，会把渲染视口撑爆，
+        # 主体内容被压缩成像素级，视觉上整图漆黑。按实体中心做 MAD 过滤，
+        # 只剔除中心位置远离主体群的图元（本函数是分析管线最后一步，
+        # doc 之后不再使用，destroy 是安全的）
+        msp_dbg = doc.modelspace()
+        entities = list(msp_dbg)
+        try:
+            extents = ez_bbox.extents(entities, fast=True)
+        except Exception:
+            extents = [None] * len(entities)
+
+        def _center_of(ext: Any) -> tuple[float, float] | None:
+            """兼容不同 ezdxf 版本 extents(fast=True) 的返回形态。"""
+            try:
+                if hasattr(ext, "has_data"):
+                    if not ext.has_data:
+                        return None
+                    emin, emax = ext.extmin, ext.extmax
+                elif hasattr(ext, "extmin") and hasattr(ext, "extmax"):
+                    emin, emax = ext.extmin, ext.extmax
+                elif len(ext) >= 3:
+                    return (float(ext[0]), float(ext[1]))
+                else:
+                    return None
+                return ((emin[0] + emax[0]) / 2.0, (emin[1] + emax[1]) / 2.0)
+            except Exception:
+                return None
+
+        centers: list[tuple[float, float] | None] = []
+        for ent, ext in zip(entities, extents):
+            c = _center_of(ext)
+            if c is None and ent.dxf.hasattr("insert"):  # INSERT：用插入点近似
+                try:
+                    c = (float(ent.dxf.insert[0]), float(ent.dxf.insert[1]))
+                except Exception:
+                    c = None
+            centers.append(c)
+
+        def _mad(vals: list[float]) -> tuple[float, float]:
+            m = sorted(vals)[len(vals) // 2]
+            return m, sorted(abs(v - m) for v in vals)[len(vals) // 2]
+
+        cx = [c[0] for c in centers if c is not None]
+        cy = [c[1] for c in centers if c is not None]
+        outlier_count = 0
+        if len(cx) >= 4 and len(cy) >= 4:
+            med_x, mad_x = _mad(cx)
+            med_y, mad_y = _mad(cy)
+            thresh_x = max(mad_x * 15.0, 1e-6)
+            thresh_y = max(mad_y * 15.0, 1e-6)
+            for ent, c in zip(entities, centers):
+                if c is None:
+                    continue  # 无几何信息的实体不参与剔除
+                x, y = c
+                if abs(x - med_x) > thresh_x or abs(y - med_y) > thresh_y:
+                    try:
+                        ent.destroy()
+                        outlier_count += 1
+                    except Exception:
+                        pass
+        logger.info(
+            "CAD 渲染诊断：顶层图元 %s 个，离群剔除 %s 个（视口保护）",
+            len(entities),
+            outlier_count,
+        )
+
+        _render_ext: Any = None
+        try:
+            _render_ext = ez_bbox.extents(doc.modelspace())
+            logger.info("CAD 渲染诊断：剔除后模型空间范围 extents=%s", _render_ext)
+        except Exception:
+            logger.info(
+                "CAD 渲染诊断：模型空间范围计算失败（header %s / %s）",
+                doc.header.get("$EXTMIN"),
+                doc.header.get("$EXTMAX"),
+            )
+
+        layer_colors = _layer_color_map(doc)
+
+        def _raw_rgb(ent: Any) -> int:
+            """实体最终渲染色。true_color 属性存在即为有效（0=纯黑），
+            否则按 ACI（BYLAYER 取图层色），与 ezdxf 渲染引擎语义一致。"""
+            try:
+                if ent.dxf.hasattr("true_color"):
+                    return int(ent.dxf.true_color) & 0xFFFFFF
+                aci = int(getattr(ent.dxf, "color", 256) or 256)
+                if aci == 256:  # BYLAYER
+                    return layer_colors.get(_layer(ent), 0xFFFFFF)
+                if aci == 0:  # BYBLOCK
+                    return 0xFFFFFF
+                return _ACI_COLORS.get(aci, 0xFFFFFF)
+            except Exception:
+                return 0xFFFFFF
+
+        black_count = 0
+        entity_total = 0
+        for block in doc.blocks:
+            for ent in block:
+                entity_total += 1
+                try:
+                    rgb = _raw_rgb(ent)
+                    if max((rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255) < 70:
+                        black_count += 1
+                        had = ent.dxf.hasattr("true_color")
+                        orig = int(ent.dxf.true_color) if had else 0
+                        brightened.append((ent, had, orig))
+                        ent.dxf.true_color = 0xFFFFFF
+                except Exception:
+                    continue
+        logger.info("CAD 渲染诊断：块表实体 %s 个，近黑提亮 %s 个", entity_total, black_count)
+
+        # ---- 空文字实体剔除：DWG 转换器产生大量无内容 TEXT/MTEXT/ATTRIB/ATTDEF，
+        # 画面不可见但字体测量开销极大，是大图渲染慢的主因之一；移除后视觉零差别。
+        # 本函数是分析管线最后一步，doc 之后不再使用，destroy 是安全的
+        _containers = [doc.modelspace()]
+        _containers.extend(blk for blk in doc.blocks if not str(blk.name).startswith("*"))
+        _empty_text_removed = 0
+        for _container in _containers:
+            for _ent in list(_container):
+                _t = _ent.dxftype()
+                try:
+                    if _t in ("TEXT", "ATTRIB", "ATTDEF"):
+                        # 同时检查 text2（对齐文本），避免误删有内容的实体
+                        if not str(_ent.dxf.get("text", "")).strip() and not str(_ent.dxf.get("text2", "")).strip():
+                            _ent.destroy()
+                            _empty_text_removed += 1
+                    elif _t == "MTEXT":
+                        if not str(_ent.text).strip():
+                            _ent.destroy()
+                            _empty_text_removed += 1
+                except Exception:
+                    continue
+        logger.info("CAD 渲染诊断：剔除空文字实体 %s 个", _empty_text_removed)
+    except Exception as exc:
+        logger.warning("CAD 渲染诊断失败（不影响渲染）：%s", exc)
+
+    try:
+        msp = doc.modelspace()
+        _t_pre = time.perf_counter()
+        # 输出分辨率按图纸长宽比自适应：长边由 max_dim 控制（默认 4200px）。
+        # 分辨率越高放大越清晰，代价是 PNG 体积与光栅化耗时增加
+        _raster_max_dim = max_dim
+        _fw, _fh = 10.0, 7.5
+        try:
+            if _render_ext is not None and _render_ext.has_data:
+                _emin, _emax = _render_ext.extmin, _render_ext.extmax
+                _ew = float(_emax[0] - _emin[0])
+                _eh = float(_emax[1] - _emin[1])
+                if _ew > 0 and _eh > 0:
+                    _aspect = _ew / _eh
+                    if _aspect > _fw / _fh:
+                        _fh = _fw / _aspect
+                    else:
+                        _fw = _fh * _aspect
+        except Exception:
+            pass
+        _raster_dpi = _raster_max_dim / max(_fw, _fh)
+        fig = plt.figure(figsize=(_fw, _fh))
+        ax = fig.add_axes([0, 0, 1, 1])
+        ctx = RenderContext(doc)
+        config = Configuration(background_policy=BackgroundPolicy.BLACK)
+        # adjust_figure=False：阻止 ezdxf finalize 时按默认 rcParams 尺寸
+        # (6.43x4.8 inch) 覆盖我们按 _raster_max_dim 计算的 figsize，
+        # 否则输出像素会被锁死在约 2700px，放大后图纸文字依然模糊
+        _emit_analysis_progress(progress_callback, progress="高清预览·准备...")
+        Frontend(ctx, MatplotlibBackend(ax, adjust_figure=False), config=config).draw_layout(msp, finalize=True)
+        _t_draw = time.perf_counter()
+        _emit_analysis_progress(progress_callback, progress="高清预览·绘制...")
+        buf = io.BytesIO()
+        # 不启用 bbox_inches="tight"：ax 占满 figure，直接按 figsize*dpi 输出像素，
+        # 保证长边严格等于 _raster_max_dim，前端放大时清晰度可控。
+        # 先输出未压缩 RGBA（matplotlib 内置 PNG 编码比 PIL 慢），再交给 PIL 编码 PNG
+        fig.savefig(
+            buf,
+            format="raw",
+            dpi=_raster_dpi,
+            facecolor="black",
+            pad_inches=0,
+        )
+        _t_save = time.perf_counter()
+        try:
+            import PIL.Image as _PILImage
+
+            _fw_act, _fh_act = fig.get_size_inches()
+            _raw_w = int(round(_fw_act * _raster_dpi))
+            _raw_h = int(round(_fh_act * _raster_dpi))
+            _img_rgba = _PILImage.frombuffer(
+                "RGBA", (_raw_w, _raw_h), buf.getvalue(), "raw", "RGBA", 0, 1
+            )
+            _out = io.BytesIO()
+            _img_rgba.convert("RGB").save(_out, format="PNG")
+            buf = _out
+        except Exception:
+            # RGBA 尺寸推算偏差兜底：退回 matplotlib 自带 PNG 编码（figure 尚未关闭）
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", dpi=_raster_dpi, facecolor="black", pad_inches=0)
+        plt.close(fig)
+        _emit_analysis_progress(progress_callback, progress="高清预览·输出...")
+        logger.info("CAD 渲染计时：准备 %.1fs，绘制图元 %.1fs，输出 PNG %.1fs",
+                    _t_pre - _t0, _t_draw - _t_pre, _t_save - _t_draw)
+    except Exception as exc:
+        logger.exception("CAD 高清渲染失败")
+        try:
+            plt.close("all")
+        except Exception:
+            pass
+        _ezdxf_log.setLevel(_ezdxf_prev_level)
+        return None
+    finally:
+        for ent, had, orig in brightened:
+            try:
+                if had:
+                    ent.dxf.true_color = orig
+                else:
+                    ent.dxf.discard("true_color")
+            except Exception:
+                pass
+
+    _ezdxf_log.setLevel(_ezdxf_prev_level)
+    png_bytes = buf.getvalue()
+    width = 0
+    height = 0
+    try:
+        import PIL.Image
+
+        image = PIL.Image.open(io.BytesIO(png_bytes))
+        width, height = image.size
+        try:
+            px = image.load()
+            step = 8
+            sampled = 0
+            lit = 0
+            for y in range(0, height, step):
+                for x in range(0, width, step):
+                    p = px[x, y]
+                    sampled += 1
+                    if max(p[0], p[1], p[2]) > 8:
+                        lit += 1
+            logger.info(
+                "CAD 渲染诊断：PNG %sx%s，采样非黑像素占比 %.1f%%",
+                width, height, 100.0 * lit / max(sampled, 1),
+            )
+        except Exception:
+            pass
+        longest = max(width, height)
+        if longest > max_dim:
+            scale = max_dim / longest
+            image = image.resize((round(width * scale), round(height * scale)), PIL.Image.LANCZOS)
+            width, height = image.size
+            out = io.BytesIO()
+            image.save(out, format="PNG")
+            png_bytes = out.getvalue()
+    except Exception:
+        png_bytes = buf.getvalue()
+
+    data_url = "data:image/png;base64," + base64.b64encode(png_bytes).decode("ascii")
+    return {"data_url": data_url, "width": width, "height": height}
+
+
+def build_cad_geometry(
+    doc: Any,
+    items: list[tuple[Any, ComponentRule | None]] | None = None,
+    bbox: tuple[float, float, float, float] | None = None,
+) -> dict[str, Any]:
+    """导出紧凑折线几何（整数化坐标），供前端 WebGL CAD 看图组件渲染。
+
+    与 SVG 预览不同：不设苛刻图元上限（GPU 一次 draw call 渲染全部线条），
+    坐标放大 10 倍取整以压缩传输体积，前端再除回。
+    items/bbox 可由调用方预收集复用，避免重复遍历全图（大图重复遍历是解析卡顿主因）。
+    """
+
+    if items is None:
+        items = _iter_preview_items(doc.modelspace(), CAD_GEOMETRY_MAX_ENTITIES)
+    if bbox is None:
+        bbox = _preview_bbox(items)
+    if bbox is None:
+        return {"bbox": None, "groups": {}, "highlights": [], "texts": []}
+
+    layer_colors = _layer_color_map(doc)
+    min_x, min_y, max_x, max_y = bbox
+
+    groups: dict[str, list[int]] = {}
+    highlights: list[list[float]] = []
+    texts: list[list] = []
+    rendered = 0
+    total_segments = 0
+    started = time.perf_counter()
+
+    for entity, rule in items:
+        kind = entity.dxftype()
+        if kind in {"TEXT", "MTEXT"}:
+            if len(texts) < CAD_GEOMETRY_MAX_TEXTS:
+                try:
+                    txt = _read_text(entity)
+                    pos = entity.dxf.insert if kind == "TEXT" else getattr(entity.dxf, "insert", None)
+                    if txt and pos is not None:
+                        size = float(getattr(entity.dxf, "height", 0) or 0)
+                        texts.append([
+                            round(float(pos.x) * 10),
+                            round(-float(pos.y) * 10),
+                            round(size * 10, 1),
+                            txt[:60],
+                        ])
+                except Exception:
+                    continue
+            continue
+        # 三重兜底：图元数 / 线段总量 / 耗时预算，任一超限立即截断
+        if rendered >= CAD_GEOMETRY_MAX_ENTITIES or total_segments >= CAD_GEOMETRY_MAX_SEGMENTS:
+            break
+        if rendered % 256 == 0 and time.perf_counter() - started > CAD_GEOMETRY_TIME_BUDGET_SECONDS:
+            logger.warning("CAD 看图几何导出超过 %.0fs 预算，截断于 %d 个图元", CAD_GEOMETRY_TIME_BUDGET_SECONDS, rendered)
+            break
+        # 原样呈现：不做图元过滤，图纸里有什么就画什么
+        try:
+            points = _points_from_entity(entity)
+        except Exception:
+            continue
+        if len(points) < 2:
+            if kind == "CIRCLE":
+                try:
+                    center = entity.dxf.center
+                    radius = float(entity.dxf.radius)
+                    segs = 32
+                    points = [
+                        (float(center.x) + radius * math.cos(2 * math.pi * i / segs),
+                         float(center.y) + radius * math.sin(2 * math.pi * i / segs))
+                        for i in range(segs + 1)
+                    ]
+                except Exception:
+                    continue
+            else:
+                continue
+        entity_bbox = _bbox_from_points(points)
+        points = _preview_points(points, CAD_GEOMETRY_MAX_POINTS)
+        seg_count = max(0, len(points) - 1)
+        if seg_count < 1 or total_segments + seg_count > CAD_GEOMETRY_MAX_SEGMENTS:
+            continue
+        rendered += 1
+        total_segments += seg_count
+        # 按 CAD 原色分组（与 CAD 快速看图一致：图层/实体原色）
+        color_key = _entity_color_hex(entity, layer_colors)
+        flat = groups.setdefault(color_key, [])
+        prev = None
+        for x, y in points:
+            cur = (round(x * 10), round(-y * 10))
+            # 折线展开为线段序列：每对相邻点输出一段 (prev, cur)
+            if prev is not None and cur != prev:
+                flat.extend(prev)
+                flat.extend(cur)
+            prev = cur
+        if (
+            rule is not None
+            and rule.key in PREVIEW_HIGHLIGHT_RULES
+            and entity_bbox is not None
+            and len(highlights) < CAD_GEOMETRY_MAX_HIGHLIGHTS
+        ):
+            x1, y1, x2, y2 = entity_bbox
+            highlights.append([
+                round(x1 * 10), round(-y2 * 10), round(x2 * 10), round(-y1 * 10), rule.key,
+            ])
+
+    return {
+        "bbox": [round(v * 10) for v in (min_x, -max_y, max_x, -min_y)],
+        "groups": {k: v for k, v in groups.items() if v},
+        "highlights": highlights,
+        "texts": texts,
+    }
+
+
 def build_preview_svg(
     doc: Any,
     max_entities: int = PREVIEW_MAX_RENDERED_ENTITIES,
@@ -1859,12 +2544,15 @@ def build_preview_svg(
     shape_rendering: str = "geometricPrecision",
     stroke_width: float = PREVIEW_SCREEN_STROKE_WIDTH,
     progress_callback: DxfProgressCallback | None = None,
+    items: list[tuple[Any, ComponentRule | None]] | None = None,
+    bbox: tuple[float, float, float, float] | None = None,
 ) -> str:
     """Render a clean CAD-style line preview without depending on heavy CAD renderers."""
 
-    msp = doc.modelspace()
-    items = _iter_preview_items(msp, max(max_entities, PREVIEW_COLLECTION_LIMIT))
-    bbox = _preview_bbox(items)
+    if items is None:
+        items = _iter_preview_items(doc.modelspace(), max(max_entities, PREVIEW_COLLECTION_LIMIT))
+    if bbox is None:
+        bbox = _preview_bbox(items)
     if bbox is None:
         return ""
 
@@ -2101,7 +2789,8 @@ def _analyze_insert(entity: Any, bucket: dict[str, Any]) -> None:
     points: list[tuple[float, float]] = []
     length_raw = 0.0
     area_raw = 0.0
-    texts: list[str] = []
+    # 块属性（ATTRIB）常存门窗型号/尺寸，先并入 texts 供规格提取
+    texts: list[str] = _insert_attrib_texts(entity)
     type_counts: Counter[str] = Counter()
 
     for virtual in virtuals:
@@ -2283,6 +2972,7 @@ def analyze_dxf_bytes(
             "boq_suggestions": [],
             "preview_svg": "",
             "preview_svg_hd": "",
+            "cad_geometry": {"bbox": None, "groups": {}, "highlights": [], "texts": []},
             "diagnostics": [f"缺少 DXF 解析依赖 ezdxf：{detail}"],
             "layer_summary": [],
             "error": "ezdxf_not_installed",
@@ -2304,6 +2994,7 @@ def analyze_dxf_bytes(
                 "boq_suggestions": [],
                 "preview_svg": "",
                 "preview_svg_hd": "",
+                "cad_geometry": {"bbox": None, "groups": {}, "highlights": [], "texts": []},
                 "diagnostics": conversion_diagnostics,
                 "layer_summary": [],
                 "error": conversion.error or "dwg_conversion_failed",
@@ -2321,7 +3012,7 @@ def analyze_dxf_bytes(
         _emit_analysis_progress(progress_callback, progress="正在解析 CAD 图层和模型空间...")
         doc, recover_diagnostics = _read_dxf_document(ezdxf, tmp_path)
         msp = doc.modelspace()
-        layer_names = [layer.dxf.name for layer in doc.layers]
+        layer_names = [_clean_str(layer.dxf.name) for layer in doc.layers]
         all_entities = list(msp)
         entity_total = len(all_entities)
         _emit_analysis_progress(
@@ -2357,6 +3048,8 @@ def analyze_dxf_bytes(
             text = _read_text(entity)
             if rule is None and text:
                 rule = _classify_annotation_rule(layer, _name(entity), text)
+            if rule is None:
+                rule = _classify_by_geometry(entity)
             if not rule:
                 continue
 
@@ -2495,8 +3188,15 @@ def analyze_dxf_bytes(
         if len(all_entities) > PREVIEW_MAX_RENDERED_ENTITIES:
             diagnostics.append("图纸预览提供流畅和高清两档，工程量统计仍按完整图元计算。")
 
+        # 图元收集与包围盒只算一次，预览/高清预览/看图几何三处复用，
+        # 避免大图重复遍历+重复展开点坐标导致解析卡在预览阶段
+        _emit_analysis_progress(progress_callback, progress="正在收集图纸图元...")
+        preview_items = _iter_preview_items(doc.modelspace(), PREVIEW_COLLECTION_LIMIT)
+        preview_bbox = _preview_bbox(preview_items)
         _emit_analysis_progress(progress_callback, progress="正在生成图纸预览并标记构件...")
-        preview_svg = build_preview_svg(doc, progress_callback=progress_callback)
+        preview_svg = build_preview_svg(
+            doc, progress_callback=progress_callback, items=preview_items, bbox=preview_bbox,
+        )
         _emit_analysis_progress(progress_callback, progress="正在生成高清预览...")
         preview_svg_hd = build_preview_svg(
             doc,
@@ -2505,7 +3205,13 @@ def analyze_dxf_bytes(
             max_text_entities=PREVIEW_HD_TEXT_ENTITIES,
             shape_rendering="geometricPrecision",
             stroke_width=PREVIEW_HD_STROKE_WIDTH,
+            items=preview_items,
+            bbox=preview_bbox,
         )
+        _emit_analysis_progress(progress_callback, progress="正在导出 CAD 看图几何数据...")
+        cad_geometry = build_cad_geometry(doc, items=preview_items, bbox=preview_bbox)
+        _emit_analysis_progress(progress_callback, progress="正在渲染 CAD 原图高清预览（大图纸需几分钟，请勿关窗）...")
+        cad_raster = build_cad_raster(doc, progress_callback=progress_callback)
         _emit_analysis_progress(progress_callback, progress="正在整理识别结果...")
         source_label = "DWG 已转换为 DXF 并解析完成" if source_format == "DWG" else "DXF 文件解析完成"
         summary = (
@@ -2536,6 +3242,8 @@ def analyze_dxf_bytes(
             "boq_suggestions": suggestions,
             "preview_svg": preview_svg,
             "preview_svg_hd": preview_svg_hd,
+            "cad_geometry": cad_geometry,
+            "cad_raster": cad_raster,
             "diagnostics": diagnostics,
             "layer_summary": layer_summary,
             "disciplines": disciplines,
@@ -2552,6 +3260,8 @@ def analyze_dxf_bytes(
             "boq_suggestions": [],
             "preview_svg": "",
             "preview_svg_hd": "",
+            "cad_geometry": {"bbox": None, "groups": {}, "highlights": [], "texts": []},
+            "cad_raster": None,
             "diagnostics": [f"解析异常: {exc}"],
             "layer_summary": [],
             "disciplines": [],

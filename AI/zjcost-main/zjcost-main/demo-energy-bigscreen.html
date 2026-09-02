@@ -1,0 +1,1867 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>源网荷储一体化智慧能源大屏</title>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #06111f;
+      --bg-2: #08182d;
+      --panel: rgba(8, 27, 46, 0.78);
+      --panel-strong: rgba(10, 34, 58, 0.92);
+      --panel-soft: rgba(12, 44, 72, 0.58);
+      --line: rgba(78, 195, 225, 0.28);
+      --line-strong: rgba(92, 236, 218, 0.58);
+      --text: #e7fbff;
+      --muted: #7ea8b6;
+      --cyan: #41f0ff;
+      --teal: #26e0c4;
+      --green: #68ff9d;
+      --blue: #5aa6ff;
+      --amber: #ffcb65;
+      --orange: #ff9460;
+      --red: #ff6c7f;
+      --shadow: 0 0 30px rgba(38, 224, 196, 0.12);
+    }
+
+    html,
+    body {
+      min-height: 100%;
+      background:
+        radial-gradient(circle at 50% 0%, rgba(65, 240, 255, 0.16), transparent 28%),
+        radial-gradient(circle at 10% 10%, rgba(90, 166, 255, 0.18), transparent 24%),
+        radial-gradient(circle at 90% 12%, rgba(38, 224, 196, 0.16), transparent 22%),
+        linear-gradient(180deg, #06101c 0%, #071522 55%, #04101a 100%);
+      color: var(--text);
+      font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+      overflow: hidden;
+    }
+
+    body::before,
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    body::before {
+      background:
+        linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+      background-size: 54px 54px;
+      opacity: 0.22;
+    }
+
+    body::after {
+      background: linear-gradient(
+        to bottom,
+        rgba(255, 255, 255, 0.02) 0%,
+        rgba(255, 255, 255, 0.01) 48%,
+        rgba(65, 240, 255, 0.035) 50%,
+        rgba(255, 255, 255, 0.008) 52%,
+        rgba(255, 255, 255, 0.02) 100%
+      );
+      background-size: 100% 6px;
+      opacity: 0.18;
+      animation: scanline 12s linear infinite;
+    }
+
+    .screen {
+      position: relative;
+      z-index: 1;
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: 78px minmax(0, 1fr) 82px;
+      gap: 14px;
+      padding: 14px 16px 12px;
+    }
+
+    .topbar {
+      position: relative;
+      display: grid;
+      grid-template-columns: 300px minmax(0, 1fr) 300px;
+      align-items: center;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    .top-meta,
+    .top-extra {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .top-extra {
+      justify-content: flex-end;
+    }
+
+    .meta-chip {
+      position: relative;
+      min-width: 0;
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(8, 33, 54, 0.82), rgba(6, 25, 41, 0.66));
+      box-shadow: inset 0 0 20px rgba(65, 240, 255, 0.05), var(--shadow);
+      clip-path: polygon(12px 0, calc(100% - 12px) 0, 100% 12px, 100% calc(100% - 12px), calc(100% - 12px) 100%, 12px 100%, 0 calc(100% - 12px), 0 12px);
+    }
+
+    .meta-chip strong,
+    .meta-chip .label {
+      display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .meta-chip .label {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 3px;
+      letter-spacing: 1px;
+    }
+
+    .meta-chip strong {
+      font-size: 18px;
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .title-wrap {
+      position: relative;
+      text-align: center;
+      padding: 8px 20px 10px;
+      min-width: 0;
+    }
+
+    .title-wrap::before,
+    .title-wrap::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      width: 22%;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(65, 240, 255, 0.75), transparent);
+    }
+
+    .title-wrap::before {
+      left: 0;
+    }
+
+    .title-wrap::after {
+      right: 0;
+    }
+
+    .title-wrap h1 {
+      font-size: 32px;
+      letter-spacing: 5px;
+      font-weight: 800;
+      text-shadow: 0 0 16px rgba(65, 240, 255, 0.28);
+    }
+
+    .title-wrap p {
+      margin-top: 6px;
+      font-size: 13px;
+      color: var(--muted);
+      letter-spacing: 2px;
+    }
+
+    .main {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 360px minmax(0, 1fr) 360px;
+      gap: 14px;
+    }
+
+    .side-column,
+    .center-column {
+      min-height: 0;
+      display: grid;
+      gap: 14px;
+    }
+
+    .side-column {
+      grid-template-rows: repeat(4, minmax(0, 1fr));
+    }
+
+    .center-column {
+      grid-template-rows: minmax(0, 1fr) auto;
+    }
+
+    .panel {
+      position: relative;
+      min-height: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      background:
+        linear-gradient(180deg, rgba(9, 29, 49, 0.92), rgba(5, 20, 34, 0.88)),
+        radial-gradient(circle at top left, rgba(65, 240, 255, 0.08), transparent 30%);
+      box-shadow:
+        inset 0 0 24px rgba(65, 240, 255, 0.05),
+        0 10px 35px rgba(0, 0, 0, 0.25);
+    }
+
+    .panel::before,
+    .panel::after,
+    .panel .corner::before,
+    .panel .corner::after {
+      content: "";
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-color: rgba(92, 236, 218, 0.85);
+      pointer-events: none;
+    }
+
+    .panel::before {
+      top: 0;
+      left: 0;
+      border-top: 2px solid;
+      border-left: 2px solid;
+    }
+
+    .panel::after {
+      top: 0;
+      right: 0;
+      border-top: 2px solid;
+      border-right: 2px solid;
+    }
+
+    .panel .corner::before {
+      bottom: 0;
+      left: 0;
+      border-bottom: 2px solid;
+      border-left: 2px solid;
+    }
+
+    .panel .corner::after {
+      bottom: 0;
+      right: 0;
+      border-bottom: 2px solid;
+      border-right: 2px solid;
+    }
+
+    .panel .corner {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .panel-header {
+      position: relative;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px 10px;
+      border-bottom: 1px solid rgba(65, 240, 255, 0.12);
+      z-index: 1;
+    }
+
+    .panel-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .panel-title i {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--cyan);
+      box-shadow: 0 0 12px rgba(65, 240, 255, 0.9);
+      animation: breath 1.8s ease-in-out infinite;
+    }
+
+    .panel-title h3 {
+      font-size: 16px;
+      letter-spacing: 1px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .panel-header span {
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .panel-body {
+      position: relative;
+      height: calc(100% - 49px);
+      padding: 12px 14px 14px;
+      z-index: 1;
+    }
+
+    .panel-body.tight {
+      padding-top: 10px;
+    }
+
+    .panel-glow {
+      position: absolute;
+      inset: auto -10% -40% auto;
+      width: 45%;
+      height: 45%;
+      background: radial-gradient(circle, rgba(38, 224, 196, 0.25), transparent 68%);
+      filter: blur(16px);
+      pointer-events: none;
+    }
+
+    .pv-kpis {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      height: 100%;
+      align-content: start;
+    }
+
+    .kpi-card {
+      position: relative;
+      padding: 12px 12px 10px;
+      min-height: 88px;
+      border: 1px solid rgba(65, 240, 255, 0.14);
+      background: linear-gradient(180deg, rgba(8, 34, 55, 0.82), rgba(7, 25, 41, 0.74));
+      overflow: hidden;
+    }
+
+    .kpi-card::after {
+      content: "";
+      position: absolute;
+      inset: auto -40% 0 auto;
+      width: 120px;
+      height: 120px;
+      background: radial-gradient(circle, rgba(65, 240, 255, 0.12), transparent 60%);
+    }
+
+    .kpi-card .label {
+      font-size: 12px;
+      color: var(--muted);
+      letter-spacing: 1px;
+    }
+
+    .kpi-card .value {
+      margin-top: 10px;
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--text);
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      text-shadow: 0 0 12px rgba(65, 240, 255, 0.16);
+    }
+
+    .kpi-card .unit {
+      margin-left: 6px;
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .kpi-card .meta {
+      margin-top: 8px;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .chart-box {
+      width: 100%;
+      height: 100%;
+      min-height: 150px;
+    }
+
+    .unit-grid {
+      height: 100%;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      align-content: center;
+    }
+
+    .unit-card {
+      padding: 10px;
+      border: 1px solid rgba(65, 240, 255, 0.12);
+      background: rgba(9, 36, 56, 0.62);
+      text-align: center;
+    }
+
+    .ring {
+      position: relative;
+      width: 116px;
+      height: 116px;
+      margin: 0 auto 8px;
+    }
+
+    .ring svg {
+      width: 100%;
+      height: 100%;
+      transform: rotate(-90deg);
+    }
+
+    .ring .ring-bg {
+      fill: none;
+      stroke: rgba(126, 168, 182, 0.14);
+      stroke-width: 10;
+    }
+
+    .ring .ring-fg {
+      fill: none;
+      stroke-width: 10;
+      stroke-linecap: round;
+      filter: drop-shadow(0 0 10px rgba(65, 240, 255, 0.2));
+      transition: stroke-dasharray 0.6s ease;
+    }
+
+    .ring-center {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1px;
+    }
+
+    .ring-center strong {
+      font-size: 24px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .ring-center span {
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 1px;
+    }
+
+    .unit-name {
+      font-size: 13px;
+      color: var(--text);
+      margin-bottom: 8px;
+      font-weight: 700;
+    }
+
+    .unit-meta {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .unit-meta strong {
+      display: block;
+      margin-top: 3px;
+      font-size: 13px;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .economy-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .mini-stat {
+      padding: 12px 10px;
+      border: 1px solid rgba(65, 240, 255, 0.12);
+      background: rgba(10, 35, 56, 0.68);
+    }
+
+    .mini-stat .label {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .mini-stat .value {
+      margin-top: 10px;
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--amber);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .economy-summary {
+      display: grid;
+      gap: 10px;
+    }
+
+    .summary-row {
+      display: grid;
+      grid-template-columns: 92px minmax(0, 1fr) 78px;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .summary-row .track {
+      position: relative;
+      height: 12px;
+      border-radius: 999px;
+      background: rgba(126, 168, 182, 0.12);
+      overflow: hidden;
+    }
+
+    .summary-row .track span {
+      position: absolute;
+      inset: 0 auto 0 0;
+      border-radius: inherit;
+      background: linear-gradient(90deg, rgba(255, 148, 96, 0.85), rgba(255, 203, 101, 0.95));
+      box-shadow: 0 0 12px rgba(255, 203, 101, 0.28);
+    }
+
+    .summary-row strong {
+      color: var(--text);
+      font-size: 13px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .alert-list {
+      display: grid;
+      gap: 10px;
+      align-content: start;
+    }
+
+    .alert-item {
+      display: grid;
+      grid-template-columns: 66px minmax(0, 1fr) 64px;
+      gap: 10px;
+      align-items: start;
+      padding: 10px 12px;
+      border: 1px solid rgba(126, 168, 182, 0.1);
+      background: rgba(10, 34, 56, 0.56);
+    }
+
+    .alert-level {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px 0;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      border: 1px solid;
+    }
+
+    .alert-level.emergency {
+      color: #ffd7dd;
+      background: rgba(255, 108, 127, 0.14);
+      border-color: rgba(255, 108, 127, 0.4);
+    }
+
+    .alert-level.important {
+      color: #ffe7bf;
+      background: rgba(255, 148, 96, 0.14);
+      border-color: rgba(255, 148, 96, 0.36);
+    }
+
+    .alert-level.normal {
+      color: #bff7ff;
+      background: rgba(65, 240, 255, 0.1);
+      border-color: rgba(65, 240, 255, 0.28);
+    }
+
+    .alert-content strong {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 3px;
+      color: var(--text);
+    }
+
+    .alert-content p {
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--muted);
+    }
+
+    .alert-time {
+      text-align: right;
+      font-size: 11px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .topology-panel {
+      height: 100%;
+      display: grid;
+      grid-template-rows: minmax(0, 1fr) 106px;
+      gap: 12px;
+      padding: 14px 16px 16px;
+    }
+
+    .topology-wrap {
+      position: relative;
+      min-height: 0;
+      border: 1px solid rgba(65, 240, 255, 0.12);
+      background:
+        radial-gradient(circle at center, rgba(65, 240, 255, 0.08), transparent 44%),
+        linear-gradient(180deg, rgba(6, 25, 41, 0.68), rgba(4, 17, 29, 0.9));
+      overflow: hidden;
+    }
+
+    .topology-wrap::before {
+      content: "";
+      position: absolute;
+      inset: 8% 10%;
+      border: 1px dashed rgba(65, 240, 255, 0.08);
+      border-radius: 50%;
+      pointer-events: none;
+    }
+
+    .topology-wrap svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .core-metrics {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .core-metric {
+      position: relative;
+      padding: 14px 14px 12px;
+      border: 1px solid rgba(65, 240, 255, 0.16);
+      background: linear-gradient(180deg, rgba(9, 33, 52, 0.82), rgba(7, 21, 37, 0.76));
+      overflow: hidden;
+    }
+
+    .core-metric::after {
+      content: "";
+      position: absolute;
+      inset: auto auto -60% 45%;
+      width: 150px;
+      height: 150px;
+      background: radial-gradient(circle, rgba(65, 240, 255, 0.12), transparent 68%);
+    }
+
+    .core-metric .label {
+      font-size: 12px;
+      color: var(--muted);
+      letter-spacing: 1px;
+    }
+
+    .core-metric .value {
+      margin-top: 8px;
+      font-size: 32px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+      text-shadow: 0 0 14px rgba(65, 240, 255, 0.16);
+    }
+
+    .core-metric .unit {
+      margin-left: 6px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .core-metric .meta {
+      margin-top: 6px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .bottom-strip {
+      display: grid;
+      grid-template-columns: repeat(8, minmax(0, 1fr));
+      gap: 10px;
+      min-height: 0;
+    }
+
+    .strip-item {
+      position: relative;
+      padding: 10px 12px;
+      border: 1px solid rgba(65, 240, 255, 0.15);
+      background: linear-gradient(180deg, rgba(8, 31, 51, 0.8), rgba(6, 20, 34, 0.78));
+      overflow: hidden;
+    }
+
+    .strip-item .label {
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 1px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .strip-item .value {
+      margin-top: 8px;
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .strip-item .suffix {
+      margin-left: 5px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .strip-item .trend {
+      margin-top: 4px;
+      font-size: 11px;
+      color: var(--teal);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .topology-node-label {
+      font-size: 13px;
+      font-weight: 700;
+      fill: #dffcff;
+      letter-spacing: 1px;
+    }
+
+    .topology-node-sub {
+      font-size: 11px;
+      fill: #7ea8b6;
+    }
+
+    @keyframes scanline {
+      from {
+        transform: translateY(-8px);
+      }
+      to {
+        transform: translateY(8px);
+      }
+    }
+
+    @keyframes breath {
+      0%,
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+      50% {
+        opacity: 0.55;
+        transform: scale(1.35);
+      }
+    }
+
+    @keyframes ringRotate {
+      from {
+        transform: rotate(0deg);
+      }
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    @keyframes dashFlow {
+      to {
+        stroke-dashoffset: -120;
+      }
+    }
+
+    @keyframes pulseSpread {
+      0% {
+        transform: scale(0.78);
+        opacity: 0.68;
+      }
+      100% {
+        transform: scale(1.18);
+        opacity: 0;
+      }
+    }
+
+    @keyframes glowRise {
+      0%,
+      100% {
+        transform: translateY(18px) scaleY(0.82);
+        opacity: 0.55;
+      }
+      50% {
+        transform: translateY(-10px) scaleY(1.08);
+        opacity: 1;
+      }
+    }
+
+    @media (max-width: 1400px) {
+      .screen {
+        grid-template-rows: 92px minmax(0, 1fr) 88px;
+      }
+
+      .topbar {
+        grid-template-columns: 260px minmax(0, 1fr) 260px;
+      }
+
+      .main {
+        grid-template-columns: 320px minmax(0, 1fr) 320px;
+      }
+
+      .title-wrap h1 {
+        font-size: 28px;
+      }
+
+      .core-metric .value {
+        font-size: 28px;
+      }
+
+      .strip-item .value {
+        font-size: 20px;
+      }
+    }
+
+    @media (max-width: 1100px) {
+      html,
+      body {
+        overflow: auto;
+      }
+
+      .screen {
+        min-height: 1100px;
+        grid-template-rows: auto auto auto;
+      }
+
+      .topbar {
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
+
+      .top-meta,
+      .top-extra {
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+
+      .title-wrap::before,
+      .title-wrap::after {
+        display: none;
+      }
+
+      .main {
+        grid-template-columns: 1fr;
+      }
+
+      .side-column {
+        grid-template-rows: repeat(4, 280px);
+      }
+
+      .center-column {
+        grid-template-rows: 620px auto;
+      }
+
+      .bottom-strip {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="screen">
+    <header class="topbar">
+      <div class="top-meta">
+        <div class="meta-chip">
+          <span class="label">运行模式</span>
+          <strong>源网荷储联动优化</strong>
+        </div>
+        <div class="meta-chip">
+          <span class="label">系统状态</span>
+          <strong id="systemHealth">全域稳定</strong>
+        </div>
+      </div>
+      <div class="title-wrap">
+        <h1>源网荷储一体化智慧能源管控大屏</h1>
+        <p>建筑光伏 · 梯级水电 · 储能电站 · 智能电网 · 碳效协同运营</p>
+      </div>
+      <div class="top-extra">
+        <div class="meta-chip">
+          <span class="label">北京时间</span>
+          <strong id="clockText">--:--:--</strong>
+        </div>
+        <div class="meta-chip">
+          <span class="label">天气 / 光照</span>
+          <strong id="weatherText">晴 · 865 W/m² · 31°C</strong>
+        </div>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="side-column">
+        <article class="panel">
+          <div class="corner"></div>
+          <div class="panel-header">
+            <div class="panel-title"><i></i><h3>建筑光伏运行状态</h3></div>
+            <span>6 项关键指标</span>
+          </div>
+          <div class="panel-body tight">
+            <div class="pv-kpis">
+              <div class="kpi-card">
+                <div class="label">装机容量</div>
+                <div class="value" id="pvCapacity">18.6<span class="unit">MWp</span></div>
+                <div class="meta"><span>阵列 32 区</span><span>可用率 99.2%</span></div>
+              </div>
+              <div class="kpi-card">
+                <div class="label">当日发电量</div>
+                <div class="value" id="pvTodayEnergy">82.4<span class="unit">MWh</span></div>
+                <div class="meta"><span>较昨日 +3.2%</span><span>峰值 12:36</span></div>
+              </div>
+              <div class="kpi-card">
+                <div class="label">累计发电量</div>
+                <div class="value" id="pvTotalEnergy">4.86<span class="unit">GWh</span></div>
+                <div class="meta"><span>年度达成 73%</span><span>PR 84.6%</span></div>
+              </div>
+              <div class="kpi-card">
+                <div class="label">实时功率</div>
+                <div class="value" id="pvRealtimePower">12.8<span class="unit">MW</span></div>
+                <div class="meta"><span>峰谷优化中</span><span>逆变效率 98.4%</span></div>
+              </div>
+              <div class="kpi-card">
+                <div class="label">逆变器在线数</div>
+                <div class="value" id="pvInverterOnline">47<span class="unit">/ 48</span></div>
+                <div class="meta"><span>告警 1 台</span><span>通信正常</span></div>
+              </div>
+              <div class="kpi-card">
+                <div class="label">组件温度</div>
+                <div class="value" id="pvModuleTemp">41.6<span class="unit">°C</span></div>
+                <div class="meta"><span>环境 31.2°C</span><span>风速 3.4m/s</span></div>
+              </div>
+            </div>
+            <div class="panel-glow"></div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="corner"></div>
+          <div class="panel-header">
+            <div class="panel-title"><i></i><h3>光伏功率与光照趋势</h3></div>
+            <span>24 小时双 Y 轴</span>
+          </div>
+          <div class="panel-body">
+            <div id="pvTrendChart" class="chart-box"></div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="corner"></div>
+          <div class="panel-header">
+            <div class="panel-title"><i></i><h3>水电机组运行状态</h3></div>
+            <span>4 台机组</span>
+          </div>
+          <div class="panel-body tight">
+            <div class="unit-grid">
+              <div class="unit-card">
+                <div class="unit-name">1 号机组</div>
+                <div class="ring">
+                  <svg viewBox="0 0 120 120">
+                    <circle class="ring-bg" cx="60" cy="60" r="48"></circle>
+                    <circle id="unitRing0" class="ring-fg" cx="60" cy="60" r="48" stroke="#41f0ff"></circle>
+                  </svg>
+                  <div class="ring-center"><strong id="unitLoad0">86%</strong><span>负荷率</span></div>
+                </div>
+                <div class="unit-meta">
+                  <div>出力<strong id="unitPower0">22.8MW</strong></div>
+                  <div>水位<strong id="unitLevel0">186.3m</strong></div>
+                  <div>流量<strong id="unitFlow0">118m³/s</strong></div>
+                </div>
+              </div>
+              <div class="unit-card">
+                <div class="unit-name">2 号机组</div>
+                <div class="ring">
+                  <svg viewBox="0 0 120 120">
+                    <circle class="ring-bg" cx="60" cy="60" r="48"></circle>
+                    <circle id="unitRing1" class="ring-fg" cx="60" cy="60" r="48" stroke="#26e0c4"></circle>
+                  </svg>
+                  <div class="ring-center"><strong id="unitLoad1">81%</strong><span>负荷率</span></div>
+                </div>
+                <div class="unit-meta">
+                  <div>出力<strong id="unitPower1">21.4MW</strong></div>
+                  <div>水位<strong id="unitLevel1">184.9m</strong></div>
+                  <div>流量<strong id="unitFlow1">112m³/s</strong></div>
+                </div>
+              </div>
+              <div class="unit-card">
+                <div class="unit-name">3 号机组</div>
+                <div class="ring">
+                  <svg viewBox="0 0 120 120">
+                    <circle class="ring-bg" cx="60" cy="60" r="48"></circle>
+                    <circle id="unitRing2" class="ring-fg" cx="60" cy="60" r="48" stroke="#68ff9d"></circle>
+                  </svg>
+                  <div class="ring-center"><strong id="unitLoad2">78%</strong><span>负荷率</span></div>
+                </div>
+                <div class="unit-meta">
+                  <div>出力<strong id="unitPower2">20.7MW</strong></div>
+                  <div>水位<strong id="unitLevel2">183.6m</strong></div>
+                  <div>流量<strong id="unitFlow2">108m³/s</strong></div>
+                </div>
+              </div>
+              <div class="unit-card">
+                <div class="unit-name">4 号机组</div>
+                <div class="ring">
+                  <svg viewBox="0 0 120 120">
+                    <circle class="ring-bg" cx="60" cy="60" r="48"></circle>
+                    <circle id="unitRing3" class="ring-fg" cx="60" cy="60" r="48" stroke="#5aa6ff"></circle>
+                  </svg>
+                  <div class="ring-center"><strong id="unitLoad3">74%</strong><span>负荷率</span></div>
+                </div>
+                <div class="unit-meta">
+                  <div>出力<strong id="unitPower3">19.2MW</strong></div>
+                  <div>水位<strong id="unitLevel3">182.7m</strong></div>
+                  <div>流量<strong id="unitFlow3">104m³/s</strong></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="corner"></div>
+          <div class="panel-header">
+            <div class="panel-title"><i></i><h3>能源结构占比</h3></div>
+            <span>光伏 / 水电 / 市电 / 储能</span>
+          </div>
+          <div class="panel-body">
+            <div id="energyMixChart" class="chart-box"></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="center-column">
+        <article class="panel">
+          <div class="corner"></div>
+          <div class="topology-panel">
+            <div class="topology-wrap">
+              <svg viewBox="0 0 1200 720" preserveAspectRatio="xMidYMid meet" aria-label="源网荷储一体化拓扑图">
+                <defs>
+                  <linearGradient id="flowLine" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stop-color="#26e0c4" stop-opacity="0.25"></stop>
+                    <stop offset="45%" stop-color="#41f0ff" stop-opacity="0.95"></stop>
+                    <stop offset="100%" stop-color="#5aa6ff" stop-opacity="0.3"></stop>
+                  </linearGradient>
+                  <radialGradient id="coreGlow" cx="50%" cy="50%" r="60%">
+                    <stop offset="0%" stop-color="#9dfcff" stop-opacity="0.9"></stop>
+                    <stop offset="38%" stop-color="#41f0ff" stop-opacity="0.52"></stop>
+                    <stop offset="100%" stop-color="#41f0ff" stop-opacity="0"></stop>
+                  </radialGradient>
+                  <radialGradient id="nodeGlow" cx="50%" cy="50%" r="60%">
+                    <stop offset="0%" stop-color="#d4ffff" stop-opacity="0.92"></stop>
+                    <stop offset="35%" stop-color="#26e0c4" stop-opacity="0.38"></stop>
+                    <stop offset="100%" stop-color="#26e0c4" stop-opacity="0"></stop>
+                  </radialGradient>
+                  <filter id="softGlow" x="-40%" y="-40%" width="180%" height="180%">
+                    <feGaussianBlur stdDeviation="8" result="blur"></feGaussianBlur>
+                    <feMerge>
+                      <feMergeNode in="blur"></feMergeNode>
+                      <feMergeNode in="SourceGraphic"></feMergeNode>
+                    </feMerge>
+                  </filter>
+                </defs>
+
+                <g opacity="0.55">
+                  <circle cx="600" cy="360" r="270" fill="none" stroke="rgba(65,240,255,0.12)" stroke-width="1.5" stroke-dasharray="10 14"></circle>
+                  <circle cx="600" cy="360" r="208" fill="none" stroke="rgba(65,240,255,0.08)" stroke-width="1" stroke-dasharray="4 10"></circle>
+                  <circle cx="600" cy="360" r="120" fill="none" stroke="rgba(65,240,255,0.1)" stroke-width="1" stroke-dasharray="4 8"></circle>
+                </g>
+
+                <g style="transform-origin: 600px 360px; animation: ringRotate 20s linear infinite;">
+                  <circle cx="600" cy="360" r="304" fill="none" stroke="rgba(65,240,255,0.16)" stroke-width="2" stroke-dasharray="14 26"></circle>
+                </g>
+                <g style="transform-origin: 600px 360px; animation: ringRotate 26s linear infinite reverse;">
+                  <circle cx="600" cy="360" r="330" fill="none" stroke="rgba(38,224,196,0.14)" stroke-width="2" stroke-dasharray="8 22"></circle>
+                </g>
+
+                <g>
+                  <path d="M600 360 L320 168" fill="none" stroke="url(#flowLine)" stroke-width="5" stroke-linecap="round" stroke-dasharray="10 14" style="animation: dashFlow 3.8s linear infinite;"></path>
+                  <path d="M600 360 L892 184" fill="none" stroke="url(#flowLine)" stroke-width="5" stroke-linecap="round" stroke-dasharray="10 14" style="animation: dashFlow 4.2s linear infinite;"></path>
+                  <path d="M600 360 L896 540" fill="none" stroke="url(#flowLine)" stroke-width="5" stroke-linecap="round" stroke-dasharray="10 14" style="animation: dashFlow 4.6s linear infinite;"></path>
+                  <path d="M600 360 L304 544" fill="none" stroke="url(#flowLine)" stroke-width="5" stroke-linecap="round" stroke-dasharray="10 14" style="animation: dashFlow 4s linear infinite;"></path>
+                </g>
+
+                <g opacity="0.95">
+                  <circle cx="486" cy="282" r="6" fill="#41f0ff">
+                    <animateMotion dur="3.8s" repeatCount="indefinite" path="M114 78 L-166 -114"></animateMotion>
+                  </circle>
+                  <circle cx="708" cy="294" r="6" fill="#26e0c4">
+                    <animateMotion dur="4.2s" repeatCount="indefinite" path="M-108 66 L184 -110"></animateMotion>
+                  </circle>
+                  <circle cx="708" cy="430" r="6" fill="#68ff9d">
+                    <animateMotion dur="4.6s" repeatCount="indefinite" path="M-108 -70 L188 110"></animateMotion>
+                  </circle>
+                  <circle cx="492" cy="430" r="6" fill="#5aa6ff">
+                    <animateMotion dur="4s" repeatCount="indefinite" path="M108 -70 L-188 114"></animateMotion>
+                  </circle>
+                </g>
+
+                <g filter="url(#softGlow)">
+                  <circle cx="600" cy="360" r="86" fill="url(#coreGlow)"></circle>
+                  <circle cx="600" cy="360" r="52" fill="rgba(8,30,52,0.96)" stroke="rgba(65,240,255,0.7)" stroke-width="2"></circle>
+                  <circle cx="600" cy="360" r="96" fill="none" stroke="rgba(65,240,255,0.24)" stroke-width="2">
+                    <animate attributeName="r" values="88;118" dur="2.8s" repeatCount="indefinite"></animate>
+                    <animate attributeName="opacity" values="0.85;0" dur="2.8s" repeatCount="indefinite"></animate>
+                  </circle>
+                  <circle cx="600" cy="360" r="96" fill="none" stroke="rgba(38,224,196,0.18)" stroke-width="2">
+                    <animate attributeName="r" values="88;130" dur="3.6s" begin="1.1s" repeatCount="indefinite"></animate>
+                    <animate attributeName="opacity" values="0.7;0" dur="3.6s" begin="1.1s" repeatCount="indefinite"></animate>
+                  </circle>
+                </g>
+
+                <g style="transform-origin: 600px 410px; animation: glowRise 3.2s ease-in-out infinite;">
+                  <ellipse cx="600" cy="410" rx="26" ry="74" fill="rgba(65,240,255,0.22)"></ellipse>
+                  <ellipse cx="600" cy="390" rx="14" ry="52" fill="rgba(157,252,255,0.34)"></ellipse>
+                </g>
+
+                <g text-anchor="middle">
+                  <text x="600" y="350" font-size="20" font-weight="700" fill="#e7fbff">能源管控中心</text>
+                  <text x="600" y="376" font-size="12" fill="#7ea8b6">智能协同调度 / 优化决策 / 碳效分析</text>
+                </g>
+
+                <g>
+                  <circle cx="320" cy="168" r="62" fill="rgba(8,30,52,0.92)" stroke="rgba(65,240,255,0.46)" stroke-width="2.2"></circle>
+                  <circle cx="320" cy="168" r="88" fill="url(#nodeGlow)" opacity="0.7"></circle>
+                  <path d="M286 182 L300 148 L318 182 L332 136 L352 182" fill="none" stroke="#41f0ff" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"></path>
+                  <line x1="300" y1="182" x2="300" y2="202" stroke="#41f0ff" stroke-width="4"></line>
+                  <line x1="318" y1="182" x2="318" y2="210" stroke="#41f0ff" stroke-width="4"></line>
+                  <line x1="336" y1="182" x2="336" y2="202" stroke="#41f0ff" stroke-width="4"></line>
+                  <text class="topology-node-label" x="320" y="252">建筑光伏阵列</text>
+                  <text class="topology-node-sub" x="320" y="274">18.6 MWp · 分布式屋顶</text>
+                </g>
+
+                <g>
+                  <circle cx="892" cy="184" r="62" fill="rgba(8,30,52,0.92)" stroke="rgba(38,224,196,0.46)" stroke-width="2.2"></circle>
+                  <circle cx="892" cy="184" r="88" fill="url(#nodeGlow)" opacity="0.66"></circle>
+                  <path d="M860 198 Q878 148 894 184 T928 174" fill="none" stroke="#26e0c4" stroke-width="4"></path>
+                  <path d="M864 202 L882 214 L904 162 L926 202" fill="none" stroke="#26e0c4" stroke-width="4"></path>
+                  <text class="topology-node-label" x="892" y="268">梯级水电站</text>
+                  <text class="topology-node-sub" x="892" y="290">84.1 MW · 四台机组联动</text>
+                </g>
+
+                <g>
+                  <circle cx="896" cy="540" r="62" fill="rgba(8,30,52,0.92)" stroke="rgba(104,255,157,0.46)" stroke-width="2.2"></circle>
+                  <circle cx="896" cy="540" r="88" fill="url(#nodeGlow)" opacity="0.64"></circle>
+                  <rect x="866" y="515" width="56" height="34" rx="6" fill="none" stroke="#68ff9d" stroke-width="4"></rect>
+                  <rect x="924" y="524" width="7" height="14" rx="3" fill="#68ff9d"></rect>
+                  <line x1="876" y1="532" x2="912" y2="532" stroke="#68ff9d" stroke-width="4"></line>
+                  <line x1="894" y1="520" x2="894" y2="544" stroke="#68ff9d" stroke-width="4"></line>
+                  <text class="topology-node-label" x="896" y="624">储能电站</text>
+                  <text class="topology-node-sub" x="896" y="646">42 MWh · 双向调峰调频</text>
+                </g>
+
+                <g>
+                  <circle cx="304" cy="544" r="62" fill="rgba(8,30,52,0.92)" stroke="rgba(90,166,255,0.46)" stroke-width="2.2"></circle>
+                  <circle cx="304" cy="544" r="88" fill="url(#nodeGlow)" opacity="0.64"></circle>
+                  <path d="M276 536 L304 512 L332 536 L332 574 L276 574 Z" fill="none" stroke="#5aa6ff" stroke-width="4"></path>
+                  <path d="M304 512 L304 574" fill="none" stroke="#5aa6ff" stroke-width="4"></path>
+                  <path d="M288 544 L304 528 L320 544" fill="none" stroke="#5aa6ff" stroke-width="4"></path>
+                  <text class="topology-node-label" x="304" y="628">智能电网</text>
+                  <text class="topology-node-sub" x="304" y="650">柔性并网 · 负荷预测控制</text>
+                </g>
+
+                <g opacity="0.65">
+                  <circle cx="320" cy="168" r="96" fill="none" stroke="rgba(65,240,255,0.22)" stroke-width="2">
+                    <animate attributeName="r" values="86;108" dur="3s" repeatCount="indefinite"></animate>
+                    <animate attributeName="opacity" values="0.72;0" dur="3s" repeatCount="indefinite"></animate>
+                  </circle>
+                  <circle cx="892" cy="184" r="96" fill="none" stroke="rgba(38,224,196,0.22)" stroke-width="2">
+                    <animate attributeName="r" values="86;108" dur="3.2s" begin="0.4s" repeatCount="indefinite"></animate>
+                    <animate attributeName="opacity" values="0.72;0" dur="3.2s" begin="0.4s" repeatCount="indefinite"></animate>
+                  </circle>
+                  <circle cx="896" cy="540" r="96" fill="none" stroke="rgba(104,255,157,0.22)" stroke-width="2">
+                    <animate attributeName="r" values="86;108" dur="3.4s" begin="0.8s" repeatCount="indefinite"></animate>
+                    <animate attributeName="opacity" values="0.72;0" dur="3.4s" begin="0.8s" repeatCount="indefinite"></animate>
+                  </circle>
+                  <circle cx="304" cy="544" r="96" fill="none" stroke="rgba(90,166,255,0.22)" stroke-width="2">
+                    <animate attributeName="r" values="86;108" dur="3.1s" begin="1.2s" repeatCount="indefinite"></animate>
+                    <animate attributeName="opacity" values="0.72;0" dur="3.1s" begin="1.2s" repeatCount="indefinite"></animate>
+                  </circle>
+                </g>
+              </svg>
+            </div>
+
+            <div class="core-metrics">
+              <div class="core-metric">
+                <div class="label">实时总出力</div>
+                <div class="value" id="totalOutput">121.6<span class="unit">MW</span></div>
+                <div class="meta">光伏 + 水电 + 储能放电</div>
+              </div>
+              <div class="core-metric">
+                <div class="label">今日总发电量</div>
+                <div class="value" id="todayGeneration">836.4<span class="unit">MWh</span></div>
+                <div class="meta">同比 +6.4%</div>
+              </div>
+              <div class="core-metric">
+                <div class="label">累计 CO₂ 减排</div>
+                <div class="value" id="co2Reduction">2864<span class="unit">t</span></div>
+                <div class="meta">折合植树 15.8 万棵</div>
+              </div>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="side-column">
+        <article class="panel">
+          <div class="corner"></div>
+          <div class="panel-header">
+            <div class="panel-title"><i></i><h3>碳排放减排分析</h3></div>
+            <span>近 7 日趋势</span>
+          </div>
+          <div class="panel-body">
+            <div id="carbonChart" class="chart-box"></div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="corner"></div>
+          <div class="panel-header">
+            <div class="panel-title"><i></i><h3>负荷与发电出力对比</h3></div>
+            <span>24 小时双折线面积</span>
+          </div>
+          <div class="panel-body">
+            <div id="loadGenChart" class="chart-box"></div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="corner"></div>
+          <div class="panel-header">
+            <div class="panel-title"><i></i><h3>经济收益分析</h3></div>
+            <span>收益与回收期</span>
+          </div>
+          <div class="panel-body tight">
+            <div class="economy-grid">
+              <div class="mini-stat">
+                <div class="label">当日收益</div>
+                <div class="value" id="incomeToday">18.6</div>
+                <div class="label">万元</div>
+              </div>
+              <div class="mini-stat">
+                <div class="label">当月收益</div>
+                <div class="value" id="incomeMonth">462.4</div>
+                <div class="label">万元</div>
+              </div>
+              <div class="mini-stat">
+                <div class="label">峰谷套利</div>
+                <div class="value" id="incomeArbitrage">6.2</div>
+                <div class="label">万元 / 日</div>
+              </div>
+              <div class="mini-stat">
+                <div class="label">静态回收期</div>
+                <div class="value" id="paybackPeriod">6.8</div>
+                <div class="label">年</div>
+              </div>
+            </div>
+            <div class="economy-summary">
+              <div class="summary-row">
+                <span>累计收益</span>
+                <div class="track"><span id="incomeTrackTotal" style="width: 82%;"></span></div>
+                <strong id="incomeTotal">4860 万</strong>
+              </div>
+              <div class="summary-row">
+                <span>运维收益率</span>
+                <div class="track"><span id="incomeTrackRate" style="width: 76%;"></span></div>
+                <strong id="incomeRate">13.8%</strong>
+              </div>
+              <div class="summary-row">
+                <span>储能套利占比</span>
+                <div class="track"><span id="incomeTrackShare" style="width: 42%;"></span></div>
+                <strong id="incomeShare">42%</strong>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="corner"></div>
+          <div class="panel-header">
+            <div class="panel-title"><i></i><h3>实时告警事件</h3></div>
+            <span>紧急 / 重要 / 一般</span>
+          </div>
+          <div class="panel-body tight">
+            <div class="alert-list" id="alertList"></div>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <footer class="bottom-strip">
+      <div class="strip-item">
+        <div class="label">园区总负荷</div>
+        <div class="value" id="stripLoad">118.4<span class="suffix">MW</span></div>
+        <div class="trend">峰时负荷响应中</div>
+      </div>
+      <div class="strip-item">
+        <div class="label">储能 SOC</div>
+        <div class="value" id="stripSoc">67.2<span class="suffix">%</span></div>
+        <div class="trend">预计 18:30 参与削峰</div>
+      </div>
+      <div class="strip-item">
+        <div class="label">购电功率</div>
+        <div class="value" id="stripGrid">12.6<span class="suffix">MW</span></div>
+        <div class="trend">较上一时段 -8.4%</div>
+      </div>
+      <div class="strip-item">
+        <div class="label">弃光率</div>
+        <div class="value" id="stripCurtail">0.8<span class="suffix">%</span></div>
+        <div class="trend">受控在目标区间</div>
+      </div>
+      <div class="strip-item">
+        <div class="label">综合效率</div>
+        <div class="value" id="stripEff">92.6<span class="suffix">%</span></div>
+        <div class="trend">联调策略优化中</div>
+      </div>
+      <div class="strip-item">
+        <div class="label">频率稳定度</div>
+        <div class="value" id="stripFreq">49.98<span class="suffix">Hz</span></div>
+        <div class="trend">波动 ±0.03Hz</div>
+      </div>
+      <div class="strip-item">
+        <div class="label">当日上网电量</div>
+        <div class="value" id="stripExport">286<span class="suffix">MWh</span></div>
+        <div class="trend">电网友好型输出</div>
+      </div>
+      <div class="strip-item">
+        <div class="label">碳交易收益</div>
+        <div class="value" id="stripCarbonIncome">4.6<span class="suffix">万</span></div>
+        <div class="trend">今日新增 0.28 万</div>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+    const colors = {
+      cyan: cssVar("--cyan"),
+      teal: cssVar("--teal"),
+      green: cssVar("--green"),
+      blue: cssVar("--blue"),
+      amber: cssVar("--amber"),
+      orange: cssVar("--orange"),
+      red: cssVar("--red"),
+      text: cssVar("--text"),
+      muted: cssVar("--muted"),
+      line: "rgba(126,168,182,0.18)"
+    };
+
+    const hourLabels = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, "0")}:00`);
+    const weatherProfiles = [
+      { desc: "晴", lux: 918, temp: 31.2 },
+      { desc: "多云", lux: 786, temp: 29.6 },
+      { desc: "晴间云", lux: 865, temp: 30.4 }
+    ];
+
+    const state = {
+      pvCapacity: 18.6,
+      pvTodayEnergy: 82.4,
+      pvTotalEnergy: 4.86,
+      pvRealtimePower: 12.8,
+      pvInverterOnline: 47,
+      pvModuleTemp: 41.6,
+      pvPowerSeries: [0.3, 0.2, 0.2, 0.1, 0.5, 1.8, 3.9, 6.6, 8.8, 10.6, 11.9, 12.8, 13.1, 12.9, 11.8, 10.2, 8.3, 6.1, 3.8, 2.2, 1.1, 0.6, 0.4, 0.3],
+      irradianceSeries: [0, 0, 0, 0, 40, 120, 260, 420, 610, 740, 815, 860, 892, 874, 820, 710, 560, 390, 220, 100, 38, 0, 0, 0],
+      unitLoads: [86, 81, 78, 74],
+      unitPowers: [22.8, 21.4, 20.7, 19.2],
+      unitLevels: [186.3, 184.9, 183.6, 182.7],
+      unitFlows: [118, 112, 108, 104],
+      energyMix: [
+        { value: 27, name: "光伏" },
+        { value: 49, name: "水电" },
+        { value: 14, name: "市电" },
+        { value: 10, name: "储能" }
+      ],
+      carbonSeries: [312, 328, 341, 356, 348, 372, 386],
+      loadSeries: [86, 82, 79, 77, 75, 78, 86, 94, 101, 108, 112, 116, 118, 120, 122, 121, 119, 115, 109, 102, 97, 93, 90, 88],
+      generationSeries: [64, 61, 59, 57, 55, 58, 68, 82, 96, 108, 116, 121, 124, 122, 118, 112, 104, 96, 87, 78, 72, 69, 66, 65],
+      incomeToday: 18.6,
+      incomeMonth: 462.4,
+      incomeArbitrage: 6.2,
+      paybackPeriod: 6.8,
+      incomeTotal: 4860,
+      incomeRate: 13.8,
+      incomeShare: 42,
+      totalOutput: 121.6,
+      todayGeneration: 836.4,
+      co2Reduction: 2864,
+      stripLoad: 118.4,
+      stripSoc: 67.2,
+      stripGrid: 12.6,
+      stripCurtail: 0.8,
+      stripEff: 92.6,
+      stripFreq: 49.98,
+      stripExport: 286,
+      stripCarbonIncome: 4.6,
+      alertSeed: 0,
+      alerts: [
+        { level: "emergency", label: "紧急", title: "1# 逆变器直流侧温升异常", desc: "组串温升超阈值，建议立即切换至降额运行并复核热斑。", time: "1 分钟前" },
+        { level: "important", label: "重要", title: "储能 PCS 充放策略待校正", desc: "峰谷套利策略与实时负荷预测存在 3.6% 偏差。", time: "4 分钟前" },
+        { level: "normal", label: "一般", title: "电网联络线功率波动提醒", desc: "联络线 15 分钟内波动增大，系统已自动修正出力斜率。", time: "9 分钟前" },
+        { level: "normal", label: "一般", title: "3# 水电机组巡检窗口临近", desc: "建议在低谷负荷时段安排短时巡检，避免影响并网稳定。", time: "16 分钟前" }
+      ]
+    };
+
+    const charts = {
+      pvTrend: echarts.init(document.getElementById("pvTrendChart")),
+      energyMix: echarts.init(document.getElementById("energyMixChart")),
+      carbon: echarts.init(document.getElementById("carbonChart")),
+      loadGen: echarts.init(document.getElementById("loadGenChart"))
+    };
+
+    function formatNum(value, digits = 1) {
+      return Number(value).toLocaleString("zh-CN", {
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits
+      });
+    }
+
+    function vary(value, amplitude, digits = 1) {
+      const delta = (Math.random() - 0.5) * amplitude * 2;
+      return Number((value + delta).toFixed(digits));
+    }
+
+    function clamp(value, min, max) {
+      return Math.min(max, Math.max(min, value));
+    }
+
+    function setText(id, text) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = text;
+    }
+
+    function updateClock() {
+      const now = new Date();
+      const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}`;
+      document.getElementById("clockText").textContent = `${date} ${time}`;
+
+      const index = now.getMinutes() % weatherProfiles.length;
+      const profile = weatherProfiles[index];
+      const sunFactor = Math.max(0.15, Math.sin(((now.getHours() * 60 + now.getMinutes()) / 1440) * Math.PI));
+      const lux = Math.round(profile.lux * sunFactor + (Math.random() * 24 - 12));
+      const temp = (profile.temp + (Math.random() * 0.6 - 0.3)).toFixed(1);
+      document.getElementById("weatherText").textContent = `${profile.desc} · ${lux} W/m² · ${temp}°C`;
+    }
+
+    function ringDash(percent) {
+      const r = 48;
+      const c = 2 * Math.PI * r;
+      return `${(c * percent) / 100} ${c}`;
+    }
+
+    function renderUnitCards() {
+      state.unitLoads.forEach((load, index) => {
+        const ring = document.getElementById(`unitRing${index}`);
+        if (ring) {
+          ring.setAttribute("stroke-dasharray", ringDash(load));
+        }
+        setText(`unitLoad${index}`, `${Math.round(load)}%`);
+        setText(`unitPower${index}`, `${formatNum(state.unitPowers[index], 1)}MW`);
+        setText(`unitLevel${index}`, `${formatNum(state.unitLevels[index], 1)}m`);
+        setText(`unitFlow${index}`, `${Math.round(state.unitFlows[index])}m³/s`);
+      });
+    }
+
+    function renderAlerts() {
+      const container = document.getElementById("alertList");
+      container.innerHTML = state.alerts
+        .map((item) => `
+          <div class="alert-item">
+            <span class="alert-level ${item.level}">${item.label}</span>
+            <div class="alert-content">
+              <strong>${item.title}</strong>
+              <p>${item.desc}</p>
+            </div>
+            <div class="alert-time">${item.time}</div>
+          </div>
+        `)
+        .join("");
+    }
+
+    function renderNumbers() {
+      setText("systemHealth", state.alerts[0].level === "emergency" ? "局部预警" : "全域稳定");
+      document.getElementById("pvCapacity").innerHTML = `${formatNum(state.pvCapacity, 1)}<span class="unit">MWp</span>`;
+      document.getElementById("pvTodayEnergy").innerHTML = `${formatNum(state.pvTodayEnergy, 1)}<span class="unit">MWh</span>`;
+      document.getElementById("pvTotalEnergy").innerHTML = `${formatNum(state.pvTotalEnergy, 2)}<span class="unit">GWh</span>`;
+      document.getElementById("pvRealtimePower").innerHTML = `${formatNum(state.pvRealtimePower, 1)}<span class="unit">MW</span>`;
+      document.getElementById("pvInverterOnline").innerHTML = `${Math.round(state.pvInverterOnline)}<span class="unit">/ 48</span>`;
+      document.getElementById("pvModuleTemp").innerHTML = `${formatNum(state.pvModuleTemp, 1)}<span class="unit">°C</span>`;
+
+      document.getElementById("totalOutput").innerHTML = `${formatNum(state.totalOutput, 1)}<span class="unit">MW</span>`;
+      document.getElementById("todayGeneration").innerHTML = `${formatNum(state.todayGeneration, 1)}<span class="unit">MWh</span>`;
+      document.getElementById("co2Reduction").innerHTML = `${formatNum(state.co2Reduction, 0)}<span class="unit">t</span>`;
+
+      document.getElementById("incomeToday").textContent = formatNum(state.incomeToday, 1);
+      document.getElementById("incomeMonth").textContent = formatNum(state.incomeMonth, 1);
+      document.getElementById("incomeArbitrage").textContent = formatNum(state.incomeArbitrage, 1);
+      document.getElementById("paybackPeriod").textContent = formatNum(state.paybackPeriod, 1);
+      document.getElementById("incomeTotal").textContent = `${formatNum(state.incomeTotal, 0)} 万`;
+      document.getElementById("incomeRate").textContent = `${formatNum(state.incomeRate, 1)}%`;
+      document.getElementById("incomeShare").textContent = `${formatNum(state.incomeShare, 0)}%`;
+      document.getElementById("incomeTrackTotal").style.width = `${clamp(state.incomeTotal / 60, 20, 100)}%`;
+      document.getElementById("incomeTrackRate").style.width = `${clamp(state.incomeRate * 5.2, 12, 100)}%`;
+      document.getElementById("incomeTrackShare").style.width = `${clamp(state.incomeShare, 16, 100)}%`;
+
+      document.getElementById("stripLoad").innerHTML = `${formatNum(state.stripLoad, 1)}<span class="suffix">MW</span>`;
+      document.getElementById("stripSoc").innerHTML = `${formatNum(state.stripSoc, 1)}<span class="suffix">%</span>`;
+      document.getElementById("stripGrid").innerHTML = `${formatNum(state.stripGrid, 1)}<span class="suffix">MW</span>`;
+      document.getElementById("stripCurtail").innerHTML = `${formatNum(state.stripCurtail, 1)}<span class="suffix">%</span>`;
+      document.getElementById("stripEff").innerHTML = `${formatNum(state.stripEff, 1)}<span class="suffix">%</span>`;
+      document.getElementById("stripFreq").innerHTML = `${formatNum(state.stripFreq, 2)}<span class="suffix">Hz</span>`;
+      document.getElementById("stripExport").innerHTML = `${formatNum(state.stripExport, 0)}<span class="suffix">MWh</span>`;
+      document.getElementById("stripCarbonIncome").innerHTML = `${formatNum(state.stripCarbonIncome, 1)}<span class="suffix">万</span>`;
+    }
+
+    function axisStyle() {
+      return {
+        axisLine: { lineStyle: { color: colors.line } },
+        axisLabel: { color: colors.muted, fontSize: 11 },
+        splitLine: { lineStyle: { color: "rgba(126,168,182,0.08)" } },
+        axisTick: { show: false }
+      };
+    }
+
+    function renderPvTrendChart() {
+      charts.pvTrend.setOption({
+        backgroundColor: "transparent",
+        animationDuration: 700,
+        grid: { left: 48, right: 48, top: 28, bottom: 26 },
+        tooltip: {
+          trigger: "axis",
+          backgroundColor: "rgba(5, 20, 34, 0.92)",
+          borderColor: "rgba(65,240,255,0.25)",
+          textStyle: { color: colors.text }
+        },
+        legend: {
+          top: 0,
+          right: 4,
+          textStyle: { color: colors.muted, fontSize: 11 }
+        },
+        xAxis: {
+          type: "category",
+          data: hourLabels,
+          boundaryGap: false,
+          ...axisStyle()
+        },
+        yAxis: [
+          {
+            type: "value",
+            name: "功率 MW",
+            nameTextStyle: { color: colors.muted },
+            min: 0,
+            max: 16,
+            ...axisStyle()
+          },
+          {
+            type: "value",
+            name: "光照 W/m²",
+            nameTextStyle: { color: colors.muted },
+            min: 0,
+            max: 1000,
+            splitLine: { show: false },
+            axisLabel: { color: colors.muted, fontSize: 11 },
+            axisLine: { lineStyle: { color: colors.line } }
+          }
+        ],
+        series: [
+          {
+            name: "发电功率",
+            type: "line",
+            smooth: true,
+            symbol: "circle",
+            symbolSize: 6,
+            yAxisIndex: 0,
+            lineStyle: { width: 3, color: colors.cyan },
+            itemStyle: { color: colors.cyan },
+            areaStyle: {
+              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: "rgba(65,240,255,0.32)" },
+                { offset: 1, color: "rgba(65,240,255,0.02)" }
+              ])
+            },
+            data: state.pvPowerSeries
+          },
+          {
+            name: "光照强度",
+            type: "line",
+            smooth: true,
+            symbol: "none",
+            yAxisIndex: 1,
+            lineStyle: { width: 2, type: "dashed", color: colors.amber },
+            itemStyle: { color: colors.amber },
+            data: state.irradianceSeries
+          }
+        ]
+      });
+    }
+
+    function renderEnergyMixChart() {
+      charts.energyMix.setOption({
+        backgroundColor: "transparent",
+        tooltip: {
+          trigger: "item",
+          backgroundColor: "rgba(5, 20, 34, 0.92)",
+          borderColor: "rgba(65,240,255,0.25)",
+          textStyle: { color: colors.text },
+          formatter: "{b}: {c}%"
+        },
+        legend: {
+          bottom: 0,
+          left: "center",
+          itemWidth: 10,
+          itemHeight: 10,
+          textStyle: { color: colors.muted, fontSize: 12 }
+        },
+        graphic: [
+          {
+            type: "text",
+            left: "center",
+            top: "42%",
+            style: {
+              text: "能源结构",
+              fill: colors.muted,
+              fontSize: 12,
+              textAlign: "center"
+            }
+          },
+          {
+            type: "text",
+            left: "center",
+            top: "50%",
+            style: {
+              text: "100%",
+              fill: colors.text,
+              fontSize: 28,
+              fontWeight: 700,
+              textAlign: "center"
+            }
+          }
+        ],
+        series: [
+          {
+            type: "pie",
+            radius: ["54%", "72%"],
+            center: ["50%", "42%"],
+            avoidLabelOverlap: true,
+            label: { show: false },
+            labelLine: { show: false },
+            itemStyle: {
+              borderColor: "rgba(4,17,29,0.9)",
+              borderWidth: 3
+            },
+            color: [colors.cyan, colors.teal, colors.blue, colors.green],
+            data: state.energyMix
+          }
+        ]
+      });
+    }
+
+    function renderCarbonChart() {
+      charts.carbon.setOption({
+        backgroundColor: "transparent",
+        animationDuration: 700,
+        grid: { left: 42, right: 18, top: 26, bottom: 30 },
+        tooltip: {
+          trigger: "axis",
+          axisPointer: { type: "shadow" },
+          backgroundColor: "rgba(5, 20, 34, 0.92)",
+          borderColor: "rgba(65,240,255,0.25)",
+          textStyle: { color: colors.text }
+        },
+        xAxis: {
+          type: "category",
+          data: ["周一", "周二", "周三", "周四", "周五", "周六", "周日"],
+          ...axisStyle()
+        },
+        yAxis: {
+          type: "value",
+          name: "tCO₂",
+          nameTextStyle: { color: colors.muted },
+          ...axisStyle()
+        },
+        series: [
+          {
+            type: "bar",
+            data: state.carbonSeries,
+            barWidth: 16,
+            itemStyle: {
+              borderRadius: [6, 6, 0, 0],
+              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: colors.green },
+                { offset: 1, color: "rgba(104,255,157,0.28)" }
+              ])
+            }
+          }
+        ]
+      });
+    }
+
+    function renderLoadGenChart() {
+      charts.loadGen.setOption({
+        backgroundColor: "transparent",
+        animationDuration: 700,
+        grid: { left: 44, right: 18, top: 28, bottom: 28 },
+        tooltip: {
+          trigger: "axis",
+          backgroundColor: "rgba(5, 20, 34, 0.92)",
+          borderColor: "rgba(65,240,255,0.25)",
+          textStyle: { color: colors.text }
+        },
+        legend: {
+          top: 0,
+          right: 2,
+          textStyle: { color: colors.muted, fontSize: 11 }
+        },
+        xAxis: {
+          type: "category",
+          boundaryGap: false,
+          data: hourLabels,
+          ...axisStyle()
+        },
+        yAxis: {
+          type: "value",
+          name: "MW",
+          nameTextStyle: { color: colors.muted },
+          ...axisStyle()
+        },
+        series: [
+          {
+            name: "负荷",
+            type: "line",
+            smooth: true,
+            symbol: "none",
+            lineStyle: { width: 2.4, color: colors.orange },
+            areaStyle: {
+              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: "rgba(255,148,96,0.28)" },
+                { offset: 1, color: "rgba(255,148,96,0.02)" }
+              ])
+            },
+            data: state.loadSeries
+          },
+          {
+            name: "发电出力",
+            type: "line",
+            smooth: true,
+            symbol: "none",
+            lineStyle: { width: 2.4, color: colors.cyan },
+            areaStyle: {
+              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: "rgba(65,240,255,0.2)" },
+                { offset: 1, color: "rgba(65,240,255,0.02)" }
+              ])
+            },
+            data: state.generationSeries
+          }
+        ]
+      });
+    }
+
+    function renderCharts() {
+      renderPvTrendChart();
+      renderEnergyMixChart();
+      renderCarbonChart();
+      renderLoadGenChart();
+    }
+
+    function mutateSeries(list, amplitude, min, max, digits = 1) {
+      return list.map((value, index) => {
+        const wave = Math.sin((index + Date.now() / 120000) * 0.6) * amplitude * 0.18;
+        return clamp(vary(value + wave, amplitude, digits), min, max);
+      });
+    }
+
+    function updateDynamicData() {
+      state.pvTodayEnergy = clamp(vary(state.pvTodayEnergy + 0.8, 1.2, 1), 76, 108);
+      state.pvTotalEnergy = clamp(vary(state.pvTotalEnergy + 0.01, 0.01, 2), 4.82, 4.99);
+      state.pvRealtimePower = clamp(vary(state.pvRealtimePower, 0.9, 1), 10.8, 14.4);
+      state.pvModuleTemp = clamp(vary(state.pvModuleTemp, 0.8, 1), 39, 46);
+      state.pvInverterOnline = Math.random() > 0.82 ? 46 : 47;
+
+      state.unitLoads = state.unitLoads.map((value) => clamp(vary(value, 2.2, 0), 70, 92));
+      state.unitPowers = state.unitLoads.map((value, index) => Number((value * 0.265 + index * 0.15).toFixed(1)));
+      state.unitLevels = state.unitLevels.map((value, index) => clamp(vary(value + (index % 2 === 0 ? 0.04 : -0.03), 0.18, 1), 181.8, 187.2));
+      state.unitFlows = state.unitFlows.map((value) => clamp(vary(value, 4, 0), 96, 128));
+
+      state.pvPowerSeries = mutateSeries(state.pvPowerSeries, 0.6, 0, 15.6, 1);
+      state.irradianceSeries = mutateSeries(state.irradianceSeries, 32, 0, 960, 0);
+      state.loadSeries = mutateSeries(state.loadSeries, 2.8, 70, 128, 1);
+      state.generationSeries = mutateSeries(state.generationSeries, 2.4, 55, 130, 1);
+      state.carbonSeries = state.carbonSeries.map((value) => clamp(vary(value, 12, 0), 280, 420));
+
+      state.energyMix = [
+        { value: clamp(vary(state.energyMix[0].value, 1.6, 0), 22, 31), name: "光伏" },
+        { value: clamp(vary(state.energyMix[1].value, 1.4, 0), 44, 54), name: "水电" },
+        { value: clamp(vary(state.energyMix[2].value, 1.2, 0), 10, 18), name: "市电" },
+        { value: 0, name: "储能" }
+      ];
+      const used = state.energyMix[0].value + state.energyMix[1].value + state.energyMix[2].value;
+      state.energyMix[3].value = clamp(Number((100 - used).toFixed(1)), 6, 16);
+
+      state.incomeToday = clamp(vary(state.incomeToday, 0.9, 1), 16, 22);
+      state.incomeMonth = clamp(vary(state.incomeMonth + 0.6, 3.8, 1), 438, 498);
+      state.incomeArbitrage = clamp(vary(state.incomeArbitrage, 0.4, 1), 4.6, 7.8);
+      state.paybackPeriod = clamp(vary(state.paybackPeriod, 0.08, 1), 6.3, 7.2);
+      state.incomeTotal = clamp(vary(state.incomeTotal + 8, 25, 0), 4700, 5100);
+      state.incomeRate = clamp(vary(state.incomeRate, 0.25, 1), 12.6, 15.4);
+      state.incomeShare = clamp(vary(state.incomeShare, 1.1, 0), 36, 48);
+
+      state.totalOutput = clamp(vary(state.totalOutput, 2.4, 1), 112, 128);
+      state.todayGeneration = clamp(vary(state.todayGeneration + 8, 10, 1), 780, 920);
+      state.co2Reduction = clamp(vary(state.co2Reduction + 4, 14, 0), 2780, 2960);
+
+      state.stripLoad = clamp(vary(state.stripLoad, 2.4, 1), 108, 126);
+      state.stripSoc = clamp(vary(state.stripSoc, 2.6, 1), 58, 82);
+      state.stripGrid = clamp(vary(state.stripGrid, 1.8, 1), 8, 20);
+      state.stripCurtail = clamp(vary(state.stripCurtail, 0.25, 1), 0.2, 2.1);
+      state.stripEff = clamp(vary(state.stripEff, 0.6, 1), 90.2, 94.8);
+      state.stripFreq = clamp(vary(state.stripFreq, 0.03, 2), 49.92, 50.04);
+      state.stripExport = clamp(vary(state.stripExport, 12, 0), 240, 340);
+      state.stripCarbonIncome = clamp(vary(state.stripCarbonIncome, 0.2, 1), 3.8, 5.8);
+
+      state.alertSeed = (state.alertSeed + 1) % 4;
+      if (Math.random() > 0.5) {
+        const rotated = [...state.alerts];
+        rotated.push(rotated.shift());
+        state.alerts = rotated;
+      }
+      state.alerts = state.alerts.map((item, index) => ({
+        ...item,
+        time: `${index * 5 + 1 + (state.alertSeed % 3)} 分钟前`
+      }));
+
+      renderNumbers();
+      renderUnitCards();
+      renderAlerts();
+      renderCharts();
+    }
+
+    window.addEventListener("resize", () => {
+      Object.values(charts).forEach((chart) => chart.resize());
+    });
+
+    updateClock();
+    renderNumbers();
+    renderUnitCards();
+    renderAlerts();
+    renderCharts();
+
+    setInterval(updateClock, 1000);
+    setInterval(updateDynamicData, 3000);
+  </script>
+</body>
+</html>

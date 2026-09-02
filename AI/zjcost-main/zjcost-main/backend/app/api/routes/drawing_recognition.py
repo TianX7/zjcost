@@ -8,8 +8,10 @@ import io
 import math
 import os
 import re
+import subprocess
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
@@ -38,6 +40,54 @@ router = APIRouter(prefix="/drawing-recognition", tags=["drawing-recognition"])
 
 _tasks: dict[str, dict] = {}
 _tasks_lock = threading.Lock()
+
+# 上传的原始图纸落盘目录（供"用 CAD 快速看图打开"功能），后端程序目录下
+_DRAWING_CACHE_DIR = Path(__file__).resolve().parents[3] / "uploads_cache"
+
+
+def _find_cad_reader_exe() -> str | None:
+    """探测本机 CAD 快速看图主程序（注册表 → 常见安装路径）。"""
+    try:
+        import winreg
+
+        for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+            for view in (0, winreg.KEY_WOW64_64KEY, winreg.KEY_WOW64_32KEY):
+                try:
+                    key = winreg.OpenKey(
+                        root,
+                        r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+                        0,
+                        winreg.KEY_READ | view,
+                    )
+                except OSError:
+                    continue
+                for i in range(winreg.QueryInfoKey(key)[0]):
+                    try:
+                        sub = winreg.OpenKey(key, winreg.EnumKey(key, i))
+                        try:
+                            name = winreg.QueryValueEx(sub, "DisplayName")[0]
+                        except OSError:
+                            name = ""
+                        if "CAD快速看图" in name or "CADReader" in name or "看图" in name:
+                            try:
+                                loc = winreg.QueryValueEx(sub, "InstallLocation")[0]
+                            except OSError:
+                                loc = ""
+                            if loc and (Path(loc) / "CADReader.exe").exists():
+                                return str(Path(loc) / "CADReader.exe")
+                    except OSError:
+                        continue
+    except Exception:
+        pass
+    for candidate in (
+        r"D:\CADReader\CADReader.exe",
+        r"C:\Program Files\Glodon\CADReader\CADReader.exe",
+        r"C:\Program Files (x86)\Glodon\CADReader\CADReader.exe",
+        r"C:\CADReader\CADReader.exe",
+    ):
+        if Path(candidate).exists():
+            return candidate
+    return None
 _drawing_valuation_slots = threading.BoundedSemaphore(value=1)
 _UPLOAD_READ_CHUNK_SIZE = 1024 * 1024
 _TASK_TYPE = "drawing_recognition"
@@ -179,6 +229,8 @@ class TaskStatusResponse(BaseModel):
     quality_score: Optional[dict] = None
     preview_svg: str = ""
     preview_svg_hd: str = ""
+    cad_geometry: Optional[dict] = None
+    cad_raster: Optional[dict] = None
     valuation: DrawingValuationOut | None = None
     valuation_status: str = "idle"
     valuation_progress: str = ""
@@ -885,7 +937,13 @@ def _run_recognition(
         if is_cad:
             _store_result(task_id, {"progress": "正在解析 CAD 图层和图元..."})
 
-            _phase_pct = {"转换": 30, "读取 CAD": 32, "图层和模型空间": 40, "标记构件": 78, "生成图纸预览": 78, "高清预览": 88, "整理识别结果": 95}
+            _phase_pct = {
+                "转换": 30, "读取 CAD": 32, "图层和模型空间": 40,
+                "标记构件": 78, "生成图纸预览": 78,
+                "高清预览·准备": 89, "高清预览·绘制": 91, "高清预览·输出": 93,
+                "高清预览": 88,
+                "整理识别结果": 95,
+            }
             _prog_state: dict[str, int] = {"last": 40}
             def _cad_progress(payload: dict) -> None:
                 text = payload.get("progress", "")
@@ -896,6 +954,8 @@ def _run_recognition(
                         break
                 else:
                     pct = min(_prog_state["last"] + 4, 93)
+                # 单调递增防护：关键词映射值可能低于先前平滑累积值（进度回跳），取较大值
+                pct = max(pct, _prog_state["last"])
                 _prog_state["last"] = pct
                 _store_result(task_id, {**payload, "progress_percent": pct})
 
@@ -915,6 +975,8 @@ def _run_recognition(
                 "quality_score": raw.get("quality_score"),
                 "preview_svg": raw.get("preview_svg", ""),
                 "preview_svg_hd": raw.get("preview_svg_hd", ""),
+                "cad_geometry": raw.get("cad_geometry"),
+                "cad_raster": raw.get("cad_raster"),
                 "valuation": None,
                 "valuation_status": "processing" if suggestions and not has_error else "skipped",
                 "valuation_progress": "识别完成，正在准备自动计价..." if suggestions and not has_error else "未生成可计价清单",
@@ -1004,6 +1066,16 @@ async def upload_drawing(
     filename = file.filename or "drawing"
     content_type = file.content_type or "application/octet-stream"
 
+    # 原始图纸落盘（供"用 CAD 快速看图打开"：本机调起看图软件打开原文件）
+    try:
+        _DRAWING_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        safe_name = (sanitize_filename(filename) or "drawing").replace("\x00", "")
+        save_path = _DRAWING_CACHE_DIR / f"{task_id}_{safe_name}"
+        save_path.write_bytes(file_bytes)
+        logger.info("原始图纸已落盘：%s", save_path)
+    except Exception as exc:
+        logger.warning("原始图纸落盘失败（不影响解析）：%s", exc)
+
     with _tasks_lock:
         now = datetime.now(timezone.utc).isoformat()
         _tasks[task_id] = {
@@ -1076,6 +1148,34 @@ async def get_cad_converter_status():
     return ConverterStatusResponse(**status)
 
 
+@router.post("/{task_id}/open-in-cad", summary="用本机 CAD 快速看图打开该图纸")
+async def open_in_cad(task_id: str):
+    """找到上传时落盘的原始图纸，用本机 CAD 快速看图（探测不到则提示安装）。"""
+    try:
+        _DRAWING_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        matches = sorted(_DRAWING_CACHE_DIR.glob(f"{task_id}_*"), key=lambda p: p.stat().st_mtime)
+    except Exception:
+        matches = []
+    if not matches:
+        raise HTTPException(status_code=404, detail="未找到该图纸的本地原始文件，请重新上传图纸后再试")
+
+    exe = _find_cad_reader_exe()
+    if not exe:
+        return {
+            "opened": False,
+            "message": "未检测到本机 CAD 快速看图（D:\\CADReader\\CADReader.exe）或同类看图软件，请先安装 CAD 快速看图",
+        }
+
+    target = str(matches[0])
+    try:
+        subprocess.Popen([exe, target], close_fds=True)
+    except Exception as exc:
+        logger.exception("调起 CAD 快速看图失败：%s", target)
+        raise HTTPException(status_code=500, detail=f"调起 CAD 快速看图失败: {exc}") from exc
+    logger.info("已用 CAD 快速看图打开：%s", target)
+    return {"opened": True, "app": exe, "file": Path(target).name}
+
+
 @router.get("/{task_id}", response_model=TaskStatusResponse, summary="查询识别结果")
 async def get_recognition_result(task_id: str, include_svg: bool = Query(True)):
     task = _get_task(task_id)
@@ -1083,9 +1183,9 @@ async def get_recognition_result(task_id: str, include_svg: bool = Query(True)):
         raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
 
     if not include_svg or task.get("status") == "processing":
-        # 预览 SVG 可达数 MB：解析阶段前端用不到，轮询反复传输会把页面拖卡，
-        # 仅在终态且显式请求时返回
-        task = {**task, "preview_svg": "", "preview_svg_hd": ""}
+        # 预览 SVG / 高清渲染图可达数 MB：解析阶段前端用不到，
+        # 轮询反复传输会把页面拖卡，仅在终态且显式请求时返回
+        task = {**task, "preview_svg": "", "preview_svg_hd": "", "cad_geometry": None, "cad_raster": None}
 
     return TaskStatusResponse(taskId=task_id, **task)
 

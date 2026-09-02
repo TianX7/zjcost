@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>筑衡 · 动态管控 —— 从造价到运维的全生命周期闭环</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0b1a30; --panel: #10243f; --panel-2: #0e2036;
+    --line: #1e3a5f; --text: #e2e8f0; --muted: #8aa2c0;
+    --teal: #2dd4bf; --green: #34d399; --red: #f87171; --amber: #fbbf24;
+    --blue: #38bdf8; --orange: #fb923c; --indigo: #a78bfa;
+  }
+  body {
+    background: radial-gradient(1200px 600px at 50% -10%, rgba(56,189,248,0.08), transparent 60%), var(--bg);
+    color: var(--text);
+    font-family: "Microsoft YaHei", "PingFang SC", -apple-system, sans-serif;
+    padding: 28px 32px 60px;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 1280px; margin: 0 auto; }
+
+  header { text-align: center; margin-bottom: 30px; }
+  header .brand { display: inline-flex; align-items: center; gap: 10px; }
+  header .brand .logo {
+    width: 40px; height: 40px; border-radius: 10px;
+    background: linear-gradient(135deg, var(--teal), var(--blue));
+    display: grid; place-items: center; font-weight: 800; font-size: 18px; color: #061226;
+  }
+  header h1 { font-size: 26px; letter-spacing: 1px; }
+  header h1 em { color: var(--teal); font-style: normal; }
+  header p { color: var(--muted); font-size: 13px; margin-top: 8px; }
+  header .step-strip { display: flex; justify-content: center; gap: 6px; margin-top: 16px; flex-wrap: wrap; }
+  header .step-chip {
+    display: flex; align-items: center; gap: 6px; background: var(--panel);
+    border: 1px solid var(--line); padding: 6px 14px; border-radius: 999px; font-size: 13px; color: var(--muted);
+  }
+  header .step-chip b { color: var(--teal); font-size: 12px; }
+  header .step-chip.cur { border-color: var(--teal); color: var(--text); box-shadow: 0 0 0 1px rgba(45,212,191,0.3); }
+
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+  .panel { background: linear-gradient(180deg, var(--panel), var(--panel-2)); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+  .panel h3 { font-size: 15px; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .panel h3 .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .panel .sub { color: var(--muted); font-size: 12px; }
+
+  /* 四源卡片 */
+  .source { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+  .source .head { display: flex; align-items: center; gap: 10px; }
+  .source .ico { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; font-size: 17px; }
+  .source h4 { font-size: 14px; }
+  .source .fmt { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .source .foot { display: flex; justify-content: space-between; margin-top: 12px; font-size: 12px; color: var(--muted); }
+  .tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid; }
+  .tag.ok { color: var(--green); border-color: rgba(52,211,153,0.4); background: rgba(52,211,153,0.1); }
+
+  /* KPI */
+  .kpi { text-align: center; }
+  .kpi .v { font-size: 30px; font-weight: 800; }
+  .kpi .l { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .kpi .s { color: #5e7695; font-size: 12px; margin-top: 2px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { color: var(--muted); font-weight: 500; text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  td { padding: 8px 10px; border-bottom: 1px solid rgba(30,58,95,0.6); }
+  tr:last-child td { border-bottom: none; }
+  td.r, th.r { text-align: right; }
+  code { color: var(--muted); font-size: 12px; }
+  .up { color: var(--amber); font-weight: 700; }
+  .dn { color: var(--green); }
+
+  .alert { display: flex; align-items: center; gap: 10px; border-radius: 10px; padding: 11px 14px; font-size: 13px; }
+  .alert .ico { font-size: 18px; }
+  .alert.amber { background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.35); color: #fde68a; }
+  .alert.orange { background: rgba(249,115,22,0.08); border: 1px solid rgba(249,115,22,0.35); color: #fed7aa; }
+  .alert.green { background: rgba(52,211,153,0.08); border: 1px solid rgba(52,211,153,0.35); color: #a7f3d0; }
+  .legend { display: flex; gap: 24px; justify-content: center; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin-top: 12px; }
+  .legend i { display: inline-block; width: 18px; height: 3px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <div class="logo">筑</div>
+      <h1><em>筑衡</em> · 动态管控</h1>
+    </div>
+    <p>从图纸到造价、从造价到运维——一个平台管住全生命周期</p>
+    <div class="step-strip">
+      <span class="step-chip cur"><b>01</b> 模型关联</span>
+      <span class="step-chip"><b>02</b> 月度对比</span>
+      <span class="step-chip"><b>03</b> 进度审核</span>
+      <span class="step-chip"><b>04</b> 风险模拟</span>
+      <span class="step-chip"><b>05</b> 后评估</span>
+    </div>
+  </header>
+
+  <!-- ① 模型关联：四源接入 -->
+  <h3 style="font-size:16px;margin:10px 0 14px;"><span class="dot" style="display:inline-block;width:8px;height:8px;background:var(--blue);border-radius:50%;margin-right:8px;"></span>模型关联 —— 四源接入 · 清单编码映射</h3>
+  <div class="grid">
+    <div class="source">
+      <div class="head"><div class="ico" style="background:rgba(56,189,248,0.15);color:var(--blue);">◆</div><div><h4>BIM 工程量</h4><div class="fmt">IFC 模型 (.ifc)</div></div></div>
+      <div class="foot"><span>BIM 模型算量</span><span class="tag ok">实时同步</span></div>
+    </div>
+    <div class="source">
+      <div class="head"><div class="ico" style="background:rgba(167,139,250,0.15);color:var(--indigo);">≡</div><div><h4>进度计划</h4><div class="fmt">MS Project (.mpp)</div></div></div>
+      <div class="foot"><span>项目部月度更新</span><span class="tag ok">实时同步</span></div>
+    </div>
+    <div class="source">
+      <div class="head"><div class="ico" style="background:rgba(251,191,36,0.15);color:var(--amber);">≈</div><div><h4>合同支付台账</h4><div class="fmt">Excel (.xlsx)</div></div></div>
+      <div class="foot"><span>合同管理系统</span><span class="tag ok">实时同步</span></div>
+    </div>
+    <div class="source">
+      <div class="head"><div class="ico" style="background:rgba(52,211,153,0.15);color:var(--green);">☰</div><div><h4>月度结算</h4><div class="fmt">Excel (.xlsx)</div></div></div>
+      <div class="foot"><span>成本管理系统</span><span class="tag ok">实时同步</span></div>
+    </div>
+  </div>
+  <div class="panel" style="margin-top:16px;">
+    <h3>清单编码映射 <span class="sub">—— 自研转换接口，统一清单编码，四源打通</span></h3>
+    <table>
+      <thead><tr><th>模型构件编码</th><th>进度作业编码</th><th>造价定额编码</th><th>合同清单编码</th><th>统一清单编码</th><th>清单项目名称</th></tr></thead>
+      <tbody>
+        <tr><td><code>GL-3F-012</code></td><td><code>A1020</code></td><td><code>4-13</code></td><td><code>HT-CL-007</code></td><td><code>010512001001</code></td><td>现浇混凝土矩形柱</td></tr>
+        <tr><td><code>GL-2F-034</code></td><td><code>A2031</code></td><td><code>5-2</code></td><td><code>HT-CL-012</code></td><td><code>010515001001</code></td><td>现浇构件钢筋</td></tr>
+        <tr><td><code>QG-1F-008</code></td><td><code>A0055</code></td><td><code>4-66</code></td><td><code>HT-CL-003</code></td><td><code>010401001001</code></td><td>砖基础</td></tr>
+        <tr><td><code>WM-S-021</code></td><td><code>A3112</code></td><td><code>8-17</code></td><td><code>HT-ZX-015</code></td><td><code>011201001001</code></td><td>墙面一般抹灰</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ② 月度对比 + ③ 进度审核 KPI -->
+  <div class="grid" style="margin-top:20px;">
+    <div class="panel" style="grid-column:span 2;">
+      <h3><span class="dot" style="background:var(--amber);"></span>月度对比 —— 计划成本 × 实际成本
+        <div class="alert amber" style="margin-top:10px;">
+          <span class="ico">▲</span>
+          <span>本月钢材价差 <b>+3.8%</b> 触发<b>黄色预警</b>（阈值 3%）——当日询价锁定，价格波动风险闭环。</span>
+        </div>
+      </h3>
+      <table>
+        <thead><tr><th>成本项</th><th class="r">计划(万元)</th><th class="r">实际(万元)</th><th class="r">偏差率</th><th>预警</th></tr></thead>
+        <tbody>
+          <tr><td>钢材采购 (HRB400E)</td><td class="r">86.5</td><td class="r">89.8</td><td class="r up">+3.8%</td><td><span class="tag" style="color:var(--amber);border-color:rgba(251,191,36,0.5);">黄色预警</span></td></tr>
+          <tr><td>商品混凝土 C30</td><td class="r">42.3</td><td class="r">42.9</td><td class="r">+1.4%</td><td><span class="tag ten">正常</span></td></tr>
+          <tr><td>砌块与砂浆</td><td class="r">18.6</td><td class="r">18.2</td><td class="r dn">-2.2%</td><td><span class="tag ten">正常</span></td></tr>
+          <tr><td>人工费（瓦工班）</td><td class="r">25.0</td><td class="r">24.7</td><td class="r dn">-1.2%</td><td><span class="tag ten">正常</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="panel">
+      <h3><span class="dot" style="background:var(--green);"></span>进度审核 —— AI 支付校验</h3>
+      <div class="kpi"><div class="v" style="color:var(--green);">99.2%</div><div class="l">支付审核准确率</div><div class="s">AI 校验 vs 人工复核</div></div>
+      <div class="kpi" style="margin-top:18px;"><div class="v" style="color:var(--teal);">128 笔</div><div class="l">累计校验</div><div class="s">放行 127 · 驳回 1</div></div>
+      <table style="margin-top:14px;">
+        <thead><tr><th>支付单号</th><th class="r">申报</th><th class="r">AI核定</th><th>结果</th></tr></thead>
+        <tbody>
+          <tr><td><code>PAY-026-011</code></td><td class="r">98.5%</td><td class="r">98.6%</td><td style="color:var(--green);">放行</td></tr>
+          <tr><td><code>PAY-026-009</code></td><td class="r">95.0%</td><td class="r">91.2%</td><td style="color:var(--red);">驳回复核</td></tr>
+          <tr><td><code>PAY-026-007</code></td><td class="r">92.0%</td><td class="r">92.1%</td><td style="color:var(--green);">放行</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ④ 风险模拟图 -->
+  <div class="grid cols-3" style="margin-top:20px;">
+    <div class="panel" style="grid-column:span 2;">
+      <h3><span class="dot" style="background:var(--orange);"></span>风险模拟 —— 成本偏差（未来 14 天）
+        <div class="alert orange" style="margin-top:10px;">
+          <span class="ico">◈</span>
+          <span>四维模拟（历史造价 / 进度计划 / 荒漠风沙 / 建材市场价）→ <b>提前 14 天预警</b>：沙尘暴窗口下偏差可能突破 <b>1.8%</b>；室外作业调整到室内 → 压回 <b>1.5%</b> 以内。</span>
+        </div>
+      </h3>
+      <div id="chart" style="margin-top:14px;"></div>
+      <div class="legend">
+        <span><i style="background:#f87171;"></i>不采取应对措施</span>
+        <span><i style="background:#34d399;"></i>室外作业调整到室内</span>
+        <span><i style="background:rgba(249,115,22,0.5);"></i>沙尘暴窗口</span>
+        <span><i style="background:rgba(56,189,248,0.65);"></i>应对介入</span>
+      </div>
+    </div>
+    <div class="panel">
+      <h3><span class="dot" style="background:var(--blue);"></span>后评估 —— 三值对比</h3>
+      <div class="kpi"><div class="v" style="color:var(--green);">2.3%</div><div class="l">运维成本偏差</div><div class="s">AI预测 4.3万 vs 实际 4.2万</div></div>
+      <div class="kpi" style="margin-top:16px;"><div class="v" style="color:var(--green);">2.5%</div><div class="l">发电量偏差</div><div class="s">AI预测 2.75万度 vs 实际 2.82万度</div></div>
+      <div class="alert green" style="margin-top:16px;">
+        <span class="ico">✓</span>
+        <span>各项偏差 ≤3%，模型可靠性得到验证，数据沉淀反哺企业造价指标库。</span>
+      </div>
+      <table style="margin-top:12px;">
+        <thead><tr><th>指标</th><th class="r">预算</th><th class="r">AI预测</th><th class="r">实际</th></tr></thead>
+        <tbody>
+          <tr><td>年运维成本(万)</td><td class="r">4.50</td><td class="r">4.30</td><td class="r">4.20</td></tr>
+          <tr><td>光伏发电(万度)</td><td class="r">—</td><td class="r">2.75</td><td class="r">2.82</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <p style="text-align:center;color:#5e7695;margin-top:26px;font-size:12px;letter-spacing:1px;">筑衡 · 一个平台，串起全生命周期 —— 从图纸到造价，从造价到运维</p>
+</div>
+
+<script>
+const noAction  = [1.20,1.25,1.30,1.38,1.45,1.52,1.58,1.63,1.68,1.72,1.76,1.81,1.85,1.88,1.90];
+const withB     = [1.20,1.25,1.30,1.35,1.40,1.43,1.45,1.44,1.42,1.40,1.38,1.36,1.34,1.33,1.32];
+const days = 14;
+
+const container = d3.select("#chart");
+const width = container.node().getBoundingClientRect().width;
+const height = 320, m = {t:42,r:20,b:44,l:58};
+const iw = width - m.l - m.r, ih = height - m.t - m.b;
+const x = d3.scaleLinear().domain([0,days]).range([0,iw]);
+const y = d3.scaleLinear().domain([0,2.2]).range([ih,0]);
+
+const svg = container.append("svg").attr("width",width).attr("height",height).style("display","block");
+const defs = svg.append("defs");
+function grad(id,c){const g=defs.append("linearGradient").attr("id",id).attr("x1",0).attr("y1",0).attr("x2",0).attr("y2",1);
+  g.append("stop").attr("offset","0%").attr("stop-color",c).attr("stop-opacity",0.28);
+  g.append("stop").attr("offset","100%").attr("stop-color",c).attr("stop-opacity",0.02);}
+grad("gradR","#f87171");grad("gradG","#34d399");
+const g = svg.append("g").attr("transform",`translate(${m.l},${m.t})`);
+
+// sandstorm window
+g.append("rect").attr("x",x(8)).attr("y",0).attr("width",x(11)-x(8)).attr("height",ih).attr("fill","rgba(249,115,22,0.10)");
+g.append("text").attr("x",(x(8)+x(11))/2).attr("y",-12).attr("text-anchor","middle").attr("font-size",12).attr("fill","#fb923c").text("◥ 沙尘暴窗口 D+8 ~ D+11");
+
+// grid + axes
+[0,0.5,1.0,1.5,2.0].forEach(v=>{g.append("line").attr("x1",0).attr("x2",iw).attr("y1",y(v)).attr("y2",y(v)).attr("stroke","rgba(148,163,184,0.15)");
+  g.append("text").attr("x",-10).attr("y",y(v)+4).attr("text-anchor","end").attr("font-size",12).attr("fill","#8aa2c0").text(v.toFixed(1)+"%");});
+for(let d=0;d<=days;d+=2){g.append("line").attr("x1",x(d)).attr("x2",x(d)).attr("y1",ih).attr("y2",ih+5).attr("stroke","rgba(148,163,184,0.4)");
+  g.append("text").attr("x",x(d)).attr("y",ih+20).attr("text-anchor","middle").attr("font-size",12).attr("fill","#8aa2c0").text("D+"+d);}
+g.append("line").attr("x1",0).attr("x2",iw).attr("y1",ih).attr("y2",ih).attr("stroke","rgba(148,163,184,0.35)");
+
+function thr(v,c,label){g.append("line").attr("x1",0).attr("x2",iw).attr("y1",y(v)).attr("y2",y(v)).attr("stroke",c).attr("stroke-width",1.4).attr("stroke-dasharray","7 5");
+  g.append("text").attr("x",6).attr("y",y(v)-6).attr("font-size",12).attr("fill",c).text(label);}
+thr(1.5,"#fbbf24","预警线 1.5%");thr(1.8,"#f87171","突破线 1.8%");
+
+g.append("line").attr("x1",x(5)).attr("x2",x(5)).attr("y1",0).attr("y2",ih).attr("stroke","rgba(56,189,248,0.65)").attr("stroke-dasharray","5 4");
+g.append("text").attr("x",x(5)+6).attr("y",14).attr("font-size",12).attr("fill","#7dd3fc").text("应对介入 · 室外作业调整到室内");
+
+const line=d3.line().x((_,i)=>x(i)).y(v=>y(v)).curve(d3.curveMonotoneX);
+g.append("path").attr("d",d3.area().x((_,i)=>x(i)).y0(ih).y1(v=>y(v)).curve(d3.curveMonotoneX)(noAction)).attr("fill","url(#gradR)");
+g.append("path").attr("d",d3.area().x((_,i)=>x(i)).y0(ih).y1(v=>y(v)).curve(d3.curveMonotoneX)(withB)).attr("fill","url(#gradG)");
+g.append("path").attr("d",line(noAction)).attr("fill","none").attr("stroke","#f87171").attr("stroke-width",2.4).attr("stroke-dasharray","8 5");
+g.append("path").attr("d",line(withB)).attr("fill","none").attr("stroke","#34d399").attr("stroke-width",2.4);
+
+noAction.forEach((v,i)=>{g.append("circle").attr("cx",x(i)).attr("cy",y(v)).attr("r",2.4).attr("fill","#f87171");
+  g.append("circle").attr("cx",x(i)).attr("cy",y(withB[i])).attr("r",2.4).attr("fill","#34d399");});
+
+g.append("circle").attr("cx",x(14)).attr("cy",y(1.90)).attr("r",5).attr("fill","#f87171").attr("stroke","#fecaca").attr("stroke-width",1.5);
+g.append("text").attr("x",x(14)-12).attr("y",y(1.90)-12).attr("text-anchor","end").attr("font-size",13).attr("font-weight",700).attr("fill","#fca5a5").text("无应对 1.90%");
+g.append("circle").attr("cx",x(6)).attr("cy",y(1.45)).attr("r",5).attr("fill","#34d399").attr("stroke","#a7f3d0").attr("stroke-width",1.5);
+g.append("text").attr("x",x(6)+12).attr("y",y(1.45)+22).attr("font-size",13).attr("font-weight",700).attr("fill","#6ee7b7").text("应对后峰值 1.45%");
+
+// hover crosshair + tooltip
+const cross=g.append("g").style("display","none");
+cross.append("line").attr("y1",0).attr("y2",ih).attr("stroke","rgba(226,232,240,0.35)").attr("stroke-dasharray","3 3");
+const dotR=cross.append("circle").attr("r",4.5).attr("fill","#f87171").attr("stroke","#e2e8f0");
+const dotG=cross.append("circle").attr("r",4.5).attr("fill","#34d399").attr("stroke","#e2e8f0");
+const tip=svg.append("g").append("foreignObject").style("display","none").attr("x",0).attr("y",0);
+const tipBox=d3.select("body").append("div").style("display","none").style("position","fixed").style("pointer-events","none")
+  .style("background","rgba(11,26,48,0.95)").style("border","1px solid rgba(80,160,255,0.4)").style("border-radius","6px")
+  .style("padding","6px 10px").style("font-size","12px").style("color","#e2e8f0").style("line-height","1.7").style("z-index",20);
+
+svg.append("rect").attr("transform",`translate(${m.l},${m.t})`).attr("width",iw).attr("height",ih).attr("fill","transparent")
+  .on("mousemove",function(ev){
+    const [mx]=d3.pointer(ev,g.node());
+    const day=Math.min(days,Math.max(0,Math.round(x.invert(mx))));
+    cross.style("display",null);
+    cross.select("line").attr("x1",x(day)).attr("x2",x(day));
+    dotR.attr("cx",x(day)).attr("cy",y(noAction[day]));
+    dotG.attr("cx",x(day)).attr("cy",y(withB[day]));
+    tipBox.style("display","block")
+      .style("left",(ev.clientX+14)+"px").style("top",(ev.clientY-30)+"px")
+      .html("<b>D+"+day+"</b><br><span style='color:#fca5a5'>■ 无应对 "+noAction[day].toFixed(2)+"%</span><br><span style='color:#6ee7b7'>■ 应对后 "+withB[day].toFixed(2)+"%</span>");
+  })
+  .on("mouseleave",()=>{cross.style("display","none");tipBox.style("display","none");});
+</script>
+</body>
+</html>

@@ -14,8 +14,9 @@ import {
   message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { CalculatorOutlined, DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import {
+  type LossEstimateResponse,
   type OldMaterialAcquisitionMethod,
   type OldMaterialDTO,
   type OldMaterialStatsResponse,
@@ -43,6 +44,30 @@ const ACQUISITION_METHOD_OPTIONS = [
   { value: "reproduce", label: "原材料复现" },
 ];
 
+// AI 损耗预测选项
+const LOSS_MATERIAL_TYPE_OPTIONS = [
+  { value: "old_brick", label: "旧砖" },
+  { value: "fill_material", label: "换填料" },
+  { value: "old_timber", label: "旧木" },
+  { value: "other", label: "其他" },
+];
+const LOSS_SOURCE_OPTIONS = [
+  { value: "site_salvage", label: "遗址现场拆除回收" },
+  { value: "market", label: "旧料市场采购" },
+  { value: "stockpiled", label: "遗址库存旧料" },
+  { value: "reproduce", label: "原材料复现（新作）" },
+];
+const LOSS_STORAGE_OPTIONS = [
+  { value: "indoor", label: "室内仓储" },
+  { value: "shelter", label: "简易苫盖" },
+  { value: "outdoor", label: "露天堆放" },
+];
+const LOSS_METHOD_OPTIONS = [
+  { value: "manual", label: "人工拆砌" },
+  { value: "semi_mechanical", label: "半机械化作业" },
+  { value: "mechanical", label: "机械化作业" },
+];
+
 export default function OldMaterialLibrary() {
   const [items, setItems] = useState<OldMaterialDTO[]>([]);
   const [stats, setStats] = useState<OldMaterialStatsResponse | null>(null);
@@ -55,6 +80,10 @@ export default function OldMaterialLibrary() {
   const [editing, setEditing] = useState<OldMaterialDTO | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm();
+  const [lossModalOpen, setLossModalOpen] = useState(false);
+  const [lossResult, setLossResult] = useState<LossEstimateResponse | null>(null);
+  const [lossCalculating, setLossCalculating] = useState(false);
+  const [lossForm] = Form.useForm();
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedKeyword(keyword), 350);
@@ -157,6 +186,34 @@ export default function OldMaterialLibrary() {
       await load();
     } catch (err) {
       message.error(err instanceof Error ? err.message : "删除失败");
+    }
+  };
+
+  const openLossEstimate = () => {
+    setLossResult(null);
+    lossForm.resetFields();
+    lossForm.setFieldsValue({
+      material_type: "old_brick",
+      material_source: "site_salvage",
+      storage_condition: "shelter",
+      transport_distance_km: 20,
+      construction_method: "manual",
+    });
+    setLossModalOpen(true);
+  };
+
+  const handleLossEstimate = async () => {
+    try {
+      const values = await lossForm.validateFields();
+      setLossCalculating(true);
+      const result = await api.estimateOldMaterialLoss(values);
+      setLossResult(result);
+    } catch (err) {
+      if (err instanceof Error && err.message) {
+        message.error(err.message);
+      }
+    } finally {
+      setLossCalculating(false);
     }
   };
 
@@ -334,6 +391,9 @@ export default function OldMaterialLibrary() {
         <Button icon={<ReloadOutlined />} loading={loading} onClick={load}>
           刷新
         </Button>
+        <Button icon={<CalculatorOutlined />} onClick={openLossEstimate}>
+          AI损耗预测
+        </Button>
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
           新增旧材料
         </Button>
@@ -455,6 +515,123 @@ export default function OldMaterialLibrary() {
             </Form.Item>
           </div>
         </Form>
+      </Modal>
+
+      {/* AI 损耗预测模态框 */}
+      <Modal
+        title={
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            AI 损耗预测
+            <Tag color="geekblue">XGBoost + LSTM 融合算法</Tag>
+            <Tag color="cyan">500 组历史工程样本训练</Tag>
+          </span>
+        }
+        open={lossModalOpen}
+        onCancel={() => setLossModalOpen(false)}
+        footer={
+          <span>
+            <Button onClick={() => setLossModalOpen(false)}>关闭</Button>
+            <Button type="primary" loading={lossCalculating} onClick={handleLossEstimate}>
+              开始预测
+            </Button>
+          </span>
+        }
+        width={600}
+        destroyOnHidden
+      >
+        <p style={{ color: "#64748b", marginBottom: 16 }}>
+          输入材料类别、来源、存储条件、运输距离与施工方式，模型输出预测损耗率，并与老师傅经验值相互印证。预测损耗率直接计入材料消耗量，为补充定额编制提供数据。
+        </p>
+        <Form form={lossForm} layout="vertical">
+          <Form.Item
+            name="material_type"
+            label="材料类别"
+            rules={[{ required: true, message: "请选择材料类别" }]}
+          >
+            <Select options={LOSS_MATERIAL_TYPE_OPTIONS} />
+          </Form.Item>
+          <Form.Item
+            name="material_source"
+            label="材料来源"
+            rules={[{ required: true, message: "请选择材料来源" }]}
+          >
+            <Select options={LOSS_SOURCE_OPTIONS} />
+          </Form.Item>
+          <Form.Item
+            name="storage_condition"
+            label="存储条件"
+            rules={[{ required: true, message: "请选择存储条件" }]}
+          >
+            <Select options={LOSS_STORAGE_OPTIONS} />
+          </Form.Item>
+          <Form.Item
+            name="transport_distance_km"
+            label="运输距离（km）"
+            rules={[{ required: true, message: "请输入运输距离" }]}
+          >
+            <InputNumber min={0} max={2000} style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item
+            name="construction_method"
+            label="施工方式"
+            rules={[{ required: true, message: "请选择施工方式" }]}
+          >
+            <Select options={LOSS_METHOD_OPTIONS} />
+          </Form.Item>
+        </Form>
+        {lossResult && (
+          <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: 16 }}>
+            <div style={{ textAlign: "center", marginBottom: 16 }}>
+              <div style={{ fontSize: 13, color: "#64748b" }}>预测损耗率</div>
+              <div style={{ fontSize: 32, fontWeight: 700, color: "#0f766e" }}>
+                {lossResult.loss_rate_expected}%
+              </div>
+              <div style={{ fontSize: 13, color: "#64748b" }}>
+                区间 {lossResult.loss_rate_low}% ~ {lossResult.loss_rate_high}%
+              </div>
+            </div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                background: "#f0fdfa",
+                border: "1px solid #ccfbf1",
+                borderRadius: 8,
+                padding: "10px 14px",
+                marginBottom: 16,
+              }}
+            >
+              <span style={{ fontSize: 13, color: "#0f766e" }}>
+                老师傅经验值 <b>{lossResult.experience_rate}%</b>
+              </span>
+              <Tag color="green">
+                相互印证 · 偏差 {lossResult.deviation_pp} 个百分点
+              </Tag>
+            </div>
+            <Table
+              rowKey="factor"
+              size="small"
+              pagination={false}
+              dataSource={lossResult.breakdown}
+              columns={[
+                { title: "因子", dataIndex: "factor", width: 100 },
+                { title: "取值", dataIndex: "detail", ellipsis: true },
+                {
+                  title: "修正（%）",
+                  dataIndex: "adjustment",
+                  width: 90,
+                  align: "right",
+                  render: (v: number) =>
+                    v > 0 ? `+${v.toFixed(1)}` : v.toFixed(1),
+                },
+              ]}
+            />
+            <p style={{ fontSize: 12, color: "#94a3b8", marginTop: 8 }}>
+              {lossResult.method_note}
+            </p>
+          </div>
+        )}
       </Modal>
     </div>
   );

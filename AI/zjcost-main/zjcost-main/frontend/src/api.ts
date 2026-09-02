@@ -656,6 +656,28 @@ export interface OldMaterialStatsResponse {
   by_relic_level: Array<{ relic_level: string; count: number }>;
 }
 
+// ─── 旧材 AI 损耗预测（XGBoost + LSTM 融合模型） ─────────────────
+
+export interface LossEstimatePayload {
+  material_type: string;
+  material_source: string;
+  storage_condition: string;
+  transport_distance_km: number;
+  construction_method: string;
+}
+
+export interface LossEstimateResponse {
+  model: string;
+  training_samples: number;
+  loss_rate_low: number;
+  loss_rate_high: number;
+  loss_rate_expected: number;
+  experience_rate: number;
+  deviation_pp: number;
+  breakdown: Array<{ factor: string; detail: string; adjustment: number }>;
+  method_note: string;
+}
+
 export interface QuotaListResponse {
   total: number;
   items: QuotaItemDTO[];
@@ -1181,6 +1203,12 @@ export const api = {
       method: "DELETE",
     }),
 
+  estimateOldMaterialLoss: (payload: LossEstimatePayload) =>
+    request<LossEstimateResponse>("/old-materials/loss-estimate", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
   // ─── Report APIs ──────────────────────────────────────────────
 
   getReport: (pid: number, opts?: { division?: string; search?: string }) => {
@@ -1297,6 +1325,17 @@ export const api = {
       updated_at: string | null;
       preview_svg: string;
       preview_svg_hd: string;
+      cad_geometry: {
+        bbox: [number, number, number, number] | null;
+        groups: Record<string, number[]>;
+        highlights: [number, number, number, number, string][];
+        texts: [number, number, number, string][];
+      } | null;
+      cad_raster: {
+        data_url: string;
+        width: number;
+        height: number;
+      } | null;
       error: string | null;
     }>(`/drawing-recognition/${taskId}${includeSvg ? "" : "?include_svg=false"}`);
   },
