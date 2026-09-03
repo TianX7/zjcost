@@ -815,6 +815,7 @@ export default function DrawingRecognition() {
     let started = false;
     let fellBack = false;
     let lastStatusCheck = 0;
+    let restarts = 0;
 
     const measure = () => {
       const stage = stageRef.current;
@@ -908,6 +909,13 @@ export default function DrawingRecognition() {
             const status = await api.cadEmbedStatus(taskId);
             if (!alive || fellBack) return;
             if (["failed", "exited", "error", "not_found"].includes(status.state)) {
+              // 后端重启/查看器意外退出后自动重连（驻留实例秒级复用），
+              // 最多 2 次仍失败才回退内置渲染
+              if (restarts < 2) {
+                restarts += 1;
+                started = false;
+                return;
+              }
               fallback(status.message || "CAD 内核预览已退出，已切换内置渲染");
             }
           } catch {

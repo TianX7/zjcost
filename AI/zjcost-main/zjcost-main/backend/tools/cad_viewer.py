@@ -106,7 +106,7 @@ def preseed_cad_config() -> None:
     def _set(subkey: str, name: str, value, vtype=None) -> None:
         try:
             key = winreg.CreateKey(
-                winreg.HKEY_CURRENT_USER, r"Software\GrandSoft\CADReader\" + subkey
+                winreg.HKEY_CURRENT_USER, "Software\\GrandSoft\\CADReader\\" + subkey
             )
             try:
                 winreg.SetValueEx(key, name, 0, vtype or winreg.REG_SZ, value)
@@ -253,6 +253,9 @@ def wait_view(main_hwnd: int, deadline: float, rehide=None):
 
 def attach(host: int, main_hwnd: int) -> None:
     """CAD 主窗口子窗口化并挂到宿主：去标题栏，任务栏条目消失。"""
+    if u32.IsZoomed(main_hwnd):
+        # 最大化窗口挂成子窗后尺寸锁死且 MoveWindow 无效，先还原
+        u32.ShowWindow(main_hwnd, 9)  # SW_RESTORE
     style = u32.GetWindowLongW(main_hwnd, GWL_STYLE)
     u32.SetWindowLongW(main_hwnd, GWL_STYLE, (style & ~WS_OVERLAPPEDWINDOW) | WS_CHILD | WS_VISIBLE)
     u32.SetParent(main_hwnd, host)
@@ -674,6 +677,10 @@ def run_embed(rect_file: str, dwg: str) -> int:
         print("图纸文件不存在:", dwg, flush=True)
         return 1
 
+    # 预置注册表配置：关掉"显示异常→切换显示模式"黄条等首次提示，
+    # 该提示不响应 WM_CLOSE 且会抢前台导致看图窗显隐抖动，只能从配置根治
+    preseed_cad_config()
+
     state_file = Path(rect_file).with_suffix(".state.json")
     write_state(state_file, "starting")
     main_hwnd = find_detached_cad()
@@ -798,6 +805,7 @@ def run_embed(rect_file: str, dwg: str) -> int:
                          last_rect[2], last_rect[3], 0x0010)
     last_align = 0.0
     last_suppress = 0.0
+    hide_streak = 0  # 隐藏防抖：可见性瞬断（焦点切换竞态）不立即藏窗
     cad_pid = window_pid(main_hwnd)
     # 看图区贴合周期：Qt 加载大图时会重排看图区，仅靠坐标变化时对齐会漏掉，
     # 导致看图区错位/闪烁且鼠标点不到图上。周期贴合可自愈任意一次 Qt 重排。
@@ -849,6 +857,7 @@ def run_embed(rect_file: str, dwg: str) -> int:
             detach_and_park(main_hwnd)
             break  # 坐标长时间未更新（前端已关闭/崩溃），驻留退出
         if visible:
+            hide_streak = 0
             if isinstance(data, dict):
                 rect = (int(data.get("x", 0)), int(data.get("y", 0)),
                         int(data.get("w", 0)), int(data.get("h", 0)))
@@ -876,9 +885,12 @@ def run_embed(rect_file: str, dwg: str) -> int:
                 u32.SetForegroundWindow(host)
                 write_state(state_file, "ready", hwnd=hex(main_hwnd))
         else:
-            if shown:
+            hide_streak += 1
+            if shown and hide_streak >= 8:
+                # 连续约 0.5s 不可见才隐藏：短暂失焦/坐标瞬断不藏窗
                 u32.ShowWindow(host, SW_HIDE)
                 shown = False
+                hide_streak = 0
         time.sleep(0.06)
 
     # 销毁宿主窗口，避免网页上残留黑色空窗
@@ -911,6 +923,7 @@ def run_standalone(dwg: str) -> int:
     if not exe:
         print("未找到 CAD 快速看图内核", flush=True)
         return 1
+    preseed_cad_config()
     kill_existing_cad()
     proc = subprocess.Popen([exe, dwg])
     deadline = time.time() + LOAD_TIMEOUT
