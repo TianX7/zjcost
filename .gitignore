@@ -80,3 +80,8 @@ backend/tools/CADReader/
 合作开发协议*.docx
 合作开发协议*.pdf
 实训手册.xlsx
+
+# ── 调试/业务临时文件 ──
+_cad_popup.png
+_debug_raster.png
+2026-*.pdf
