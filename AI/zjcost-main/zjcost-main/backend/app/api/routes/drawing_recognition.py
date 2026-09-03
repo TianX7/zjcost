@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
+import hashlib
 import io
+import json
 import math
 import os
 import re
 import subprocess
+import sys
+import tempfile
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -41,12 +47,33 @@ router = APIRouter(prefix="/drawing-recognition", tags=["drawing-recognition"])
 _tasks: dict[str, dict] = {}
 _tasks_lock = threading.Lock()
 
+# CAD 原图渲染图单独存放：解析中通过 /{task_id}/raster 按需拉取一次，
+# 避免数 MB base64 混进每次轻量轮询响应；终态后并入任务快照
+_RASTER_STORE: dict[str, dict] = {}
+_raster_lock = threading.Lock()
+
+# 快速看图几何数据单独存放（几 MB 线条坐标，与渲染图同样按需拉取）
+_GEOMETRY_STORE: dict[str, dict] = {}
+_geometry_lock = threading.Lock()
+
+# 嵌入式 CAD 快速看图状态：同一时间仅一个实例（task_id + 坐标文件）
+_EMBED_STATE: dict = {"task_id": "", "rect_file": None, "state_file": None, "proc": None}
+_embed_lock = threading.Lock()
+EMBED_START_TIMEOUT = 12.0
+
+# 同一张图纸重复上传直接复用已有结果（sha256 -> task_id），秒出
+_RESULT_CACHE: dict[str, str] = {}
+
 # 上传的原始图纸落盘目录（供"用 CAD 快速看图打开"功能），后端程序目录下
 _DRAWING_CACHE_DIR = Path(__file__).resolve().parents[3] / "uploads_cache"
 
 
 def _find_cad_reader_exe() -> str | None:
-    """探测本机 CAD 快速看图主程序（注册表 → 常见安装路径）。"""
+    """探测 CAD 快速看图内核：项目内置优先（部署零依赖）→ 注册表 → 常见安装路径。"""
+    # 项目内置的 CAD 快速看图（backend/tools/CADReader/，随项目分发）
+    bundled = Path(__file__).resolve().parents[3] / "tools" / "CADReader" / "CADReader.exe"
+    if bundled.is_file():
+        return str(bundled)
     try:
         import winreg
 
@@ -231,6 +258,8 @@ class TaskStatusResponse(BaseModel):
     preview_svg_hd: str = ""
     cad_geometry: Optional[dict] = None
     cad_raster: Optional[dict] = None
+    cad_raster_ready: bool = False
+    cad_geometry_ready: bool = False
     valuation: DrawingValuationOut | None = None
     valuation_status: str = "idle"
     valuation_progress: str = ""
@@ -284,11 +313,15 @@ def _cleanup_expired_tasks() -> None:
         expired = [
             task_id
             for task_id, task in _tasks.items()
-            if task.get("status") in ("completed", "failed")
+            if task.get("status") in ("done", "error")
             and (parse_datetime(task.get("updated_at", task.get("created_at"))) or datetime(1970, 1, 1, tzinfo=timezone.utc)).timestamp() < cutoff
         ]
         for task_id in expired:
             _tasks.pop(task_id, None)
+            with _raster_lock:
+                _RASTER_STORE.pop(task_id, None)
+            with _geometry_lock:
+                _GEOMETRY_STORE.pop(task_id, None)
 
 
 def _store_result(task_id: str, payload: dict) -> None:
@@ -926,6 +959,7 @@ def _run_recognition(
     filename: str,
     content_type: str,
     project_context: str,
+    file_hash: str = "",
 ) -> None:
     try:
         is_cad = (
@@ -937,27 +971,54 @@ def _run_recognition(
         if is_cad:
             _store_result(task_id, {"progress": "正在解析 CAD 图层和图元..."})
 
+            # 快速看图几何提前到管线最前（约十余秒），前端 WebGL 秒开看图；
+            # 高清原图在构件分析之后渲染（大图数分钟），完成后推送替换
             _phase_pct = {
-                "转换": 30, "读取 CAD": 32, "图层和模型空间": 40,
-                "标记构件": 78, "生成图纸预览": 78,
-                "高清预览·准备": 89, "高清预览·绘制": 91, "高清预览·输出": 93,
-                "高清预览": 88,
-                "整理识别结果": 95,
+                "转换": 8, "读取 CAD": 12, "图层和模型空间": 18,
+                "收集图纸图元": 22, "快速看图几何": 25, "快速看图已就绪": 28,
+                "分类图元": 34, "标记构件": 45, "汇总构件": 52,
+                "高清原图": 55,
+                "高清预览·准备": 60, "高清预览·绘制": 78, "高清预览·输出": 90,
+                "高清原图已生成": 93,
+                "生成图纸预览": 90, "生成高清预览": 92, "整理识别结果": 95,
             }
-            _prog_state: dict[str, int] = {"last": 40}
+            _prog_state: dict[str, int] = {"last": 18}
             def _cad_progress(payload: dict) -> None:
+                payload = dict(payload)
+                extra: dict = {}
+                # 大体积数据（渲染图/几何）通过进度通道送达：单独存放并打就绪标记，
+                # 轻量轮询只传标记，前端看到标记后再按需拉取
+                raster = payload.pop("cad_raster", None)
+                if raster:
+                    with _raster_lock:
+                        _RASTER_STORE[task_id] = raster
+                    extra["cad_raster_ready"] = True
+                geometry = payload.pop("cad_geometry", None)
+                if geometry:
+                    with _geometry_lock:
+                        _GEOMETRY_STORE[task_id] = geometry
+                    extra["cad_geometry_ready"] = True
                 text = payload.get("progress", "")
-                pct = 40
-                for key, val in _phase_pct.items():
-                    if key in text:
-                        pct = val
-                        break
+                explicit_pct = payload.pop("progress_percent", None)
+                if explicit_pct is not None:
+                    # 渲染心跳按图元数插值，本身单调，直接采信；
+                    # 否则会与下方 last+4 爬升叠加，把百分比顶到 93 后锁死
+                    try:
+                        pct = max(int(explicit_pct), _prog_state["last"])
+                    except (TypeError, ValueError):
+                        pct = _prog_state["last"]
                 else:
-                    pct = min(_prog_state["last"] + 4, 93)
-                # 单调递增防护：关键词映射值可能低于先前平滑累积值（进度回跳），取较大值
-                pct = max(pct, _prog_state["last"])
+                    pct = 30
+                    for key, val in _phase_pct.items():
+                        if key in text:
+                            pct = val
+                            break
+                    else:
+                        pct = min(_prog_state["last"] + 4, 93)
+                    # 单调递增防护：关键词映射值可能低于先前平滑累积值（进度回跳），取较大值
+                    pct = max(pct, _prog_state["last"])
                 _prog_state["last"] = pct
-                _store_result(task_id, {**payload, "progress_percent": pct})
+                _store_result(task_id, {**payload, **extra, "progress_percent": pct})
 
             raw = analyze_dxf_bytes(file_bytes, filename, progress_callback=_cad_progress)
             components = [_dump_model(ComponentOut(**item)) for item in raw.get("components", [])]
@@ -977,6 +1038,8 @@ def _run_recognition(
                 "preview_svg_hd": raw.get("preview_svg_hd", ""),
                 "cad_geometry": raw.get("cad_geometry"),
                 "cad_raster": raw.get("cad_raster"),
+                "cad_raster_ready": bool(raw.get("cad_raster")),
+                "cad_geometry_ready": bool((raw.get("cad_geometry") or {}).get("bbox")),
                 "valuation": None,
                 "valuation_status": "processing" if suggestions and not has_error else "skipped",
                 "valuation_progress": "识别完成，正在准备自动计价..." if suggestions and not has_error else "未生成可计价清单",
@@ -986,6 +1049,8 @@ def _run_recognition(
                 "error": raw.get("error"),
             })
             if suggestions and not has_error:
+                if file_hash:
+                    _RESULT_CACHE[file_hash] = task_id
                 _start_drawing_valuation(task_id)
             return
 
@@ -1066,6 +1131,16 @@ async def upload_drawing(
     filename = file.filename or "drawing"
     content_type = file.content_type or "application/octet-stream"
 
+    # 同一张图纸重复上传：直接复用上次解析结果（原地重传验证场景秒出）
+    file_hash = hashlib.sha256(file_bytes).hexdigest()
+    cached_task_id = _RESULT_CACHE.get(file_hash)
+    if cached_task_id:
+        cached = _get_task(cached_task_id)
+        if cached and cached.get("status") == "done" and cached.get("components"):
+            logger.info("图纸内容与任务 %s 相同，直接复用解析结果", cached_task_id)
+            return {"taskId": cached_task_id, "cached": True}
+        _RESULT_CACHE.pop(file_hash, None)
+
     # 原始图纸落盘（供"用 CAD 快速看图打开"：本机调起看图软件打开原文件）
     try:
         _DRAWING_CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -1103,7 +1178,7 @@ async def upload_drawing(
 
     thread = threading.Thread(
         target=_run_recognition,
-        args=(task_id, file_bytes, filename, content_type, project_context),
+        args=(task_id, file_bytes, filename, content_type, project_context, file_hash),
         daemon=True,
     )
     thread.start()
@@ -1148,9 +1223,14 @@ async def get_cad_converter_status():
     return ConverterStatusResponse(**status)
 
 
-@router.post("/{task_id}/open-in-cad", summary="用本机 CAD 快速看图打开该图纸")
-async def open_in_cad(task_id: str):
-    """找到上传时落盘的原始图纸，用本机 CAD 快速看图（探测不到则提示安装）。"""
+@router.post("/{task_id}/embed-cad", summary="在网页预览区嵌入 CAD 快速看图内核")
+async def embed_cad_start(task_id: str, rect: dict):
+    """调起 CAD 快速看图并以无边框置顶窗口贴合网页预览区。
+
+    前端持续把预览区的屏幕坐标（物理像素）上报到 /embed-cad/rect，
+    查看器进程轮询坐标文件实时跟随（浏览器移动/缩放/滚动），
+    效果等同把 CAD 看图窗口"嵌"进网页预览区。
+    """
     try:
         _DRAWING_CACHE_DIR.mkdir(parents=True, exist_ok=True)
         matches = sorted(_DRAWING_CACHE_DIR.glob(f"{task_id}_*"), key=lambda p: p.stat().st_mtime)
@@ -1167,13 +1247,162 @@ async def open_in_cad(task_id: str):
         }
 
     target = str(matches[0])
+    # routes(0) → api(1) → app(2) → backend(3)
+    viewer_script = Path(__file__).resolve().parents[3] / "tools" / "cad_viewer.py"
+    if not viewer_script.is_file():
+        return {"opened": False, "message": "查看器脚本缺失（tools/cad_viewer.py）"}
+
+    # 同一时间只保留一个嵌入实例：启动新的先停旧的
+    _embed_stop()
+
+    # 会话 id 进文件名：旧查看器轮询的是旧文件，删除旧文件只会让它驻留退出，
+    # 不会误读新会话坐标；新查看器只认自己的文件
+    session_id = uuid.uuid4().hex[:8]
+    rect_file = Path(tempfile.gettempdir()) / f"zjcost_embed_rect_{task_id}_{session_id}.json"
+    state_file = rect_file.with_suffix(".state.json")
     try:
-        subprocess.Popen([exe, target], close_fds=True)
+        state_file.write_text(json.dumps({"state": "starting"}), encoding="utf-8")
+        rect_file.write_text(
+            json.dumps({"x": rect.get("x", 0), "y": rect.get("y", 0),
+                        "w": rect.get("w", 0), "h": rect.get("h", 0),
+                        "visible": bool(rect.get("visible", True)),
+                        "pf": bool(rect.get("pf", True))}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        proc = subprocess.Popen(
+            [sys.executable, str(viewer_script), "--embed", str(rect_file), target],
+            close_fds=True,
+            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+            cwd=str(viewer_script.parent),
+        )
     except Exception as exc:
-        logger.exception("调起 CAD 快速看图失败：%s", target)
-        raise HTTPException(status_code=500, detail=f"调起 CAD 快速看图失败: {exc}") from exc
-    logger.info("已用 CAD 快速看图打开：%s", target)
-    return {"opened": True, "app": exe, "file": Path(target).name}
+        logger.exception("调起嵌入式图纸查看器失败：%s", target)
+        raise HTTPException(status_code=500, detail=f"调起嵌入式图纸查看器失败: {exc}") from exc
+    with _embed_lock:
+        _EMBED_STATE.update(task_id=task_id, rect_file=rect_file, state_file=state_file, proc=proc)
+    logger.info("已在预览区嵌入 CAD 快速看图：%s", target)
+
+    # 等待查看器把状态写到 attached 再返回成功：attach 表示 CAD 已挂到宿主，
+    # 坐标流此时开始灌入；若继续等 ready，而 ready 又依赖前端坐标流，
+    # 会形成"前端等 opened → 查看器等 rect"的死锁。
+    # 启动失败/超时自动回退内置渲染，不再让前端一直停在"CAD 内核预览启动中…"
+    deadline = time.time() + EMBED_START_TIMEOUT
+    while time.time() < deadline:
+        payload = None
+        try:
+            payload = json.loads(state_file.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+        state = (payload or {}).get("state", "starting")
+        if state in ("attached", "ready"):
+            logger.info("CAD 嵌入查看器就绪：%s", target)
+            return {"opened": True, "app": "cad_viewer_embed", "file": Path(target).name}
+        if state in ("failed", "exited", "error"):
+            _embed_stop()
+            return {
+                "opened": False,
+                "message": (payload or {}).get("message") or "CAD 内核预览启动失败，已切换内置渲染",
+            }
+        if proc.poll() is not None:
+            _embed_stop()
+            return {"opened": False, "message": "CAD 内核预览进程已退出，已切换内置渲染"}
+        await asyncio.sleep(0.25)
+
+    _embed_stop()
+    return {"opened": False, "message": "CAD 内核预览启动超时，已切换内置渲染"}
+
+
+@router.post("/{task_id}/embed-cad/rect", summary="上报预览区屏幕坐标（嵌入模式跟随）")
+async def embed_cad_rect(task_id: str, rect: dict):
+    with _embed_lock:
+        if _EMBED_STATE["task_id"] != task_id or not _EMBED_STATE["rect_file"]:
+            return {"ok": False}
+        rect_file = _EMBED_STATE["rect_file"]
+    try:
+        rect_file.write_text(
+            json.dumps({"x": rect.get("x", 0), "y": rect.get("y", 0),
+                        "w": rect.get("w", 0), "h": rect.get("h", 0),
+                        "visible": bool(rect.get("visible", True)),
+                        "pf": bool(rect.get("pf", True))}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    except Exception:
+        return {"ok": False}
+    return {"ok": True}
+
+
+@router.post("/{task_id}/embed-cad/stop", summary="停止嵌入的 CAD 快速看图")
+async def embed_cad_stop(task_id: str):
+    with _embed_lock:
+        if _EMBED_STATE["task_id"] != task_id:
+            return {"ok": False}
+    _embed_stop()
+    return {"ok": True}
+
+
+@router.get("/{task_id}/embed-cad/status", summary="查询嵌入的 CAD 快速看图状态")
+async def embed_cad_status(task_id: str):
+    """查看器启动/退出状态查询：前端据此在启动失败或运行中途退出时回退内置渲染。"""
+    with _embed_lock:
+        if _EMBED_STATE["task_id"] != task_id:
+            return {"state": "not_found", "message": ""}
+        state_file = _EMBED_STATE["state_file"]
+        proc = _EMBED_STATE["proc"]
+    message = ""
+    state = "starting"
+    if state_file and state_file.is_file():
+        try:
+            payload = json.loads(state_file.read_text(encoding="utf-8"))
+            state = payload.get("state", "starting")
+            message = payload.get("message", "") or ""
+        except Exception:
+            pass
+    if proc is not None and proc.poll() is not None and state not in ("exited", "failed", "error"):
+        state = "exited"
+        message = "CAD 内核预览进程已退出"
+    return {"state": state, "message": message}
+
+
+def _embed_stop() -> None:
+    """停止当前嵌入实例：删除坐标文件（查看器轮询到消失即自行退出）。"""
+    with _embed_lock:
+        rect_file = _EMBED_STATE["rect_file"]
+        state_file = _EMBED_STATE["state_file"]
+        _EMBED_STATE.update(task_id="", rect_file=None, state_file=None, proc=None)
+    if rect_file:
+        try:
+            rect_file.unlink(missing_ok=True)
+        except Exception:
+            pass
+    if state_file:
+        try:
+            state_file.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+@router.get("/{task_id}/geometry", summary="获取快速看图几何数据（解析中可提前拉取）")
+async def get_drawing_geometry(task_id: str):
+    with _geometry_lock:
+        geometry = _GEOMETRY_STORE.get(task_id)
+    if geometry is None:
+        task = _get_task(task_id)
+        geometry = (task or {}).get("cad_geometry")
+    if not geometry or not geometry.get("bbox"):
+        raise HTTPException(status_code=404, detail="快速看图几何尚未生成")
+    return {"cad_geometry": geometry}
+
+
+@router.get("/{task_id}/raster", summary="获取 CAD 原图高清渲染图（解析中可提前拉取）")
+async def get_drawing_raster(task_id: str):
+    with _raster_lock:
+        raster = _RASTER_STORE.get(task_id)
+    if raster is None:
+        task = _get_task(task_id)
+        raster = (task or {}).get("cad_raster")
+    if not raster or not raster.get("data_url"):
+        raise HTTPException(status_code=404, detail="渲染图尚未生成")
+    return {"cad_raster": raster}
 
 
 @router.get("/{task_id}", response_model=TaskStatusResponse, summary="查询识别结果")
@@ -1182,10 +1411,13 @@ async def get_recognition_result(task_id: str, include_svg: bool = Query(True)):
     if task is None:
         raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
 
+    # 大体积数据一律走专用按需端点（/raster、/geometry，前端见就绪标记后拉取）：
+    # 渲染图 base64 可达数十 MB，内联在轮询/完整结果里会把页面拖卡甚至超时
+    task = {**task, "cad_geometry": None, "cad_raster": None}
     if not include_svg or task.get("status") == "processing":
-        # 预览 SVG / 高清渲染图可达数 MB：解析阶段前端用不到，
+        # 预览 SVG 可达数 MB：解析阶段前端用不到，
         # 轮询反复传输会把页面拖卡，仅在终态且显式请求时返回
-        task = {**task, "preview_svg": "", "preview_svg_hd": "", "cad_geometry": None, "cad_raster": None}
+        task = {**task, "preview_svg": "", "preview_svg_hd": ""}
 
     return TaskStatusResponse(taskId=task_id, **task)
 

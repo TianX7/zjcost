@@ -22,6 +22,8 @@ const MODEL_SCENE_TITLE = "田维东2 · 自动构建模型";
 
 const MIN_DRAWING_SCALE = 0.6;
 const MAX_DRAWING_SCALE = 10;
+const CAD_EMBED_START_TIMEOUT_MS = 15000;
+const CAD_EMBED_STATUS_INTERVAL_MS = 2000;
 
 function clampDrawingScale(value: number) {
   return Math.min(MAX_DRAWING_SCALE, Math.max(MIN_DRAWING_SCALE, value));
@@ -787,9 +789,155 @@ export default function DrawingRecognition() {
   const dragLatestRef = useRef<{ dx: number; dy: number } | null>(null);
   const stageTransformRef = useRef<HTMLDivElement | null>(null);
   const cadViewerRef = useRef<CadCanvasViewerHandle | null>(null);
+  // 嵌入式 CAD 快速看图：上传 DWG/DXF 后自动启用（预览区直接显示 CAD 原样画面），
+  // 内核不可用时自动回退内置渲染，不重复尝试
+  const [cadEmbed, setCadEmbed] = useState(false);
+  const cadEmbedFailedRef = useRef(false);
+  const modelViewRef = useRef(modelView);
+  modelViewRef.current = modelView;
   const viewRef = useRef(view);
   const lastGestureTsRef = useRef(0);
   const zoomSettleTimerRef = useRef<number | null>(null);
+
+  // 上传 DWG/DXF 即自动启用 CAD 内核预览（无需手动切换）
+  useEffect(() => {
+    if (taskId && !cadEmbedFailedRef.current && /\.(dwg|dxf)$/i.test(fileName || "")) {
+      setCadEmbed(true);
+    }
+  }, [taskId, fileName]);
+
+  // 嵌入式 CAD 快速看图：把预览区（避让顶部工具栏/右侧面板/底部条）的
+  // 屏幕坐标持续上报后端，查看器进程用无边框置顶窗口实时贴合该区域，
+  // 浏览器移动/缩放/滚动/收起面板时跟随，效果等同把 CAD 窗口嵌进网页
+  useEffect(() => {
+    if (!cadEmbed || !taskId) return;
+    let alive = true;
+    let started = false;
+    let fellBack = false;
+    let lastStatusCheck = 0;
+
+    const measure = () => {
+      const stage = stageRef.current;
+      if (!stage) return null;
+      const sr = stage.getBoundingClientRect();
+      let top = sr.top, left = sr.left, right = sr.right, bottom = sr.bottom;
+      // 避让浮在预览区上的 UI：顶部专业工具栏、右侧信息面板/折叠钮、底部状态条
+      const avoid = (sel: string) => {
+        const el = stage.querySelector<HTMLElement>(sel);
+        if (!el) return;
+        const r = el.getBoundingClientRect();
+        if (r.width < 2 || r.height < 2) return;
+        if (r.bottom <= sr.top + 90) top = Math.max(top, r.bottom + 8);
+        else if (r.left >= sr.right - 340) right = Math.min(right, r.left - 8);
+        else if (r.top >= sr.bottom - 130) bottom = Math.min(bottom, r.top - 8);
+      };
+      avoid(".dr-cad-toolbar");
+      avoid(".dr-float-panel");
+      avoid(".dr-panel-toggle");
+      avoid(".dr-bottom-bar");
+      // 嵌入模式下进度条移到下方不被覆盖的条带，CAD 窗口底部让出空间保持其可见
+      avoid(".dr-float-progress");
+      const w = right - left, h = bottom - top;
+      if (w < 100 || h < 100) return null;
+      // CSS 视口坐标 → 物理屏幕坐标（页面缩放 100% 时精确）
+      const dpr = window.devicePixelRatio || 1;
+      const cx = window.screenX + (window.outerWidth - window.innerWidth) / 2;
+      const cy = window.screenY + (window.outerHeight - window.innerHeight);
+      return {
+        x: Math.round((cx + left) * dpr),
+        y: Math.round((cy + top) * dpr),
+        w: Math.round(w * dpr),
+        h: Math.round(h * dpr),
+        // 切到 3D 模型视图/标签页隐藏时暂停显示（ref 读最新值，坐标流不断）
+        visible: !document.hidden && modelViewRef.current === "drawing",
+        // 页面是否持有焦点：看图窗获得焦点时为 false（此时由查看器按
+        // 前台窗口判定保持显示）；切到其他软件时为 false → 看图窗跟随隐藏
+        pf: document.hasFocus(),
+      };
+    };
+
+    const fallback = (msg: string) => {
+      if (fellBack || !alive) return;
+      fellBack = true;
+      cadEmbedFailedRef.current = true;
+      message.warning(msg || "CAD 内核预览不可用，已切换内置渲染");
+      setCadEmbed(false);
+      api.stopCadEmbed(taskId).catch(() => {});
+    };
+
+    const tick = async () => {
+      if (!alive || fellBack) return;
+      const rect = measure();
+      if (!rect) return;
+      try {
+        if (!started) {
+          started = true;
+          let result: { opened: boolean; message?: string } | undefined;
+          try {
+            const startPromise = api.startCadEmbed(taskId, rect);
+            const timeout = new Promise<never>((_, reject) => {
+              window.setTimeout(
+                () => reject(new Error("cad-embed-timeout")),
+                CAD_EMBED_START_TIMEOUT_MS,
+              );
+            });
+            result = await Promise.race([startPromise, timeout]);
+          } catch (err) {
+            if (alive) {
+              fallback(
+                err instanceof Error && err.message === "cad-embed-timeout"
+                  ? "CAD 内核预览启动超时，已切换内置渲染"
+                  : "CAD 内核预览启动失败，已切换内置渲染",
+              );
+            }
+            return;
+          }
+          if (!alive || fellBack) return;
+          if (!result?.opened) {
+            // 内核不可用：标记失败并自动回退内置渲染，不再重复尝试
+            fallback(result?.message || "未检测到 CAD 快速看图内核，已切换内置渲染");
+            return;
+          }
+          lastStatusCheck = Date.now();
+        } else {
+          await api.updateCadEmbedRect(taskId, rect);
+        }
+        if (alive && !fellBack && Date.now() - lastStatusCheck >= CAD_EMBED_STATUS_INTERVAL_MS) {
+          lastStatusCheck = Date.now();
+          try {
+            const status = await api.cadEmbedStatus(taskId);
+            if (!alive || fellBack) return;
+            if (["failed", "exited", "error", "not_found"].includes(status.state)) {
+              fallback(status.message || "CAD 内核预览已退出，已切换内置渲染");
+            }
+          } catch {
+            // 状态查询瞬时失败由下一轮重试
+          }
+        }
+      } catch { /* 瞬时失败由下一轮补偿 */ }
+    };
+    tick();
+    const iv = setInterval(tick, 120);
+    const onVis = () => { if (!document.hidden) tick(); };
+    // 焦点切换立即上报：切回页面立刻恢复看图窗，切走（含点击看图窗）立刻更新 pf
+    const onFocus = () => { tick(); };
+    const onBlur = () => { tick(); };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("resize", tick);
+    window.addEventListener("scroll", tick, true);
+    return () => {
+      alive = false;
+      clearInterval(iv);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("resize", tick);
+      window.removeEventListener("scroll", tick, true);
+      api.stopCadEmbed(taskId).catch(() => {});
+    };
+  }, [cadEmbed, taskId]);
 
   useEffect(() => {
     return () => {
@@ -823,11 +971,33 @@ export default function DrawingRecognition() {
           else if (saved.result.components?.length) setBottomTab("components");
           message.info("已恢复上次的图纸解析结果");
         } else if (saved.taskId) {
-          void api.getDrawingResult(saved.taskId).then((data) => {
-            if (data) {
-              setResult(data);
-              message.info("已恢复上次的图纸解析结果");
+          void api.getDrawingResult(saved.taskId).then(async (data) => {
+            if (!data) return;
+            // 会话缓存不含大字段：就绪标记在就补拉渲染图/几何，恢复"原样"视图
+            let merged = data;
+            if (data.cad_raster_ready && !data.cad_raster) {
+              try {
+                const r = await api.getDrawingRaster(saved.taskId as string);
+                if (r.cad_raster?.data_url) merged = { ...merged, cad_raster: r.cad_raster };
+              } catch { /* 拉取失败则回退轻量视图 */ }
             }
+            if (!merged.cad_raster && data.cad_geometry_ready && !data.cad_geometry) {
+              try {
+                const g = await api.getDrawingGeometry(saved.taskId as string);
+                const geo = g.cad_geometry;
+                if (geo?.bbox && geo.bbox.length === 4) {
+                  merged = {
+                    ...merged,
+                    cad_geometry: {
+                      ...geo,
+                      bbox: [geo.bbox[0], geo.bbox[1], geo.bbox[2], geo.bbox[3]] as [number, number, number, number],
+                    },
+                  };
+                }
+              } catch { /* 拉取失败则回退轻量视图 */ }
+            }
+            setResult(merged);
+            message.info("已恢复上次的图纸解析结果");
           }).catch(() => undefined);
         }
       }
@@ -835,11 +1005,16 @@ export default function DrawingRecognition() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 会话持久化：任务号 / 文件名 / 结果变化时写入；上传中跳过以免覆盖旧缓存
+  // 会话持久化：任务号 / 文件名 / 结果变化时写入；上传中跳过以免覆盖旧缓存。
+  // 渲染图/几何/高清 SVG 均为大体积字符串，任何状态下都不落缓存
+  // （每 1.2s 对几十 MB 数据 stringify 会打满主线程；恢复时按就绪标记补拉）
   useEffect(() => {
     if ((!taskId && !result) || uploading) return;
+    const toSave = result
+      ? { ...result, cad_raster: null, cad_geometry: null, preview_svg_hd: "" }
+      : result;
     try {
-      sessionStorage.setItem(DR_SESSION_KEY, JSON.stringify({ taskId, fileName, result }));
+      sessionStorage.setItem(DR_SESSION_KEY, JSON.stringify({ taskId, fileName, result: toSave }));
     } catch {
       try { sessionStorage.setItem(DR_SESSION_KEY, JSON.stringify({ taskId, fileName })); } catch { /* 忽略配额超限 */ }
     }
@@ -923,18 +1098,17 @@ export default function DrawingRecognition() {
 
   // 内置 CAD 快速看图（WebGL）几何数据：优先于 SVG 预览使用，
   // 数万图元一次 draw call 渲染，缩放平移不卡顿
+  // 快速看图几何：解析中即显示（GPU 渲染不卡主线程），
+  // 高清原图就绪后由 CadCanvasViewer 按栅格优先策略自动替换
   const cadGeometry = useMemo<CadGeometry | null>(() => {
-    if (result?.status === "processing") return null;
-    if (!svgMountReady) return null;
     const geo = result?.cad_geometry;
     if (!geo || !geo.bbox) return null;
     return geo;
-  }, [result?.cad_geometry, result?.status, svgMountReady]);
+  }, [result?.cad_geometry, svgMountReady]);
 
-  // ezdxf 专业绘图引擎渲染的高清原图：优先于 WebGL 几何模式显示
+  // ezdxf 专业绘图引擎渲染的高清原图：栅格优先且不设状态门槛，
+  // 渲染一就绪（解析仍在进行）即显示，前端无需等整个解析流程结束
   const cadRaster = useMemo<CadRaster | null>(() => {
-    if (result?.status === "processing") return null;
-    if (!svgMountReady) return null;
     const r = result?.cad_raster;
     if (!r || !r.data_url) return null;
     return r;
@@ -1015,6 +1189,10 @@ export default function DrawingRecognition() {
     // 会反复打满主线程，页面表现为卡死。中间轮询一律用轻量数据。
     let fullFetched = false;
     let finalFetched = false;
+    // 快速看图几何（十余秒）与高清原图（数分钟）就绪即拉取，解析未完成也能先看图
+    // （带重试计数：失败自动重试，成功即止）
+    let rasterTries = 0;
+    let geometryTries = 0;
     timerRef.current = setInterval(async () => {
       try {
         const data = await api.getDrawingResult(id, false);
@@ -1022,13 +1200,62 @@ export default function DrawingRecognition() {
         const recognitionDone = data.status === "done" || data.status === "error";
         const valuationDone = data.valuation_status === "done" || data.valuation_status === "error" || data.valuation_status === "skipped";
         if (data.status !== "processing" && !fullFetched) {
-          fullFetched = true;
-          setResult(await api.getDrawingResult(id));
+          try {
+            const full = await api.getDrawingResult(id);
+            fullFetched = true;
+            setResult((prev) => ({
+              ...full,
+              cad_raster: full.cad_raster ?? prev?.cad_raster ?? null,
+              cad_geometry: full.cad_geometry ?? prev?.cad_geometry ?? null,
+            }));
+          } catch {
+            // 完整结果拉取失败：下一轮重试；本轮先用轻量数据推进状态，
+            // 绝不能让 UI 卡在"解析中"（进度条冻结在 93% 的根因）
+            setResult((prev) => ({
+              ...data,
+              cad_raster: prev?.cad_raster ?? null,
+              cad_geometry: prev?.cad_geometry ?? null,
+            }));
+          }
         } else if (recognitionDone && valuationDone && !finalFetched) {
           finalFetched = true;
           setResult(await api.getDrawingResult(id));
         } else if (data.status === "processing") {
-          setResult(data);
+          // 高清原图就绪：拉取后前端自动从 WebGL 快速看图切换为原样高清图
+          // （失败自动重试最多 3 次，成功才置位，避免一次网络抖动就永远缺失）
+          if (data.cad_raster_ready && rasterTries < 3) {
+            rasterTries += 1;
+            try {
+              const r = await api.getDrawingRaster(id);
+              if (r.cad_raster?.data_url) {
+                setResult((prev) => ({ ...data, cad_raster: r.cad_raster, cad_geometry: prev?.cad_geometry ?? data.cad_geometry }));
+                return;
+              }
+            } catch { /* 渲染图拉取失败则继续轻量轮询 */ }
+          }
+          // 快速看图几何就绪：WebGL 秒开看图（后端渲染高清原图期间先看线框）
+          if (data.cad_geometry_ready && geometryTries < 3) {
+            geometryTries += 1;
+            try {
+              const g = await api.getDrawingGeometry(id);
+              const geo = g.cad_geometry;
+              if (geo?.bbox && geo.bbox.length === 4) {
+                // 接口返回裸数组，规范化为查看器需要的四元组
+                const normalized = {
+                  ...geo,
+                  bbox: [geo.bbox[0], geo.bbox[1], geo.bbox[2], geo.bbox[3]] as [number, number, number, number],
+                };
+                setResult((prev) => ({ ...data, cad_geometry: normalized, cad_raster: prev?.cad_raster ?? null }));
+                return;
+              }
+            } catch { /* 几何拉取失败则继续轻量轮询 */ }
+          }
+          // 轻量轮询不含大体积数据：保留已提前拉取的渲染图/几何，避免显示闪断
+          setResult((prev) => ({
+            ...data,
+            cad_raster: data.cad_raster ?? prev?.cad_raster ?? null,
+            cad_geometry: data.cad_geometry ?? prev?.cad_geometry ?? null,
+          }));
         } else {
           // 识别已完成：只同步计价进度字段，不重复挂载大 SVG
           setResult((prev) => prev ? {
@@ -1048,7 +1275,9 @@ export default function DrawingRecognition() {
           if (topDisc) setActiveDiscipline(discKeyMap[topDisc.key]);
           componentsShown = true;
         }
-        if (recognitionDone && valuationDone) {
+        // 完整结果还没拿到（首次拉取失败待重试）时不停轮询，
+        // 否则再也不会重试，预览图永远缺失
+        if (recognitionDone && valuationDone && (fullFetched || data.status === "error")) {
           if (timerRef.current) clearInterval(timerRef.current);
           if (data.status === "done") {
             const projectId = data.valuation?.project_id;
@@ -1375,7 +1604,7 @@ export default function DrawingRecognition() {
       {/* 全屏图纸区 */}
       <div
         ref={stageRef}
-        className={`dr-stage${dragging ? " is-dragging" : ""}`}
+        className={`dr-stage${dragging ? " is-dragging" : ""}${cadEmbed ? " is-cad-embed" : ""}`}
         onWheel={handleCanvasWheel}
         onMouseDown={handleCanvasMouseDown}
         onMouseMove={handleCanvasMouseMove}
@@ -1410,7 +1639,15 @@ export default function DrawingRecognition() {
           })}
         </div>
 
-        {cadGeometry || cadRaster ? (
+        {cadEmbed ? (
+          /* 嵌入式 CAD 快速看图：此处由原生看图窗口贴合覆盖，
+             占位层仅在后端调起期间可见（滚轮缩放/拖拽平移直接操作 CAD） */
+          <div className="dr-cad-embed-placeholder">
+            <span className="material-symbols-outlined">deployed_code</span>
+            <strong>CAD 内核预览启动中…</strong>
+            <p>滚轮缩放 · 拖拽平移 · 原样显示</p>
+          </div>
+        ) : cadGeometry || cadRaster ? (
           /* 内置 CAD 快速看图：优先专业绘图引擎渲染的高清原图，
              WebGL 几何模式兜底；自带滚轮缩放/拖拽平移/双击复位 */
           <ErrorBoundary inline title="CAD 快速看图初始化失败">
@@ -1490,8 +1727,8 @@ export default function DrawingRecognition() {
           </div>
         )}
 
-        {/* 图纸复位（CAD 看图模式） */}
-        {(cadGeometry || cadRaster) && (
+        {/* 图纸复位（CAD 看图模式；嵌入模式由 CAD 原生交互接管） */}
+        {(cadGeometry || cadRaster) && !cadEmbed && (
           <div className="dr-zoom-bar" onMouseDown={(e) => e.stopPropagation()}>
             <button type="button" className="dr-zoom-btn" onClick={() => cadViewerRef.current?.reset()} title="图纸复位">
               <span className="material-symbols-outlined">fit_screen</span>

@@ -371,6 +371,9 @@ const RasterCadViewer = forwardRef<CadCanvasViewerHandle, RasterCadViewerProps>(
       if (!img) return;
       const v = viewRef.current;
       img.style.transform = `translate(${v.tx}px, ${v.ty}px) scale(${v.s})`;
+      // 放大超过位图原生分辨率后改用最近邻插值：CAD 线条保持锐利，
+      // 默认的双线性会把线条糊成一团（缩小适配时仍用平滑插值抗锯齿）
+      img.style.imageRendering = v.s >= 1 ? "pixelated" : "auto";
     };
 
     const fitToView = () => {

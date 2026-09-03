@@ -218,6 +218,14 @@
 .dr-float-progress.is-parsing .dr-float-progress-head strong { font-size: 12px; }
 .dr-float-progress.is-parsing .dr-float-reveal { margin-top: 4px; }
 
+/* 嵌入 CAD 内核预览时：进度条移到下方 CAD 窗口让出的条带，保持可见且不被盖住
+   （位于底部状态条上方；CAD 窗口底部会通过坐标上报避让该区域） */
+.dr-stage.is-cad-embed .dr-float-progress {
+  top: auto;
+  bottom: 56px;
+  transform: translateX(-50%);
+}
+
 .dr-float-progress-head {
   display: flex;
   justify-content: space-between;
@@ -792,6 +800,37 @@
   background: #34d399;
   box-shadow: 0 0 6px rgba(52, 211, 153, 0.8);
   flex-shrink: 0;
+}
+
+/* 嵌入式 CAD 内核预览占位层（原生窗口贴合后即被覆盖） */
+.dr-cad-embed-placeholder {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #05080f;
+  color: #7dd3fc;
+}
+
+.dr-cad-embed-placeholder .material-symbols-outlined {
+  font-size: 34px;
+  color: #2dd4bf;
+  animation: dr-build-icon-pulse 1.3s ease-in-out infinite;
+}
+
+.dr-cad-embed-placeholder strong {
+  font-size: 14px;
+  color: #cbd5e1;
+}
+
+.dr-cad-embed-placeholder p {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
 }
 
 .dr-cad-statusbar {

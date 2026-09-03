@@ -1954,13 +1954,42 @@ def _iter_preview_items(msp: Any, max_items: int) -> list[tuple[Any, ComponentRu
 
 
 def _preview_bbox(items: list[tuple[Any, ComponentRule | None]]) -> tuple[float, float, float, float] | None:
+    # 先收集逐实体 bbox，再按中心做 MAD 离群清洗：
+    # DWG 转换器常产生坐标 1e96 级的垃圾图元，直接合并会把视口撑爆，
+    # 前端 WebGL 归一化后真实图纸被压成一个点（黑屏/显示不全的根源）
+    ent_boxes: list[tuple[Any, ComponentRule | None, tuple[float, float, float, float]]] = []
+    for entity, rule in items:
+        bbox = _bbox_from_points(_points_from_entity(entity))
+        if bbox is not None:
+            ent_boxes.append((entity, rule, bbox))
+    if not ent_boxes:
+        return None
+
+    if len(ent_boxes) >= 8:
+        def _mad(vals: list[float]) -> tuple[float, float]:
+            m = sorted(vals)[len(vals) // 2]
+            return m, sorted(abs(v - m) for v in vals)[len(vals) // 2]
+
+        cx = [(b[0] + b[2]) / 2.0 for _, _, b in ent_boxes]
+        cy = [(b[1] + b[3]) / 2.0 for _, _, b in ent_boxes]
+        med_x, mad_x = _mad(cx)
+        med_y, mad_y = _mad(cy)
+        thresh_x = max(mad_x * 15.0, 1e-6)
+        thresh_y = max(mad_y * 15.0, 1e-6)
+        cleaned = [
+            (entity, rule, bbox)
+            for (entity, rule, bbox), x, y in zip(ent_boxes, cx, cy)
+            if abs(x - med_x) <= thresh_x and abs(y - med_y) <= thresh_y
+        ]
+        if cleaned:
+            ent_boxes = cleaned
+
     all_bbox: tuple[float, float, float, float] | None = None
     line_bbox: tuple[float, float, float, float] | None = None
     classified_line_bbox: tuple[float, float, float, float] | None = None
 
-    for entity, rule in items:
+    for entity, rule, bbox in ent_boxes:
         kind = entity.dxftype()
-        bbox = _bbox_from_points(_points_from_entity(entity))
         all_bbox = _merge_bbox(all_bbox, bbox)
         if kind not in {"HATCH", "SOLID", "TRACE", "TEXT", "MTEXT"}:
             line_bbox = _merge_bbox(line_bbox, bbox)
@@ -2107,12 +2136,17 @@ def build_cad_raster(
     doc: Any,
     max_dim: int = 4200,
     progress_callback: DxfProgressCallback | None = None,
+    skip_hatch: bool = False,
 ) -> dict[str, Any] | None:
     """用 ezdxf 官方绘图引擎把整个模型空间渲染成一张高清 PNG（黑底原色）。
 
     与自研重画不同：尺寸标注、块、填充、文字、线宽等全部图元按图面原样呈现，
     前端平铺显示该位图，等效于 CAD 快速看图的完整原样显示。渲染较重，
     只在后台分析线程内调用；失败时返回 None，前端回退到 WebGL 几何模式。
+
+    skip_hatch=True 为快速看图模式：跳过 HATCH 填充（大图上每个填充
+    最多可耗时 30s，是渲染慢的主因），只画线条/文字/标注，配合较低
+    分辨率可在秒级出图，让用户先看图、高清原图后台继续渲染。
     """
 
     try:
@@ -2172,10 +2206,6 @@ def build_cad_raster(
         # doc 之后不再使用，destroy 是安全的）
         msp_dbg = doc.modelspace()
         entities = list(msp_dbg)
-        try:
-            extents = ez_bbox.extents(entities, fast=True)
-        except Exception:
-            extents = [None] * len(entities)
 
         def _center_of(ext: Any) -> tuple[float, float] | None:
             """兼容不同 ezdxf 版本 extents(fast=True) 的返回形态。"""
@@ -2194,9 +2224,16 @@ def build_cad_raster(
             except Exception:
                 return None
 
+        # 逐实体计算中心：bbox.extents() 传列表返回的是整体包围盒而非逐实体包围盒，
+        # 旧写法 zip(entities, 整体bbox) 只得到 2 对假数据，MAD 过滤从未生效，
+        # 垃圾图元（坐标 1e97 级）因此漏剔，把渲染视口/figsize 撑爆成全黑
         centers: list[tuple[float, float] | None] = []
-        for ent, ext in zip(entities, extents):
-            c = _center_of(ext)
+        for ent in entities:
+            c: tuple[float, float] | None = None
+            try:
+                c = _center_of(ez_bbox.extents([ent], fast=True))
+            except Exception:
+                c = None
             if c is None and ent.dxf.hasattr("insert"):  # INSERT：用插入点近似
                 try:
                     c = (float(ent.dxf.insert[0]), float(ent.dxf.insert[1]))
@@ -2234,6 +2271,8 @@ def build_cad_raster(
 
         _render_ext: Any = None
         try:
+            # 必须用全精度 extents：fast 模式会把垃圾图元的异常坐标
+            # （如 1e97）算进包围盒，导致 figsize 退化、整图渲染成黑图
             _render_ext = ez_bbox.extents(doc.modelspace())
             logger.info("CAD 渲染诊断：剔除后模型空间范围 extents=%s", _render_ext)
         except Exception:
@@ -2316,6 +2355,9 @@ def build_cad_raster(
                 _eh = float(_emax[1] - _emin[1])
                 if _ew > 0 and _eh > 0:
                     _aspect = _ew / _eh
+                    # 钳制长宽比：垃圾图元（异常坐标）可能把比例撑到天文数字，
+                    # 不钳制会把 figsize 的高度压成 0 导致整图渲染失败/全黑
+                    _aspect = min(max(_aspect, 0.2), 20.0)
                     if _aspect > _fw / _fh:
                         _fh = _fw / _aspect
                     else:
@@ -2331,7 +2373,38 @@ def build_cad_raster(
         # (6.43x4.8 inch) 覆盖我们按 _raster_max_dim 计算的 figsize，
         # 否则输出像素会被锁死在约 2700px，放大后图纸文字依然模糊
         _emit_analysis_progress(progress_callback, progress="高清预览·准备...")
-        Frontend(ctx, MatplotlibBackend(ax, adjust_figure=False), config=config).draw_layout(msp, finalize=True)
+        _hatch_filter = (lambda e: e.dxftype() != "HATCH") if skip_hatch else None
+        _draw_total = max(len(msp), 1)
+
+        class _TolerantFrontend(Frontend):
+            """逐图元容错：DWG 转换器常产生个别损坏图元（如样条边界 knot 数
+            不匹配的 HATCH），一个坏图元的异常不应毁掉整图渲染，跳过即可。"""
+
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
+                super().__init__(*args, **kwargs)
+                self._drawn = 0
+
+            def draw_entity(self, entity: Any, properties: Any) -> None:
+                try:
+                    super().draw_entity(entity, properties)
+                except Exception:
+                    pass
+                # 大图绘制耗时数分钟：按图元数插值心跳上报（61%~76%）。
+                # 块参照会让 draw_entity 调用数达到实体数的数倍，用渐近曲线
+                # （drawn 越多越慢逼近 76）避免百分比提前锁死；完成后跳到 78
+                self._drawn += 1
+                if self._drawn % 300 == 0:
+                    _frac = 1 - _draw_total / (_draw_total + self._drawn)
+                    _pct = min(61 + int(16 * _frac), 76)
+                    _emit_analysis_progress(
+                        progress_callback,
+                        progress=f"正在绘制高清预览图元 {self._drawn}...",
+                        progress_percent=_pct,
+                    )
+
+        _TolerantFrontend(ctx, MatplotlibBackend(ax, adjust_figure=False), config=config).draw_layout(
+            msp, finalize=True, filter_func=_hatch_filter,
+        )
         _t_draw = time.perf_counter()
         _emit_analysis_progress(progress_callback, progress="高清预览·绘制...")
         buf = io.BytesIO()
@@ -2346,6 +2419,9 @@ def build_cad_raster(
             pad_inches=0,
         )
         _t_save = time.perf_counter()
+        # PNG 编码大位图也需数秒：报一次心跳避免进度停在"绘制"不动
+        _emit_analysis_progress(progress_callback, progress="正在编码高清预览 PNG...",
+                                progress_percent=82)
         try:
             import PIL.Image as _PILImage
 
@@ -3013,6 +3089,22 @@ def analyze_dxf_bytes(
         doc, recover_diagnostics = _read_dxf_document(ezdxf, tmp_path)
         msp = doc.modelspace()
         layer_names = [_clean_str(layer.dxf.name) for layer in doc.layers]
+
+        # 优化：几何快速看图提前到管线最前——导出线条几何（约十余秒，GPU 渲染），
+        # 前端 WebGL 立即看图；高清原图（matplotlib 全量渲染，大图需数分钟）
+        # 在构件分析之后渲染，完成后前端自动替换为原样高清图
+        _emit_analysis_progress(progress_callback, progress="正在收集图纸图元...")
+        preview_items = _iter_preview_items(doc.modelspace(), PREVIEW_COLLECTION_LIMIT)
+        preview_bbox = _preview_bbox(preview_items)
+        _emit_analysis_progress(progress_callback, progress="正在生成快速看图几何...")
+        cad_geometry = build_cad_geometry(doc, items=preview_items, bbox=preview_bbox)
+        if cad_geometry.get("bbox") is not None:
+            _emit_analysis_progress(
+                progress_callback,
+                progress="快速看图已就绪，正在识别构件（高清原图后台渲染中）...",
+                cad_geometry=cad_geometry,
+            )
+
         all_entities = list(msp)
         entity_total = len(all_entities)
         _emit_analysis_progress(
@@ -3188,30 +3280,45 @@ def analyze_dxf_bytes(
         if len(all_entities) > PREVIEW_MAX_RENDERED_ENTITIES:
             diagnostics.append("图纸预览提供流畅和高清两档，工程量统计仍按完整图元计算。")
 
-        # 图元收集与包围盒只算一次，预览/高清预览/看图几何三处复用，
-        # 避免大图重复遍历+重复展开点坐标导致解析卡在预览阶段
-        _emit_analysis_progress(progress_callback, progress="正在收集图纸图元...")
-        preview_items = _iter_preview_items(doc.modelspace(), PREVIEW_COLLECTION_LIMIT)
-        preview_bbox = _preview_bbox(preview_items)
-        _emit_analysis_progress(progress_callback, progress="正在生成图纸预览并标记构件...")
-        preview_svg = build_preview_svg(
-            doc, progress_callback=progress_callback, items=preview_items, bbox=preview_bbox,
+        # 高清原图渲染（大图数分钟）：几何快速看图已在前端显示，
+        # 这里渲染完成后再推送给前端无缝替换为原样高清图。
+        # 渲染内置的离群剔除/提亮/清理会修改 doc，必须放在构件分析之后
+        _emit_analysis_progress(
+            progress_callback,
+            progress="正在渲染 CAD 原图高清预览（大图纸需数分钟，请勿关窗）...",
         )
-        _emit_analysis_progress(progress_callback, progress="正在生成高清预览...")
-        preview_svg_hd = build_preview_svg(
-            doc,
-            max_entities=PREVIEW_HD_RENDERED_ENTITIES,
-            max_points_per_entity=PREVIEW_HD_MAX_POINTS_PER_ENTITY,
-            max_text_entities=PREVIEW_HD_TEXT_ENTITIES,
-            shape_rendering="geometricPrecision",
-            stroke_width=PREVIEW_HD_STROKE_WIDTH,
-            items=preview_items,
-            bbox=preview_bbox,
-        )
-        _emit_analysis_progress(progress_callback, progress="正在导出 CAD 看图几何数据...")
-        cad_geometry = build_cad_geometry(doc, items=preview_items, bbox=preview_bbox)
-        _emit_analysis_progress(progress_callback, progress="正在渲染 CAD 原图高清预览（大图纸需几分钟，请勿关窗）...")
         cad_raster = build_cad_raster(doc, progress_callback=progress_callback)
+        if cad_raster:
+            _emit_analysis_progress(
+                progress_callback,
+                progress="高清原图已生成，正在整理识别结果...",
+                cad_raster=cad_raster,
+            )
+
+        # 预览通道优先级：栅格原图 > WebGL 几何 > SVG 矢量。
+        # 前两者其一可用即跳过 SVG（大图两轮图元展开+序列化耗时可观）
+        if cad_raster is not None or cad_geometry.get("bbox") is not None:
+            preview_svg = ""
+            preview_svg_hd = ""
+            if cad_raster is None:
+                diagnostics.append("高清原图渲染不可用（缺少 matplotlib 或渲染失败），已使用快速看图模式。")
+        else:
+            _emit_analysis_progress(progress_callback, progress="正在生成图纸预览并标记构件...")
+            preview_svg = build_preview_svg(
+                doc, progress_callback=progress_callback, items=preview_items, bbox=preview_bbox,
+            )
+            _emit_analysis_progress(progress_callback, progress="正在生成高清预览...")
+            preview_svg_hd = build_preview_svg(
+                doc,
+                max_entities=PREVIEW_HD_RENDERED_ENTITIES,
+                max_points_per_entity=PREVIEW_HD_MAX_POINTS_PER_ENTITY,
+                max_text_entities=PREVIEW_HD_TEXT_ENTITIES,
+                shape_rendering="geometricPrecision",
+                stroke_width=PREVIEW_HD_STROKE_WIDTH,
+                items=preview_items,
+                bbox=preview_bbox,
+            )
+            diagnostics.append("快速看图与高清原图均不可用，已回退矢量预览模式。")
         _emit_analysis_progress(progress_callback, progress="正在整理识别结果...")
         source_label = "DWG 已转换为 DXF 并解析完成" if source_format == "DWG" else "DXF 文件解析完成"
         summary = (

@@ -57,3 +57,12 @@ coverage.xml
 .playwright-cli/
 shots/
 .pwtmp/
+
+# ── 便携Python运行时（体积过大，不入库） ──
+tools/python/Lib/site-packages/
+tools/python/Scripts/
+tools/python/tcl/
+tools/python/DLLs/
+tools/python/libs/
+tools/python/include/
+tools/python/

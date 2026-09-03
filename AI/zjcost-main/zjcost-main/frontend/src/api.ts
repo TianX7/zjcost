@@ -1336,8 +1336,62 @@ export const api = {
         width: number;
         height: number;
       } | null;
+      cad_raster_ready?: boolean;
+      cad_geometry_ready?: boolean;
       error: string | null;
     }>(`/drawing-recognition/${taskId}${includeSvg ? "" : "?include_svg=false"}`);
+  },
+
+  // 解析中提前拉取 CAD 原图渲染图（轻量轮询不含渲染图，看到就绪标记后调用一次）
+  getDrawingRaster: (taskId: string) => {
+    return request<{ cad_raster: { data_url: string; width: number; height: number } | null }>(
+      `/drawing-recognition/${taskId}/raster`,
+    );
+  },
+
+  // 解析中提前拉取快速看图几何数据（约十余秒即就绪，WebGL 先看图）
+  getDrawingGeometry: (taskId: string) => {
+    return request<{
+      cad_geometry: {
+        bbox: number[] | null;
+        groups: Record<string, number[]>;
+        highlights: [number, number, number, number, string][];
+        texts: [number, number, number, string][];
+      } | null;
+    }>(`/drawing-recognition/${taskId}/geometry`);
+  },
+
+  // ─── 嵌入式 CAD 快速看图（预览区贴合） ─────────────────────────
+  // 启动：以预览区初始屏幕坐标调起查看器（无边框置顶窗口贴合预览区）
+  startCadEmbed: (taskId: string, rect: {
+    x: number; y: number; w: number; h: number; visible: boolean; pf: boolean;
+  }) => {
+    return request<{ opened: boolean; message?: string }>(
+      `/drawing-recognition/${taskId}/embed-cad`,
+      { method: "POST", body: JSON.stringify(rect) },
+    );
+  },
+  // 坐标跟随：预览区移动/缩放/滚动时上报新坐标（物理像素）
+  updateCadEmbedRect: (taskId: string, rect: {
+    x: number; y: number; w: number; h: number; visible: boolean; pf: boolean;
+  }) => {
+    return request<{ ok: boolean }>(
+      `/drawing-recognition/${taskId}/embed-cad/rect`,
+      { method: "POST", body: JSON.stringify(rect) },
+    );
+  },
+  // 停止嵌入（查看器窗口退出，回到内置渲染）
+  stopCadEmbed: (taskId: string) => {
+    return request<{ ok: boolean }>(
+      `/drawing-recognition/${taskId}/embed-cad/stop`,
+      { method: "POST" },
+    );
+  },
+  // 嵌入状态：启动失败或运行中途退出时前端据此自动回退内置渲染
+  cadEmbedStatus: (taskId: string) => {
+    return request<{ state: string; message?: string }>(
+      `/drawing-recognition/${taskId}/embed-cad/status`,
+    );
   },
 
   // ─── IFC Parse ─────────────────────────────────────────────────
