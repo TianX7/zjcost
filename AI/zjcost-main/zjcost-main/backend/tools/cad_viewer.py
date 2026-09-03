@@ -503,6 +503,8 @@ def _install_offscreen_hook(pid: int, pos: tuple[int, int]):
     def proc(_hook, _event, hwnd, id_object, _child, _thread, _time):
         if not hwnd or id_object != 0:  # OBJID_WINDOW
             return
+        if pid is None and not maybe_cad_window(hwnd):
+            return  # 全局钩子事件量大：粗筛不过就不做进程名慢查询
         wpid = wt.DWORD()
         u32.GetWindowThreadProcessId(hwnd, ctypes.byref(wpid))
         if pid is not None and wpid.value != pid:
