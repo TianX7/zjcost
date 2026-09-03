@@ -85,3 +85,8 @@ backend/tools/CADReader/
 _cad_popup.png
 _debug_raster.png
 2026-*.pdf
+
+# ── CAD图纸 & 上传缓存（运行时生成） ──
+*.dwg
+*.dxf
+backend/uploads_cache/

@@ -8,6 +8,7 @@ import math
 import os
 import re
 import tempfile
+import threading
 import time
 from collections import Counter
 from dataclasses import dataclass
@@ -3034,6 +3035,7 @@ def analyze_dxf_bytes(
     file_bytes: bytes,
     filename: str,
     progress_callback: DxfProgressCallback | None = None,
+    async_raster: bool = False,
 ) -> dict[str, Any]:
     """Analyze DXF bytes and return components, BOQ suggestions, diagnostics, and preview SVG."""
 
@@ -3280,20 +3282,57 @@ def analyze_dxf_bytes(
         if len(all_entities) > PREVIEW_MAX_RENDERED_ENTITIES:
             diagnostics.append("图纸预览提供流畅和高清两档，工程量统计仍按完整图元计算。")
 
-        # 高清原图渲染（大图数分钟）：几何快速看图已在前端显示，
-        # 这里渲染完成后再推送给前端无缝替换为原样高清图。
+        # 高清原图渲染（大图数分钟）：几何快速看图已在前端显示。
+        # 默认同步渲染（async_raster=False，测试/小图保持原行为）；
+        # async_raster=True 时放入后台 daemon 线程，解析主流程先行返回
+        # （构件识别/几何/计价均已完成），高清原图渲染完成后经
+        # progress_callback 推送 cad_raster，前端无缝替换。
         # 渲染内置的离群剔除/提亮/清理会修改 doc，必须放在构件分析之后
-        _emit_analysis_progress(
-            progress_callback,
-            progress="正在渲染 CAD 原图高清预览（大图纸需数分钟，请勿关窗）...",
-        )
-        cad_raster = build_cad_raster(doc, progress_callback=progress_callback)
-        if cad_raster:
+        cad_raster: dict[str, Any] | None = None
+
+        def _render_raster_worker() -> None:
+            try:
+                raster = build_cad_raster(doc, progress_callback=progress_callback)
+            except Exception:
+                logger.exception("CAD 后台高清渲染异常")
+                raster = None
+            if raster and progress_callback:
+                try:
+                    progress_callback({
+                        "progress": "高清原图已生成，正在替换为原样高清图...",
+                        "cad_raster": raster,
+                    })
+                except Exception:
+                    pass
+            elif progress_callback:
+                try:
+                    progress_callback({"progress": "高清原图渲染失败，保持快速看图模式"})
+                except Exception:
+                    pass
+
+        if async_raster:
+            # 非 daemon：子进程在 analyze 返回后仍保持存活，等待本线程
+            # 渲染完（期间持续经 progress 回调推送 cad_raster）再退出，
+            # 父进程可继续接收后台高清图。
+            threading.Thread(
+                target=_render_raster_worker, daemon=False, name="cad-raster-bg"
+            ).start()
             _emit_analysis_progress(
                 progress_callback,
-                progress="高清原图已生成，正在整理识别结果...",
-                cad_raster=cad_raster,
+                progress="正在后台渲染 CAD 原图高清预览，可先查看识别结果...",
             )
+        else:
+            _emit_analysis_progress(
+                progress_callback,
+                progress="正在渲染 CAD 原图高清预览（大图纸需数分钟，请勿关窗）...",
+            )
+            cad_raster = build_cad_raster(doc, progress_callback=progress_callback)
+            if cad_raster:
+                _emit_analysis_progress(
+                    progress_callback,
+                    progress="高清原图已生成，正在整理识别结果...",
+                    cad_raster=cad_raster,
+                )
 
         # 预览通道优先级：栅格原图 > WebGL 几何 > SVG 矢量。
         # 前两者其一可用即跳过 SVG（大图两轮图元展开+序列化耗时可观）
@@ -3379,4 +3418,31 @@ def analyze_dxf_bytes(
         try:
             os.unlink(tmp_path)
         except OSError:
+            pass
+
+
+def analyze_dxf_bytes_worker(
+    file_bytes: bytes,
+    filename: str,
+    progress_queue: Any,
+) -> None:
+    """子进程执行 analyze_dxf_bytes，进度与最终结果经队列回传主进程。
+
+    解析是 CPU 密集型（ezdxf/matplotlib 存在分钟级 C 调用），放主进程
+    线程里跑会霸占 GIL 饿死事件循环，必须进程隔离。"""
+    def _cb(payload: dict) -> None:
+        try:
+            progress_queue.put(("progress", payload))
+        except Exception:
+            pass
+
+    try:
+        result = analyze_dxf_bytes(
+            file_bytes, filename, progress_callback=_cb, async_raster=True
+        )
+        progress_queue.put(("result", result))
+    except Exception as exc:
+        try:
+            progress_queue.put(("error", str(exc)))
+        except Exception:
             pass

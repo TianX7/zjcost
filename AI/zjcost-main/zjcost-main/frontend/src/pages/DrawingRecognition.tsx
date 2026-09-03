@@ -836,8 +836,24 @@ export default function DrawingRecognition() {
       avoid(".dr-float-panel");
       avoid(".dr-panel-toggle");
       avoid(".dr-bottom-bar");
-      // 嵌入模式下进度条移到下方不被覆盖的条带，CAD 窗口底部让出空间保持其可见
-      avoid(".dr-float-progress");
+      // 进度卡已移到顶部居中（CAD 嵌入时 CAD 窗口顶部让出此区域避免互盖）；
+      // 卡片较高不满足 avoid 顶部阈值，单独处理：CAD 窗口上边界压到进度卡之下
+      const progEl = stage.querySelector<HTMLElement>(".dr-float-progress");
+      if (progEl) {
+        const pr = progEl.getBoundingClientRect();
+        if (pr.width >= 2 && pr.height >= 2) {
+          top = Math.max(top, pr.bottom + 8);
+        }
+      }
+      // 底部抽屉（构件/清单/计价复核/诊断）较高，avoid 的底部判定阈值不够高，
+      // 单独处理：抽屉打开时 CAD 窗口下边界让到抽屉顶部之上，避免盖住复核内容
+      const drawerEl = stage.querySelector<HTMLElement>(".dr-drawer");
+      if (drawerEl) {
+        const dr = drawerEl.getBoundingClientRect();
+        if (dr.width >= 2 && dr.height >= 2) {
+          bottom = Math.min(bottom, dr.top - 8);
+        }
+      }
       const w = right - left, h = bottom - top;
       if (w < 100 || h < 100) return null;
       // CSS 视口坐标 → 物理屏幕坐标（页面缩放 100% 时精确）
@@ -1322,7 +1338,7 @@ export default function DrawingRecognition() {
   };
 
   const uploadProps: UploadProps = {
-    accept: ".dwg,.dxf,.pdf,.png,.jpg,.jpeg",
+    accept: ".dwg,.dxf",
     showUploadList: false,
     beforeUpload: async (file) => {
       if (file.size > 100 * 1024 * 1024) {
@@ -1520,6 +1536,26 @@ export default function DrawingRecognition() {
   const compCount = result?.components?.length ?? 0;
   const boqCount = result?.boq_suggestions?.length ?? 0;
   const diagCount = result?.diagnostics?.length ?? 0;
+
+  // ── 解析/计价进度派生状态 ────────────────────────────
+  const isUploading = uploading && !result;
+  const parsing = !!result && result.status === "processing";
+  const valuing = !!result && result.valuation_status === "processing";
+  const PROG_STEPS = [
+    { key: "upload", label: "上传转换", icon: "upload_file" },
+    { key: "parse", label: "识别构件", icon: "fact_check" },
+    { key: "render", label: "高清渲染", icon: "image" },
+    { key: "value", label: "自动计价", icon: "request_quote" },
+  ];
+  // 依据后端 progress 阶段关键词 + 计价状态，定位当前主步骤
+  const progText = result?.progress || "";
+  const stepIndex =
+    isUploading ? 0
+    : valuing ? 3
+    : /高清|预览|整理|生成/.test(progText) ? 2
+    : /分类|标记|汇总|识别|转换|读取|图层|收集|几何/.test(progText) ? 1
+    : parsing ? 1
+    : 0;
 
   const COMPONENT_COLORS: Record<string, string> = {
     "框架柱": "#2563eb", "构造柱": "#3b82f6", "圈梁": "#60a5fa",
@@ -1765,20 +1801,56 @@ export default function DrawingRecognition() {
           </div>
         </div>
 
-        {/* 解析进度：底部细条，不遮挡底图 */}
-        {(progress > 0 || uploading) && result?.status !== "done" && (
-          <div className="dr-float-progress is-parsing">
-            <div className="dr-float-progress-head">
-              <span>{uploading ? "上传中..." : result?.progress || result?.valuation_progress || "解析中"}</span>
-              <strong>{progress}%</strong>
+        {/* 解析/计价进度：顶部居中大卡，CAD 嵌入时 CAD 窗口顶部让出该区域以免互盖 */}
+        {(isUploading || parsing || valuing) && (progress > 0 || isUploading || valuing) && (
+          <div className={`dr-float-progress is-parsing is-${valuing ? "valuing" : "working"}`}>
+            <div className="dr-float-progress-lead">
+              <span className="dr-progress-icon material-symbols-outlined">
+                {isUploading ? "upload_file" : valuing ? "request_quote" : "auto_awesome"}
+              </span>
+              <div className="dr-progress-title">
+                <span className="dr-progress-stage">
+                  {isUploading ? "正在上传图纸"
+                    : valuing ? "自动计价阶段"
+                    : "正在解析图纸"}
+                </span>
+                <strong>{progress}%</strong>
+              </div>
             </div>
+
             <div className="dr-progress-track dr-progress-track-flow">
               <div className="dr-progress-fill" style={{ width: `${progress}%` }} />
             </div>
-            {currentComponent && (
+
+            {/* 主步骤指示 */}
+            <div className="dr-progress-steps">
+              {PROG_STEPS.map((s, i) => (
+                <span key={s.key} className={`dr-progress-step${i === stepIndex ? " current" : ""}${i < stepIndex ? " done" : ""}`}>
+                  <span className="material-symbols-outlined">{i < stepIndex && stepIndex !== 3 ? "check" : s.icon}</span>
+                  {s.label}
+                </span>
+              ))}
+            </div>
+
+            {/* 当前阶段详情 + 实时数据 */}
+            <div className="dr-float-progress-meta">
+              <span className="dr-progress-detail">
+                {isUploading ? "上传中..."
+                  : valuing ? result?.valuation_progress || "正在匹配定额..."
+                  : result?.progress || "准备中"}
+              </span>
+              {!isUploading && !valuing && compCount + boqCount > 0 && (
+                <span className="dr-progress-counts">
+                  <em>构件 {compCount}</em>
+                  <em>清单 {boqCount}</em>
+                </span>
+              )}
+            </div>
+
+            {currentComponent && parsing && (
               <div className="dr-float-reveal">
                 <span className="material-symbols-outlined">auto_awesome_motion</span>
-                {currentComponent.type} {currentComponent.spec || ""}
+                正在识别：{currentComponent.type} {currentComponent.spec || ""}
               </div>
             )}
           </div>

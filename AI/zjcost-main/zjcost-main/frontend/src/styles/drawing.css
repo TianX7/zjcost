@@ -196,21 +196,172 @@
 .dr-float-kpi-item.highlight .material-symbols-outlined { color: #818cf8; }
 .dr-float-kpi-item.highlight strong { color: #a5b4fc; }
 
-/* Floating progress：解析中居中显示细条进度，不遮挡底图 */
+/* Floating progress：解析/计价进度卡，置于预览区顶部居中（不遮挡底图中部） */
 .dr-float-progress {
   position: absolute;
   left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  top: 16px;
+  bottom: auto;
+  transform: translateX(-50%);
   z-index: 60;
-  width: min(480px, calc(100% - 32px));
-  padding: 6px 12px;
-  border-radius: 8px;
-  background: rgba(8, 14, 24, 0.78);
-  backdrop-filter: blur(6px);
-  border: 1px solid rgba(56, 189, 248, 0.18);
-  box-shadow: 0 4px 14px rgba(3, 7, 18, 0.35);
+  width: min(420px, calc(100% - 32px));
+  padding: 14px 16px;
+  border-radius: 14px;
+  background:
+    radial-gradient(120% 140% at 50% 0%, rgba(56, 189, 248, 0.12), transparent 55%),
+    rgba(8, 14, 24, 0.9);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  box-shadow:
+    0 10px 34px rgba(3, 7, 18, 0.55),
+    0 0 0 1px rgba(56, 189, 248, 0.06) inset,
+    0 0 24px rgba(56, 189, 248, 0.18);
   pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dr-float-progress.is-parsing .dr-float-progress-head { margin-bottom: 4px; }
+.dr-float-progress.is-parsing .dr-float-progress-head span { font-size: 11px; }
+.dr-float-progress.is-parsing .dr-float-progress-head strong { font-size: 12px; }
+.dr-float-progress.is-parsing .dr-float-reveal { margin-top: 4px; }
+.dr-float-progress.is-valuing {
+  border-color: rgba(129, 140, 248, 0.35);
+  background:
+    radial-gradient(120% 140% at 50% 0%, rgba(129, 140, 248, 0.14), transparent 55%),
+    rgba(8, 14, 24, 0.9);
+  box-shadow:
+    0 10px 34px rgba(3, 7, 18, 0.55),
+    0 0 24px rgba(129, 140, 248, 0.2);
+}
+
+/* 进度卡头部：图标 + 标题/百分比 */
+.dr-float-progress-lead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dr-progress-icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  font-size: 22px;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+}
+
+.is-valuing .dr-progress-icon {
+  color: #a5b4fc;
+  background: rgba(129, 140, 248, 0.12);
+  border-color: rgba(129, 140, 248, 0.25);
+}
+
+.dr-progress-title {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.dr-progress-stage {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dr-progress-title strong {
+  font-size: 26px;
+  font-weight: 800;
+  color: #38bdf8;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 18px rgba(56, 189, 248, 0.45);
+}
+
+.is-valuing .dr-progress-title strong {
+  color: #a5b4fc;
+  text-shadow: 0 0 18px rgba(129, 140, 248, 0.5);
+}
+
+/* 主步骤指示 */
+.dr-progress-steps {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.dr-progress-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: rgba(148, 163, 184, 0.06);
+  transition: all 0.18s;
+}
+
+.dr-progress-step .material-symbols-outlined { font-size: 14px; }
+
+.dr-progress-step.done { color: #34d399; }
+
+.dr-progress-step.current {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.14);
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  font-weight: 700;
+}
+
+.is-valuing .dr-progress-step.current {
+  color: #a5b4fc;
+  background: rgba(129, 140, 248, 0.14);
+  border-color: rgba(129, 140, 248, 0.3);
+}
+
+/* 阶段详情 + 实时数据 */
+.dr-float-progress-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.dr-progress-detail {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.dr-progress-counts {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.dr-progress-counts em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: rgba(148, 163, 184, 0.08);
+  padding: 2px 8px;
+  border-radius: 6px;
 }
 
 .dr-float-progress.is-parsing .dr-float-progress-head { margin-bottom: 4px; }
@@ -218,11 +369,12 @@
 .dr-float-progress.is-parsing .dr-float-progress-head strong { font-size: 12px; }
 .dr-float-progress.is-parsing .dr-float-reveal { margin-top: 4px; }
 
-/* 嵌入 CAD 内核预览时：进度条移到下方 CAD 窗口让出的条带，保持可见且不被盖住
-   （位于底部状态条上方；CAD 窗口底部会通过坐标上报避让该区域） */
+/* 嵌入 CAD 内核预览时：进度卡保持在顶部居中大卡，
+   CAD 窗口顶部会通过坐标上报避让该区域（见 measure()），
+   既显眼信息丰富，又不被置顶 CAD 窗口盖住、也不遮挡绘图区主体 */
 .dr-stage.is-cad-embed .dr-float-progress {
-  top: auto;
-  bottom: 56px;
+  top: 16px;
+  bottom: auto;
   transform: translateX(-50%);
 }
 
@@ -785,6 +937,12 @@
 }
 
 .dr-cad-tool .material-symbols-outlined { font-size: 15px; }
+
+/* 解析/计价进度卡驻留顶部居中时，暂时收起顶部专业切换工具条避免重叠；
+   进度完成进度卡消失后自动恢复 */
+.dr-stage:has(.dr-float-progress) .dr-cad-toolbar {
+  display: none;
+}
 
 .dr-cad-tool.active {
   background: rgba(56, 189, 248, 0.16);

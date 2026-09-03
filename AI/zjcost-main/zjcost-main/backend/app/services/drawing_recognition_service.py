@@ -71,26 +71,6 @@ _RECOGNITION_PROMPT = """\
 """
 
 
-def _get_sample_components() -> list[RecognizedComponent]:
-    return [
-        RecognizedComponent(id="C-1", type="框架柱", count=12, spec="600×600", confidence=95.0, material="C30混凝土", unit="m³", quantity_estimate=17.28),
-        RecognizedComponent(id="C-2", type="框架柱", count=8, spec="500×500", confidence=92.0, material="C30混凝土", unit="m³", quantity_estimate=8.64),
-        RecognizedComponent(id="B-1", type="框架梁", count=16, spec="300×600", confidence=90.0, material="C30混凝土", unit="m³", quantity_estimate=34.56),
-        RecognizedComponent(id="B-2", type="框架梁", count=10, spec="250×500", confidence=88.0, material="C30混凝土", unit="m³", quantity_estimate=15.00),
-        RecognizedComponent(id="W-1", type="剪力墙", count=4, spec="T=250", confidence=93.0, material="C30混凝土", unit="m³", quantity_estimate=28.80),
-        RecognizedComponent(id="S-1", type="楼板", count=2, spec="T=120", confidence=96.0, material="C30混凝土", unit="m³", quantity_estimate=57.60),
-        RecognizedComponent(id="R-1", type="钢筋", count=1, spec="HRB400", confidence=85.0, material="HRB400", unit="t", quantity_estimate=18.50),
-        RecognizedComponent(id="P-1", type="给排水管道", count=1, spec="DN100", confidence=87.0, unit="m", quantity_estimate=120.00),
-        RecognizedComponent(id="P-2", type="给排水管道", count=1, spec="De50", confidence=85.0, unit="m", quantity_estimate=85.00),
-        RecognizedComponent(id="V-1", type="阀门", count=12, spec="DN100", confidence=80.0, unit="个", quantity_estimate=12.00),
-        RecognizedComponent(id="E-1", type="电气配管", count=1, spec="SC20", confidence=88.0, unit="m", quantity_estimate=350.00),
-        RecognizedComponent(id="E-2", type="电缆电线", count=1, spec="YJV-4×25", confidence=82.0, unit="m", quantity_estimate=180.00),
-        RecognizedComponent(id="L-1", type="电气设备器具", count=48, spec="灯具/开关插座", confidence=85.0, unit="个", quantity_estimate=48.00),
-        RecognizedComponent(id="F-1", type="消防管道", count=1, spec="DN150", confidence=86.0, unit="m", quantity_estimate=95.00),
-        RecognizedComponent(id="F-2", type="消防设备器具", count=24, spec="喷头/消火栓/烟感", confidence=83.0, unit="个", quantity_estimate=24.00),
-    ]
-
-
 def recognize_drawing(
     *,
     image_bytes: bytes,
@@ -99,10 +79,11 @@ def recognize_drawing(
 ) -> RecognitionResult:
     provider = get_zh_provider()
     if not provider.is_enabled() or not provider.is_configured():
+        # 离线模式不返回伪造的示例识别数据，明确告知识别服务不可用
         return RecognitionResult(
-            components=_get_sample_components(),
-            summary="【离线模式】AI服务未配置，当前展示示例识别数据。共识别到15类构件，包含框架柱20根、框架梁26根、剪力墙4面、楼板2层，以及给排水、电气、消防等安装工程内容。",
-            drawing_type="结构+安装综合平面图",
+            components=[],
+            summary="AI 识别服务未配置，离线模式无法识别图纸。请在系统设置中配置模型提供方后再试。",
+            error="AI 服务未配置或未启用，离线模式不可识别",
         )
 
     # Encode image to base64 for vision API

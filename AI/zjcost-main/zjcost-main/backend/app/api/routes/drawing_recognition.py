@@ -9,7 +9,9 @@ import hashlib
 import io
 import json
 import math
+import multiprocessing
 import os
+import queue
 import re
 import subprocess
 import sys
@@ -34,7 +36,7 @@ from app.services.drawing_recognition_service import (
     recognize_drawing,
 )
 from app.services.drawing_valuation_service import create_valuation_from_drawing
-from app.services.dxf_analysis_service import analyze_dxf_bytes
+from app.services.dxf_analysis_service import analyze_dxf_bytes_worker
 from app.services.dwg_conversion_service import convert_dxf_to_dwg_bytes, get_converter_status
 from app.services.task_store import load_background_task, save_background_task
 from app.utils.datetime import parse_datetime
@@ -953,6 +955,86 @@ def _export_task_excel(task_id: str, task: dict) -> bytes:
     return buf.getvalue()
 
 
+def _start_cad_analysis(file_bytes: bytes, filename: str):
+    """启动 DXF/DWG 解析子进程。
+
+    ezdxf/matplotlib 解析是 CPU 密集型，单次 C 级调用可达分钟级；在主进程
+    线程里跑会霸占 GIL 把事件循环饿死（看图 rect、状态轮询全部超时，前端
+    卡在"CAD 内核预览启动中"并报错）。进程隔离后子进程再慢也不影响服务。
+    """
+    ctx = multiprocessing.get_context("spawn")
+    result_queue = ctx.Queue()
+    process = ctx.Process(
+        target=analyze_dxf_bytes_worker,
+        args=(file_bytes, filename, result_queue),
+        daemon=False,
+    )
+    process.start()
+    return process, result_queue
+
+
+def _cad_wait_base(process, result_queue, progress_cb) -> dict:
+    """读到子进程回传的【基础解析结果】（构件/几何/清单，不含后台高清图）。
+
+    基础结果一到即返回，让任务尽快进入 done；高清原图由后台线程继续接收。
+    """
+    result = None
+    error_msg = None
+    while process.is_alive() and result is None and error_msg is None:
+        try:
+            kind, payload = result_queue.get(timeout=0.5)
+        except queue.Empty:
+            continue
+        if kind == "progress":
+            try:
+                progress_cb(payload)
+            except Exception:
+                pass
+        elif kind == "result":
+            result = payload
+        elif kind == "error":
+            error_msg = str(payload)
+
+    # 进程已退出仍未拿到 result：清空队列残留，再做一次兜底读取
+    while result is None:
+        try:
+            kind, payload = result_queue.get_nowait()
+        except queue.Empty:
+            break
+        if kind == "result":
+            result = payload
+        elif kind == "error":
+            error_msg = str(payload)
+    if result is None:
+        raise RuntimeError(
+            error_msg or f"图纸解析子进程异常退出（exitcode={process.exitcode}）"
+        )
+    return result
+
+
+def _cad_tail_raster(process, result_queue, progress_cb) -> None:
+    """后台收尾线程：基础结果已返回后，继续接收子进程推送的高清原图
+    （cad_raster，经 progress 通道送达 store），直到子进程退出并回收。"""
+    try:
+        while process.is_alive():
+            try:
+                kind, payload = result_queue.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            if kind == "progress":
+                try:
+                    progress_cb(payload)
+                except Exception:
+                    pass
+            # 基础 result/error 已在 _cad_wait_base 处理，此处忽略
+    finally:
+        if process.is_alive():
+            try:
+                process.join(timeout=5)
+            except Exception:
+                pass
+
+
 def _run_recognition(
     task_id: str,
     file_bytes: bytes,
@@ -1020,7 +1102,18 @@ def _run_recognition(
                 _prog_state["last"] = pct
                 _store_result(task_id, {**payload, **extra, "progress_percent": pct})
 
-            raw = analyze_dxf_bytes(file_bytes, filename, progress_callback=_cad_progress)
+            process, result_queue = _start_cad_analysis(file_bytes, filename)
+            raw = _cad_wait_base(process, result_queue, _cad_progress)
+            # 基础解析结果已就绪（约 30s，构件/几何/清单齐全），任务先行 done；
+            # 高清原图（大图需数分钟）由子进程后台续渲染，经 progress 通道
+            # 推送 cad_raster，前端在 cad_raster_ready 后自动替换为原样高清图。
+            # 收尾线程继续接管队列直到子进程退出并回收。
+            threading.Thread(
+                target=_cad_tail_raster,
+                args=(process, result_queue, _cad_progress),
+                daemon=True,
+                name="cad-raster-tail",
+            ).start()
             components = [_dump_model(ComponentOut(**item)) for item in raw.get("components", [])]
             suggestions = [_dump_model(BoqSuggestionOut(**item)) for item in raw.get("boq_suggestions", [])]
             has_error = bool(raw.get("error"))
@@ -1115,12 +1208,24 @@ def _run_recognition(
         })
 
 
+_ALLOWED_DRAWING_EXTENSIONS = (".dwg", ".dxf")
+
+
 @router.post("", summary="上传图纸，返回任务 ID")
 async def upload_drawing(
-    file: UploadFile = File(..., description="图纸文件 (PNG/JPG/PDF/DXF/DWG)"),
+    file: UploadFile = File(..., description="图纸文件 (DWG/DXF)"),
     project_context: str = Query("", description="可选：项目背景描述，提升识别精度"),
 ):
     task_id = str(uuid.uuid4())
+    filename = file.filename or "drawing"
+
+    # 仅允许 DWG / DXF 图纸，其余格式（含图片、PDF）一律拒绝
+    if not filename.lower().endswith(_ALLOWED_DRAWING_EXTENSIONS):
+        raise HTTPException(
+            status_code=422,
+            detail="仅支持 DWG / DXF 格式的图纸文件，请上传正确的文件",
+        )
+
     try:
         file_bytes = await _read_upload_bytes_limited(file)
     except HTTPException:
@@ -1128,7 +1233,6 @@ async def upload_drawing(
     except Exception as exc:
         logger.exception("Drawing upload failed before task creation: %s", exc)
         raise HTTPException(status_code=400, detail=f"读取图纸文件失败: {exc}") from exc
-    filename = file.filename or "drawing"
     content_type = file.content_type or "application/octet-stream"
 
     # 同一张图纸重复上传：直接复用上次解析结果（原地重传验证场景秒出）

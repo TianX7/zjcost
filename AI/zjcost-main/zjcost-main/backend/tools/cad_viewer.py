@@ -45,6 +45,9 @@ GWL_STYLE = -16
 GWL_EXSTYLE = -20
 WS_EX_TOPMOST = 0x00000008
 WS_EX_TOOLWINDOW = 0x00000080
+WS_EX_APPWINDOW = 0x00040000
+WS_EX_LAYERED = 0x00080000
+LWA_ALPHA = 0x02
 WM_CLOSE = 0x0010
 WM_DESTROY = 0x0002
 SW_HIDE = 0
@@ -251,14 +254,54 @@ def wait_view(main_hwnd: int, deadline: float, rehide=None):
     return None
 
 
+def strip_taskbar(hwnd: int) -> None:
+    """去掉窗口的任务栏按钮：加 WS_EX_TOOLWINDOW、去 WS_EX_APPWINDOW。
+
+    任务栏按钮的显示由扩展样式决定（tool window 不占任务栏条目）。
+    CAD 主窗口在冷启动顶层阶段、以及解挂回顶层驻留期间都是独立顶层窗，
+    会重新冒出任务栏图标，调用本函数可从源头消除。
+    """
+    try:
+        ex = u32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+        new_ex = (ex | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW
+        if new_ex != ex:
+            u32.SetWindowLongW(hwnd, GWL_EXSTYLE, new_ex)
+    except Exception:
+        pass
+
+
 def attach(host: int, main_hwnd: int) -> None:
     """CAD 主窗口子窗口化并挂到宿主：去标题栏，任务栏条目消失。"""
+    strip_taskbar(main_hwnd)
+    u32.SetWindowRgn(main_hwnd, 0, False)  # 清掉停靠期间的 1x1 裁剪区域
     if u32.IsZoomed(main_hwnd):
         # 最大化窗口挂成子窗后尺寸锁死且 MoveWindow 无效，先还原
         u32.ShowWindow(main_hwnd, 9)  # SW_RESTORE
+    # 移除驻留期的全透明样式，恢复看图区正常渲染
+    ex = u32.GetWindowLongW(main_hwnd, GWL_EXSTYLE)
+    u32.SetWindowLongW(main_hwnd, GWL_EXSTYLE, ex & ~WS_EX_LAYERED)
     style = u32.GetWindowLongW(main_hwnd, GWL_STYLE)
-    u32.SetWindowLongW(main_hwnd, GWL_STYLE, (style & ~WS_OVERLAPPEDWINDOW) | WS_CHILD | WS_VISIBLE)
+    # WS_POPUP 一并清掉：否则 GetParent 语义仍按属主窗返回，子窗判定失效
+    u32.SetWindowLongW(main_hwnd, GWL_STYLE,
+                       (style & ~(WS_OVERLAPPEDWINDOW | WS_POPUP))
+                       | WS_CHILD | WS_VISIBLE)
     u32.SetParent(main_hwnd, host)
+
+
+def make_park_invisible(hwnd: int) -> None:
+    """驻留期给 CAD 主窗加 WS_EX_LAYERED + alpha=0：视觉完全隐身。
+
+    实测跨进程设置立即生效、CAD 单实例交接后仍保持（交接会把驻留主窗
+    重新 ShowWindow/最大化到屏上约 185ms，跨线程 SW_HIDE 被 CAD 忙线程
+    阻塞压不住）；OpenGL 渲染不受影响，attach() 时移除样式即恢复显示。
+    """
+    try:
+        ex = u32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+        if not ex & WS_EX_LAYERED:
+            u32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex | WS_EX_LAYERED)
+        u32.SetLayeredWindowAttributes(hwnd, 0, 0, LWA_ALPHA)
+    except Exception:
+        pass
 
 
 def align_view(host: int, main_hwnd: int) -> None:
@@ -337,7 +380,16 @@ def kill_existing_cad() -> None:
             ["taskkill", "/F", "/IM", "CADReader.exe"],
             capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW,
         )
-        time.sleep(0.5)
+        # 等进程真正退出：单实例互斥量等资源未释放时，新实例会以
+        # "僵尸"状态干等（有进程无窗口），整个启动流程卡死
+        for _ in range(20):
+            chk = subprocess.run(
+                ["tasklist", "/FI", "IMAGENAME eq CADReader.exe"],
+                capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            if b"CADReader.exe" not in chk.stdout:
+                break
+            time.sleep(0.15)
     except Exception:
         pass
 
@@ -464,8 +516,9 @@ def park_all_cad_windows(pos: tuple[int, int], host: int | None = None) -> None:
         wpid = wt.DWORD()
         u32.GetWindowThreadProcessId(hwnd, ctypes.byref(wpid))
         if is_cad_process(wpid.value):
-            if host is not None and u32.GetParent(hwnd) == host:
+            if host and u32.GetParent(hwnd) == host:
                 return True  # 已挂到宿主上的看图区不再挪走
+            strip_taskbar(hwnd)
             _park_offscreen(hwnd, pos)
         return True
 
@@ -481,71 +534,46 @@ def _virtual_offscreen_xy() -> tuple[int, int]:
 
 
 def _park_offscreen(hwnd: int, pos: tuple[int, int] | None) -> None:
-    """把窗口挪到屏幕外（保留可见状态与原尺寸）。"""
+    """把窗口挪到屏幕外（保留可见状态与原尺寸）。
+
+    最大化窗口实测可直接 SetWindowPos 挪走（约 1ms），不要先 SW_RESTORE
+    （同步跨线程调用，CAD 冷启动忙时被阻塞上百毫秒=全屏闪现的主因），
+    也不要用 SetWindowRgn 裁剪（实测同样被目标线程阻塞 160ms+），
+    更不要给 CAD 发还原命令（创建中/隐藏的窗口收到 SC_RESTORE 会让
+    Qt 在初始化阶段崩溃退出）。最大化标记由 attach() 挂接前兜底还原。
+    """
     if not pos:
         return
-    if u32.IsZoomed(hwnd):
-        # 最大化窗口不响应 MoveWindow：CAD 默认最大化启动，先还原再挪走
-        u32.ShowWindow(hwnd, 9)  # SW_RESTORE
+    vx = u32.GetSystemMetrics(76)
     r = wt.RECT()
     u32.GetWindowRect(hwnd, ctypes.byref(r))
+    if r.right <= vx:
+        return  # 已在屏幕外，高频轮询时直接跳过
     w, h = r.right - r.left, r.bottom - r.top
     if w <= 0 or h <= 0:
         return
-    u32.MoveWindow(hwnd, pos[0], pos[1], w, h, True)
+    u32.SetWindowPos(hwnd, 0, pos[0], pos[1], w, h, 0x0014)  # SWP_NOACTIVATE|SWP_NOZORDER
 
 
-_WIN_EVENT_PROC = ctypes.WINFUNCTYPE(
-    None, ctypes.c_void_p, wt.DWORD, wt.HWND, ctypes.c_long, ctypes.c_long, wt.DWORD, wt.DWORD,
-)
-
-
-def _install_offscreen_hook(pid: int, pos: tuple[int, int]):
-    """EVENT_OBJECT_SHOW/CREATE 钩子：CAD 窗口一出现（毫秒级）即挪到屏幕外，
-    覆盖轮询间隙里那几十毫秒的全屏闪现。返回 (回调引用, 钩子句柄)。"""
-    def proc(_hook, _event, hwnd, id_object, _child, _thread, _time):
-        if not hwnd or id_object != 0:  # OBJID_WINDOW
-            return
-        if pid is None and not maybe_cad_window(hwnd):
-            return  # 全局钩子事件量大：粗筛不过就不做进程名慢查询
-        wpid = wt.DWORD()
-        u32.GetWindowThreadProcessId(hwnd, ctypes.byref(wpid))
-        if pid is not None and wpid.value != pid:
-            return
-        if pid is None and not is_cad_process(wpid.value):
-            return
-        if u32.GetParent(hwnd):
-            return  # 已挂到宿主的子窗由 align_view 负责，不再挪走
-        if u32.IsWindowVisible(hwnd):
-            _park_offscreen(hwnd, pos)
-
-    cb = _WIN_EVENT_PROC(proc)
-    # pid=None 时挂全局钩子：CADReader 若注册表重定向到别的进程也能第一时间压住
-    handle = u32.SetWinEventHook(0x8000, 0x8002, 0, cb, pid or 0, 0, 0)  # CREATE~SHOW
-    return cb, handle
-
-
-def _run_suppress_watcher(pid: int | None, pos: tuple[int, int], host: int, stop: list[int]) -> None:
+def _run_suppress_watcher(pid: int | None, pos: tuple[int, int], host: int | None, stop: list[int]) -> None:
     """高频压窗线程：CAD 冷启动期间毫秒级把任何可见顶层窗挪出屏幕，
     并持续隐藏首次提示等小窗。主线程等待 QGLWidget + attach 时，
-    事件钩子消息泵和 40ms 轮询之间仍有闪现间隙，该线程 5ms 一圈兜底。"""
-    try:
-        hook_cb, hook_handle = _install_offscreen_hook(pid, pos)
-    except Exception:
-        hook_cb = hook_handle = None
-    try:
-        while not stop[0]:
-            pump_messages()
-            park_all_cad_windows(pos, host)
-            if not stop[0]:
-                suppress_popups(None)
-            time.sleep(0.005)
-    finally:
-        if hook_handle:
-            u32.UnhookWinEvent(hook_handle)
+    轮询停靠承担全部压制（实测单次挪窗约 1ms、轮询一圈 ~10ms 内，
+    足以压住冷启动闪现；WinEvent 全局钩子在 CAD 初始化的事件洪泛下
+    反而拖慢本线程的消息泵，不再使用）。"""
+    last_suppress = 0.0
+    while not stop[0]:
+        # 停靠必须每圈都跑（它决定冷启动闪现时长）；弹窗压制是全桌面
+        # 枚举、单圈几十毫秒，降频到 50ms 一次，别堵住停靠的节奏
+        park_all_cad_windows(pos, host)
+        now = time.time()
+        if now - last_suppress >= 0.05:
+            suppress_popups(None)
+            last_suppress = now
+        time.sleep(0.005)
 
 
-def wait_cad_ready(proc, deadline: float, keep_hidden: bool = False, hook=None, watcher=None):
+def wait_cad_ready(proc, deadline: float, keep_hidden: bool = False, watcher=None):
     """等 CAD 主窗口与看图区就绪，返回 (main_hwnd)。
 
     keep_hidden（网页嵌入用）：发现主窗口立即挪到虚拟屏幕外并持续压制
@@ -554,69 +582,76 @@ def wait_cad_ready(proc, deadline: float, keep_hidden: bool = False, hook=None, 
     exe 可能注册表重定向到已安装副本（原 proc 直接退出），
     故按窗口标题找主窗口（含隐藏窗——找到后我们会主动挪走它），
     用其真实 pid 后续判活。
-    hook：调用方在 Popen 前装好的全局压窗钩子 (回调引用, 句柄)。
-    watcher：调用方启动的高频压窗线程 stop 标记；非 None 时不重复安装钩子。
+    watcher：调用方启动的高频压窗线程 stop 标记。
     """
     offscreen = _virtual_offscreen_xy() if keep_hidden else None
-    hook_cb = hook_handle = None
-    watcher_stop = None
     if offscreen:
-        if hook:
-            hook_cb, hook_handle = hook
-        elif watcher is None:
-            try:
-                hook_cb, hook_handle = _install_offscreen_hook(None, offscreen)
-            except Exception:
-                hook_cb = hook_handle = None
-        if watcher is not None:
-            watcher_stop = watcher
         park_all_cad_windows(offscreen)
     main_hwnd = None
-    try:
-        while time.time() < deadline:
-            pump_messages()
-            if main_hwnd is None:
-                # 冷启动前已 kill_existing_cad 清场，此后出现的即本次实例。
-                # 跳过 160x28 之类的启动残根窗（文件缺失/单实例交接时出现），
-                # 只认尺寸正常的真正主窗口
-                for cand in find_any_cad_window():
-                    r = wt.RECT()
-                    u32.GetWindowRect(cand, ctypes.byref(r))
-                    if r.right - r.left >= 400 and r.bottom - r.top >= 250:
-                        main_hwnd = cand
-                        break
-            if main_hwnd is not None:
-                pid_now = window_pid(main_hwnd)
-
-                def _rehide():
-                    if offscreen:
-                        park_all_cad_windows(offscreen, None)
-                    elif u32.IsWindowVisible(main_hwnd):
-                        u32.ShowWindow(main_hwnd, SW_HIDE)
-                    suppress_popups(None, main_hwnd)
-
-                _rehide()
-                if wait_view(main_hwnd, deadline, rehide=_rehide if keep_hidden else None):
-                    hide_chrome(main_hwnd, pid_now)
-                    suppress_popups(None, main_hwnd)
-                    return main_hwnd
+    t_start = time.time()
+    while time.time() < deadline:
+        pump_messages()
+        if main_hwnd is None:
+            # 冷启动前已 kill_existing_cad 清场，此后出现的即本次实例。
+            # 跳过 160x28 之类的启动残根窗（文件缺失/单实例交接时出现），
+            # 只认尺寸正常的真正主窗口
+            for cand in find_any_cad_window():
+                r = wt.RECT()
+                u32.GetWindowRect(cand, ctypes.byref(r))
+                if r.right - r.left >= 400 and r.bottom - r.top >= 250:
+                    main_hwnd = cand
+                    break
+            if main_hwnd is None and time.time() - t_start > 6.0:
+                # 6 秒仍无正常主窗：单实例交接卡死/启动失败等异常状态，
+                # 干等 180 秒只会让前端超时报错，尽快失败让调用方重试
                 return None
-            if proc is not None and proc.poll() is not None and not find_any_cad_window():
-                return None  # 启动进程退出且无任何看图窗口（启动失败）
-            time.sleep(0.01)
-        return None
-    finally:
-        if hook_handle and not hook and watcher_stop is None:
-            u32.UnhookWinEvent(hook_handle)
+        if main_hwnd is not None:
+            pid_now = window_pid(main_hwnd)
+            strip_taskbar(main_hwnd)
+
+            def _rehide():
+                if offscreen:
+                    park_all_cad_windows(offscreen, None)
+                elif u32.IsWindowVisible(main_hwnd):
+                    u32.ShowWindow(main_hwnd, SW_HIDE)
+                suppress_popups(None, main_hwnd)
+
+            _rehide()
+            if wait_view(main_hwnd, min(deadline, time.time() + 20.0),
+                         rehide=_rehide if keep_hidden else None):
+                hide_chrome(main_hwnd, pid_now)
+                suppress_popups(None, main_hwnd)
+                return main_hwnd
+            return None
+        if proc is not None and proc.poll() is not None and not find_any_cad_window():
+            return None  # 启动进程退出且无任何看图窗口（启动失败）
+        time.sleep(0.01)
+    return None
 
 
 def detach_and_park(main_hwnd: int) -> None:
-    """解除宿主挂接并把 CAD 主窗口隐藏驻留（不杀进程，下次切换秒级复用）。"""
+    """解除宿主挂接并把 CAD 主窗口隐藏驻留（不杀进程，下次切换秒级复用）。
+
+    顺序关键：先藏宿主（自有窗口立即生效），再把仍为子窗的主窗挪到屏外
+    并恢复顶层 —— 解挂瞬间窗口带可见样式回到顶层，若还停在网页预览区
+    位置，跨线程 SW_HIDE 被 CAD 忙线程阻塞上百毫秒就会闪现。
+    """
     try:
+        host = u32.GetAncestor(main_hwnd, 1)  # GA_PARENT
+        if host and host != u32.GetDesktopWindow():
+            u32.ShowWindow(host, SW_HIDE)
+        # 子窗坐标是宿主客户区坐标，解挂后被重新解释为屏幕坐标，先挪出屏幕
+        u32.SetWindowPos(main_hwnd, 0, -30000, -30000, 0, 0,
+                         0x0015)  # NOSIZE|NOZORDER|NOACTIVATE
         u32.SetParent(main_hwnd, 0)
         style = u32.GetWindowLongW(main_hwnd, GWL_STYLE)
         u32.SetWindowLongW(main_hwnd, GWL_STYLE,
-                           (style & ~(WS_CHILD | WS_VISIBLE)) | WS_OVERLAPPEDWINDOW)
+                           (style & ~(WS_CHILD | WS_VISIBLE))
+                           | WS_POPUP | WS_OVERLAPPEDWINDOW)
+        # 解挂回顶层后会重新冒任务栏按钮，从源头去掉
+        strip_taskbar(main_hwnd)
+        # 全透明 + SW_HIDE 双保险：交接/异常路径把它拉回屏上也不可见
+        make_park_invisible(main_hwnd)
         u32.ShowWindow(main_hwnd, SW_HIDE)
     except Exception:
         pass
@@ -666,13 +701,15 @@ def run_embed(rect_file: str, dwg: str) -> int:
     """网页嵌入模式：无边框置顶窗口跟随坐标文件贴合网页预览区。
 
     快速切换优化：切回内置渲染时不杀 CAD 进程，仅解挂隐藏驻留；
-    再次启用时优先复用驻留实例（秒级贴合），仅当驻留实例打开的图纸
-    与当前不一致时才重启进程。
+    再次启用时优先复用驻留实例（秒级贴合），驻留实例打开的图纸与当前
+    不一致时走单实例文件交接（毫秒级、零闪现），交接失败才冷启动。
     """
     exe = find_cad_exe()
     if not exe:
         print("未找到 CAD 快速看图内核", flush=True)
         return 1
+    # CAD 拿到相对路径会弹模态"提示"框并卡死整个启动流程，必须传绝对路径
+    dwg = os.path.abspath(dwg)
     if not os.path.isfile(dwg):
         print("图纸文件不存在:", dwg, flush=True)
         return 1
@@ -687,70 +724,79 @@ def run_embed(rect_file: str, dwg: str) -> int:
     proc = None
     watcher_thread = None
     watcher_stop = [False]
-    if main_hwnd and window_text(main_hwnd).endswith(Path(dwg).name):
-        print("复用驻留 CAD 实例:", hex(main_hwnd), flush=True)
-    else:
-        if main_hwnd:
-            # 驻留实例图纸不匹配：结束它再全新调起
-            try:
-                subprocess.run(
-                    ["taskkill", "/F", "/PID", str(window_pid(main_hwnd))],
-                    capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW,
-                )
-                time.sleep(0.5)
-            except Exception:
-                pass
-        kill_existing_cad()
-        # STARTF_USESHOWWINDOW + SW_HIDE：部分应用首窗会尊重该提示，
-        # 若 CAD 采纳则首窗从创建起就不可见，配合轮询隐藏实现零闪现
-        si = subprocess.STARTUPINFO()
-        si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        si.wShowWindow = SW_HIDE
-        offscreen = _virtual_offscreen_xy()
+    # STARTF_USESHOWWINDOW + SW_HIDE：部分应用首窗会尊重该提示，
+    # 若 CAD 采纳则首窗从创建起就不可见，配合轮询隐藏实现零闪现
+    si = subprocess.STARTUPINFO()
+    si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    si.wShowWindow = SW_HIDE
+    offscreen = _virtual_offscreen_xy()
+
+    def start_watcher():
+        nonlocal watcher_thread
+        if watcher_thread is not None:
+            return
         watcher_thread = threading.Thread(
             target=_run_suppress_watcher,
-            args=(None, offscreen, 0, watcher_stop),
+            args=(None, offscreen, None, watcher_stop),
             daemon=True,
             name="cad-park-watcher",
         )
         watcher_thread.start()
-        hook_cb = hook_handle = None
-        try:
-            hook_cb, hook_handle = _install_offscreen_hook(None, offscreen)
-        except Exception:
-            hook_cb = hook_handle = None
+
+    if main_hwnd and window_text(main_hwnd).endswith(Path(dwg).name):
+        print("复用驻留 CAD 实例:", hex(main_hwnd), flush=True)
+    elif main_hwnd:
+        # 驻留实例图纸不匹配：不杀进程，走单实例文件交接——再调起一个进程把
+        # 新文件交给驻留实例即退（实测 ~0.3s 切换、同一窗口句柄、不抢前台），
+        # 每次上传不同图纸不再冷启动闪现。交接会把目标窗 ShowWindow 并最大化，
+        # watcher 高频压回屏外、此循环发现可见立即重新隐藏兜底
+        print("驻留实例交接新图纸 ->", Path(dwg).name, flush=True)
+        start_watcher()
+        # 交接会把驻留主窗重新 ShowWindow/最大化，先确保它全透明
+        make_park_invisible(main_hwnd)
+        strip_taskbar(main_hwnd)
+        park_all_cad_windows(offscreen, None)
+        proc = subprocess.Popen([exe, dwg], startupinfo=si)
+        deadline = time.time() + 8.0
+        while time.time() < deadline:
+            pump_messages()
+            park_all_cad_windows(offscreen, None)
+            if u32.IsWindow(main_hwnd):
+                if u32.IsWindowVisible(main_hwnd):
+                    u32.ShowWindow(main_hwnd, SW_HIDE)
+                if window_text(main_hwnd).endswith(Path(dwg).name):
+                    break
+            else:
+                # 个别情况下交接会重建主窗：按标题找回
+                for cand in find_any_cad_window():
+                    if window_text(cand).endswith(Path(dwg).name):
+                        main_hwnd = cand
+                        break
+            time.sleep(0.02)
+        if not (u32.IsWindow(main_hwnd)
+                and window_text(main_hwnd).endswith(Path(dwg).name)):
+            # 交接失败（残根窗/单实例交接卡死）：清场后走下方冷启动
+            print("交接未完成，清场冷启动", flush=True)
+            main_hwnd = None
+    if main_hwnd is None:
+        kill_existing_cad()
+        start_watcher()
         park_all_cad_windows(offscreen)
         proc = subprocess.Popen([exe, dwg], startupinfo=si)
         deadline = time.time() + LOAD_TIMEOUT
-        try:
-            main_hwnd = wait_cad_ready(
-                proc, deadline, keep_hidden=True,
-                hook=(hook_cb, hook_handle) if hook_cb else None,
-                watcher=watcher_stop,
-            )
-        finally:
-            if hook_handle:
-                u32.UnhookWinEvent(hook_handle)
+        main_hwnd = wait_cad_ready(
+            proc, deadline, keep_hidden=True, watcher=watcher_stop,
+        )
         if not main_hwnd:
             # 启动偶发残根/交接失败：清场重试一次
             print("首次调起未就绪，重试一次", flush=True)
             kill_existing_cad()
-            try:
-                hook_cb, hook_handle = _install_offscreen_hook(None, offscreen)
-            except Exception:
-                hook_cb = hook_handle = None
             park_all_cad_windows(offscreen)
             proc = subprocess.Popen([exe, dwg], startupinfo=si)
             deadline = time.time() + LOAD_TIMEOUT
-            try:
-                main_hwnd = wait_cad_ready(
-                    proc, deadline, keep_hidden=True,
-                    hook=(hook_cb, hook_handle) if hook_cb else None,
-                    watcher=watcher_stop,
-                )
-            finally:
-                if hook_handle:
-                    u32.UnhookWinEvent(hook_handle)
+            main_hwnd = wait_cad_ready(
+                proc, deadline, keep_hidden=True, watcher=watcher_stop,
+            )
         if not main_hwnd:
             write_state(state_file, "failed", message="未等到 CAD 看图窗口")
             print("未等到 CAD 看图窗口", flush=True)
@@ -886,8 +932,9 @@ def run_embed(rect_file: str, dwg: str) -> int:
                 write_state(state_file, "ready", hwnd=hex(main_hwnd))
         else:
             hide_streak += 1
-            if shown and hide_streak >= 8:
-                # 连续约 0.5s 不可见才隐藏：短暂失焦/坐标瞬断不藏窗
+            if shown and hide_streak >= 3:
+                # 连续约 0.18s 不可见才隐藏：仅挡住常规坐标上报间隙，
+                # 切页/切走时窗口能尽快消失（不再等到 0.5s）
                 u32.ShowWindow(host, SW_HIDE)
                 shown = False
                 hide_streak = 0
@@ -923,6 +970,7 @@ def run_standalone(dwg: str) -> int:
     if not exe:
         print("未找到 CAD 快速看图内核", flush=True)
         return 1
+    dwg = os.path.abspath(dwg)
     preseed_cad_config()
     kill_existing_cad()
     proc = subprocess.Popen([exe, dwg])
