@@ -74,3 +74,9 @@ tools/node/
 backend/tools/cad-converters/
 backend/tools/CADReader/
 *.ifc
+
+# ── 隐私文件（软著、协议等） ──
+软著材料/
+合作开发协议*.docx
+合作开发协议*.pdf
+实训手册.xlsx
