@@ -117,6 +117,26 @@ def _find_cad_reader_exe() -> str | None:
         if Path(candidate).exists():
             return candidate
     return None
+
+
+def _viewer_launch_command() -> list[str]:
+    """返回调起嵌入式图纸查看器的启动命令前导段（不含参数）。
+
+    打包版（PyInstaller frozen）优先使用与主程序同级的 cad_viewer.exe，
+    该 exe 已内置 CADReader 定位逻辑；否则回退到源码 cad_viewer.py，用
+    当前解释器运行（同样是 `backend/tools` 下与 CADReader 同级）。
+    """
+    if getattr(sys, "frozen", False):
+        bundled_exe = Path(sys.executable).resolve().parent / "cad_viewer.exe"
+        if bundled_exe.is_file():
+            return [str(bundled_exe)]
+    # routes → api → app → backend
+    viewer_script = Path(__file__).resolve().parents[3] / "tools" / "cad_viewer.py"
+    if viewer_script.is_file():
+        return [sys.executable, str(viewer_script)]
+    return []
+
+
 _drawing_valuation_slots = threading.BoundedSemaphore(value=1)
 _UPLOAD_READ_CHUNK_SIZE = 1024 * 1024
 _TASK_TYPE = "drawing_recognition"
@@ -1351,10 +1371,10 @@ async def embed_cad_start(task_id: str, rect: dict):
         }
 
     target = str(matches[0])
-    # routes(0) → api(1) → app(2) → backend(3)
-    viewer_script = Path(__file__).resolve().parents[3] / "tools" / "cad_viewer.py"
-    if not viewer_script.is_file():
-        return {"opened": False, "message": "查看器脚本缺失（tools/cad_viewer.py）"}
+    # 打包版优先使用内置的 cad_viewer.exe；开发环境回退到 cad_viewer.py + sys.executable
+    viewer_cmd = _viewer_launch_command()
+    if not viewer_cmd:
+        return {"opened": False, "message": "查看器程序缺失（cad_viewer.exe / tools/cad_viewer.py）"}
 
     # 同一时间只保留一个嵌入实例：启动新的先停旧的
     _embed_stop()
@@ -1373,11 +1393,13 @@ async def embed_cad_start(task_id: str, rect: dict):
                         "pf": bool(rect.get("pf", True))}, ensure_ascii=False),
             encoding="utf-8",
         )
+        # 打包版 cwd 取 cad_viewer.exe 所在目录；开发版取 cad_viewer.py 所在目录
+        _view_cwd = str(Path(viewer_cmd[0]).parents[0] if Path(viewer_cmd[0]).is_absolute() else Path(viewer_cmd[-1]).parents[0])
         proc = subprocess.Popen(
-            [sys.executable, str(viewer_script), "--embed", str(rect_file), target],
+            [*viewer_cmd, "--embed", str(rect_file), target],
             close_fds=True,
             creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
-            cwd=str(viewer_script.parent),
+            cwd=_view_cwd,
         )
     except Exception as exc:
         logger.exception("调起嵌入式图纸查看器失败：%s", target)
