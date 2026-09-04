@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Button,
   Col,
@@ -41,7 +41,6 @@ import type {
   BoqItemCreate,
   CalcSummary,
   DiffReport,
-  MaterialPrice,
   MeasureItem,
   Project,
   RulePackage,
@@ -94,12 +93,11 @@ function OverviewTab({ projectId, project }: Props) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* 项目标题栏 */}
+      {/* 项目描述 + 刷新（标题已在 PageHeader，避免重复） */}
       <div className="workspace-toolbar" style={{ justifyContent: "space-between" }}>
-        <div>
-          <Typography.Title level={4} style={{ margin: 0, color: "#e2e8f0" }}>{project?.name ?? `项目 #${projectId}`}</Typography.Title>
-          <Typography.Text style={{ color: "#64748b" }}>{project?.description || "工程造价全过程工作台"}</Typography.Text>
-        </div>
+        <Typography.Text style={{ color: "var(--text-secondary)", fontSize: 13 }}>
+          {project?.description || "工程造价全过程工作台"}
+        </Typography.Text>
         <Button icon={<ReloadOutlined />} loading={loading} onClick={load}>刷新</Button>
       </div>
 
@@ -109,28 +107,28 @@ function OverviewTab({ projectId, project }: Props) {
           <span className="material-symbols-outlined kpi-card-icon">list_alt</span>
           <div className="kpi-card-body">
             <span className="kpi-card-label">清单项</span>
-            <span className="kpi-card-value">{summary?.boq_count ?? 0}</span>
+            <span className="kpi-card-value num">{summary?.boq_count ?? 0}</span>
           </div>
         </div>
         <div className="kpi-card">
           <span className="material-symbols-outlined kpi-card-icon" style={{ color: (summary?.unbound_count ?? 0) > 0 ? "#f87171" : undefined, background: (summary?.unbound_count ?? 0) > 0 ? "rgba(248,113,113,0.12)" : undefined, borderColor: (summary?.unbound_count ?? 0) > 0 ? "rgba(248,113,113,0.2)" : undefined }}>link_off</span>
           <div className="kpi-card-body">
             <span className="kpi-card-label">未绑定</span>
-            <span className="kpi-card-value" style={{ color: (summary?.unbound_count ?? 0) > 0 ? "#f87171" : undefined }}>{summary?.unbound_count ?? 0}</span>
+            <span className="kpi-card-value num" style={{ color: (summary?.unbound_count ?? 0) > 0 ? "#f87171" : undefined }}>{summary?.unbound_count ?? 0}</span>
           </div>
         </div>
         <div className="kpi-card">
           <span className="material-symbols-outlined kpi-card-icon">rule</span>
           <div className="kpi-card-body">
             <span className="kpi-card-label">校验问题</span>
-            <span className="kpi-card-value">{summary?.validation_total ?? 0}</span>
+            <span className="kpi-card-value num">{summary?.validation_total ?? 0}</span>
           </div>
         </div>
         <div className="kpi-card">
           <span className="material-symbols-outlined kpi-card-icon">payments</span>
           <div className="kpi-card-body">
             <span className="kpi-card-label">总造价</span>
-            <span className="kpi-card-value">{money(summary?.calc_total)}</span>
+            <span className="kpi-card-value num">{money(summary?.calc_total)}</span>
           </div>
         </div>
       </div>
@@ -149,12 +147,15 @@ function OverviewTab({ projectId, project }: Props) {
                   <span style={{ fontSize: 14, color: "#64748b" }}>/ {health.grade}</span>
                 </div>
                 {health.dimensions.map((item) => (
-                  <div key={item.name} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <div key={item.name} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <Typography.Text style={{ color: "#cbd5e1", fontSize: 13 }}>{item.name}</Typography.Text>
-                      <Typography.Text strong style={{ color: "#e2e8f0" }}>{item.score}</Typography.Text>
+                      <Typography.Text strong className="num" style={{ color: "#e2e8f0" }}>{item.score}</Typography.Text>
                     </div>
-                    <Typography.Text style={{ color: "#64748b", fontSize: 12 }}>{item.detail}</Typography.Text>
+                    <div style={{ height: 5, borderRadius: 3, background: "rgba(30, 58, 95, 0.8)", overflow: "hidden" }}>
+                      <div className="ws-bar-fill" style={{ height: "100%", width: `${Math.max(0, Math.min(100, Number(item.score) || 0))}%`, borderRadius: 3, background: "linear-gradient(90deg, #2563eb, #4dd4ff)" }} />
+                    </div>
+                    <Typography.Text style={{ color: "var(--text-secondary)", fontSize: 12 }}>{item.detail}</Typography.Text>
                   </div>
                 ))}
               </div>
@@ -167,12 +168,17 @@ function OverviewTab({ projectId, project }: Props) {
             <h3 className="content-card-title"><span className="material-symbols-outlined">description</span>项目资料</h3>
           </div>
           <div className="content-card-body">
-            <Descriptions column={1} size="small">
+            <Descriptions column={2} size="small">
               <Descriptions.Item label="地区">{project?.region ?? "-"}</Descriptions.Item>
               <Descriptions.Item label="类型">{project?.project_type ?? "-"}</Descriptions.Item>
-              <Descriptions.Item label="状态"><Tag>{project?.status ?? "-"}</Tag></Descriptions.Item>
-              <Descriptions.Item label="预算">{project?.budget != null ? money(project.budget) : "-"}</Descriptions.Item>
-              <Descriptions.Item label="起止日期">{dateText(project?.start_date)} 至 {dateText(project?.end_date)}</Descriptions.Item>
+              <Descriptions.Item label="状态">
+                <Tag color={project?.status === "completed" ? "green" : project?.status === "archived" ? "default" : "processing"}>
+                  {project?.status ?? "-"}
+                </Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="预算"><span className="num">{project?.budget != null ? money(project.budget) : "-"}</span></Descriptions.Item>
+              <Descriptions.Item label="起止日期" span={2}>{dateText(project?.start_date)} 至 {dateText(project?.end_date)}</Descriptions.Item>
+              <Descriptions.Item label="负责人" span={2}>{project?.owner ?? "-"}</Descriptions.Item>
             </Descriptions>
           </div>
         </div>
@@ -187,13 +193,15 @@ function OverviewTab({ projectId, project }: Props) {
           <Table
             rowKey="id"
             size="small"
-            pagination={{ pageSize: 6 }}
+            loading={loading}
+            pagination={{ pageSize: 6, showTotal: (t) => `共 ${t} 条` }}
             dataSource={logs}
+            locale={{ emptyText: "暂无操作记录" }}
             columns={[
               { title: "时间", dataIndex: "timestamp", render: dateText, width: 160 },
-              { title: "人员", dataIndex: "actor", width: 120 },
+              { title: "人员", dataIndex: "actor", width: 120, render: (v: string) => v ?? "-" },
               { title: "动作", dataIndex: "action", width: 140, render: (value: string) => <Tag color="blue">{value}</Tag> },
-              { title: "对象", dataIndex: "resource_type" },
+              { title: "对象", dataIndex: "resource_type", render: (v: string) => v ?? "-" },
             ]}
           />
         </div>
@@ -257,7 +265,7 @@ function BoqWorkspaceTab({ projectId }: { projectId: number }) {
     setAutoLoading(true);
     try {
       const res = await api.autoValuate(projectId);
-      message.success(`自动套定额完成：匹配 ${res.newly_matched} 项`);
+      message.success(`自动套定额完成：匹配 ${res.newly_matched} 项，可到「定额绑定」页复核低置信度项`);
       await load();
     } catch (err) {
       message.error(err instanceof Error ? err.message : "自动套定额失败");
@@ -282,14 +290,14 @@ function BoqWorkspaceTab({ projectId }: { projectId: number }) {
   };
 
   const columns: ColumnsType<BoqItem> = [
-    { title: "编码", dataIndex: "code", width: 120, fixed: "left" },
+    { title: "编码", dataIndex: "code", width: 120, fixed: "left", ellipsis: true },
     { title: "名称", dataIndex: "name", width: 260, ellipsis: true },
     { title: "项目特征", dataIndex: "characteristics", width: 280, ellipsis: true },
     { title: "单位", dataIndex: "unit", width: 70 },
-    { title: "工程量", dataIndex: "quantity", width: 110, render: (value: number) => Number(value ?? 0).toLocaleString("zh-CN") },
-    { title: "分部", dataIndex: "division", width: 140 },
-    { title: "综合单价", dataIndex: "rate", width: 110, render: money },
-    { title: "合价", dataIndex: "amount", width: 120, render: money },
+    { title: "工程量", dataIndex: "quantity", width: 110, align: "right", render: (value: number) => <span className="num">{Number(value ?? 0).toLocaleString("zh-CN")}</span> },
+    { title: "分部", dataIndex: "division", width: 140, ellipsis: true },
+    { title: "综合单价", dataIndex: "rate", width: 120, align: "right", render: (v: number) => <span className="num">{money(v)}</span> },
+    { title: "合价", dataIndex: "amount", width: 130, align: "right", render: (v: number) => <span className="num">{money(v)}</span> },
     {
       title: "操作",
       width: 140,
@@ -322,18 +330,25 @@ function BoqWorkspaceTab({ projectId }: { projectId: number }) {
         </div>
       </div>
 
-      <Modal title={editing ? "编辑清单项" : "新增清单项"} open={open} onCancel={() => setOpen(false)} onOk={save} width={760}>
-        <Form form={form} layout="vertical">
-          <Row gutter={12}>
-            <Col span={8}><Form.Item name="code" label="编码" rules={[{ required: true }]}><Input /></Form.Item></Col>
-            <Col span={16}><Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item></Col>
-            <Col span={24}><Form.Item name="characteristics" label="项目特征"><Input.TextArea rows={3} /></Form.Item></Col>
-            <Col span={6}><Form.Item name="unit" label="单位" rules={[{ required: true }]}><Input /></Form.Item></Col>
-            <Col span={6}><Form.Item name="quantity" label="工程量" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col>
+      <Modal title={editing ? "编辑清单项" : "新增清单项"} open={open} onCancel={() => setOpen(false)} onOk={save} width={760} destroyOnClose>
+        <Form form={form} layout="vertical" preserve={false}>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>基本信息</Typography.Text>
+          <Row gutter={12} style={{ marginTop: 8 }}>
+            <Col span={8}><Form.Item name="code" label="编码" rules={[{ required: true, message: "请输入编码" }]}><Input placeholder="如 010101001001" /></Form.Item></Col>
+            <Col span={16}><Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}><Input placeholder="清单项目名称" maxLength={80} /></Form.Item></Col>
+            <Col span={24}><Form.Item name="characteristics" label="项目特征"><Input.TextArea rows={4} placeholder="描述材质、规格、做法等计价要素" maxLength={500} showCount /></Form.Item></Col>
+          </Row>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>工程量与计价</Typography.Text>
+          <Row gutter={12} style={{ marginTop: 8 }}>
+            <Col span={6}><Form.Item name="unit" label="单位" rules={[{ required: true, message: "请输入单位" }]}><Input placeholder="m³ / m² / 项" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="quantity" label="工程量" rules={[{ required: true, message: "请输入工程量" }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col>
             <Col span={6}><Form.Item name="rate" label="综合单价"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col>
-            <Col span={6}><Form.Item name="division" label="分部"><Input /></Form.Item></Col>
-            <Col span={12}><Form.Item name="trade_section" label="专业/章节"><Input /></Form.Item></Col>
-            <Col span={12}><Form.Item name="remark" label="备注"><Input /></Form.Item></Col>
+            <Col span={6}><Form.Item name="division" label="分部"><Input placeholder="如 土石方工程" /></Form.Item></Col>
+          </Row>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>归类与备注</Typography.Text>
+          <Row gutter={12} style={{ marginTop: 8 }}>
+            <Col span={12}><Form.Item name="trade_section" label="专业/章节"><Input placeholder="专业或章节" /></Form.Item></Col>
+            <Col span={12}><Form.Item name="remark" label="备注"><Input placeholder="备注" maxLength={100} /></Form.Item></Col>
           </Row>
         </Form>
       </Modal>
@@ -344,12 +359,16 @@ function BoqWorkspaceTab({ projectId }: { projectId: number }) {
 function CalcWorkspaceTab({ projectId }: { projectId: number }) {
   const navigate = useNavigate();
   const [result, setResult] = useState<CalcSummary | null>(null);
+  const [loading, setLoading] = useState(false);
 
   const loadSummary = useCallback(async () => {
+    setLoading(true);
     try {
       setResult(await api.getCalcSummary(projectId));
     } catch {
       setResult(null);
+    } finally {
+      setLoading(false);
     }
   }, [projectId]);
 
@@ -357,27 +376,56 @@ function CalcWorkspaceTab({ projectId }: { projectId: number }) {
     void loadSummary();
   }, [loadSummary]);
 
-  // 入口卡片：引导到独立的清单计价页面，避免功能重复
+  const topLines = (result?.line_results ?? []).slice().sort((x, y) => y.total - x.total).slice(0, 5);
+
+  // 项目内嵌 mini 版：关键费用 + Top5 明细，详情再跳计价页
   return (
-    <div className="workspace-portal">
-      <div className="workspace-portal-card">
-        <div className="workspace-portal-icon" style={{ background: "linear-gradient(135deg, rgba(56,189,248,0.2), rgba(59,130,246,0.12))", borderColor: "rgba(56,189,248,0.3)", color: "#38bdf8" }}>
-          <span className="material-symbols-outlined">calculate</span>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div className="workspace-portal-mini">
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span className="workspace-portal-mini-icon" style={{ background: "rgba(61, 139, 255, 0.12)", borderColor: "var(--border-strong)", color: "var(--primary)" }}>
+            <span className="material-symbols-outlined">calculate</span>
+          </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h3 className="workspace-portal-mini-title">清单计价</h3>
+            <p className="workspace-portal-mini-desc">项目内直接看费用构成与明细 Top5，完整分析去计价页。</p>
+          </div>
+          <Space>
+            <Button icon={<ReloadOutlined />} loading={loading} onClick={loadSummary}>重算</Button>
+            <Button type="primary" icon={<CalculatorOutlined />} onClick={() => navigate("/pricing-audit")}>打开计价页</Button>
+          </Space>
         </div>
-        <div className="workspace-portal-body">
-          <h3 className="workspace-portal-title">清单计价</h3>
-          <p className="workspace-portal-desc">执行计价计算、查看费用构成、综合单价分析和计价明细。</p>
-          {result && (
-            <div className="workspace-portal-stats">
-              <span><em>总造价</em><strong>{money(result.grand_total)}</strong></span>
-              <span><em>直接费</em><strong>{money(result.total_direct)}</strong></span>
-              <span><em>明细</em><strong>{result.line_results?.length ?? 0} 项</strong></span>
-            </div>
-          )}
+        {result ? (
+          <div className="workspace-portal-mini-stats">
+            <span><em>总造价</em><strong className="num">{money(result.grand_total)}</strong></span>
+            <span><em>直接费</em><strong className="num">{money(result.total_direct)}</strong></span>
+            <span><em>措施费</em><strong className="num">{money(result.total_measures)}</strong></span>
+            <span><em>税金</em><strong className="num">{money(result.total_tax)}</strong></span>
+            <span><em>明细</em><strong className="num">{result.line_results?.length ?? 0} 项</strong></span>
+          </div>
+        ) : (
+          <Typography.Text type="secondary">暂无计价结果，先在清单管理中维护工程量与单价后重算。</Typography.Text>
+        )}
+      </div>
+      <div className="content-card">
+        <div className="content-card-head">
+          <h3 className="content-card-title"><span className="material-symbols-outlined">leaderboard</span>合价 Top5</h3>
         </div>
-        <Button type="primary" icon={<CalculatorOutlined />} onClick={() => navigate("/pricing-audit")}>
-          打开计价页
-        </Button>
+        <div className="content-card-body flush">
+          <Table
+            rowKey="boq_item_id"
+            size="small"
+            loading={loading}
+            pagination={false}
+            locale={{ emptyText: "暂无明细" }}
+            dataSource={topLines}
+            columns={[
+              { title: "编码", dataIndex: "boq_code", width: 130, ellipsis: true },
+              { title: "名称", dataIndex: "boq_name", ellipsis: true },
+              { title: "合价", dataIndex: "total", width: 140, align: "right", render: (v: number) => <span className="num">{money(v)}</span> },
+            ]}
+          />
+        </div>
       </div>
     </div>
   );
@@ -399,27 +447,54 @@ function ValidationWorkspaceTab({ projectId }: { projectId: number }) {
   }, [projectId]);
   useEffect(() => { void load(); }, [load]);
 
-  // 入口卡片：引导到独立的审计复核页面，避免功能重复
+  // 项目内嵌 mini 版：问题统计 + Top5 问题，详情再跳审计页
   return (
-    <div className="workspace-portal">
-      <div className="workspace-portal-card">
-        <div className="workspace-portal-icon" style={{ background: "linear-gradient(135deg, rgba(250,204,21,0.2), rgba(245,158,11,0.12))", borderColor: "rgba(250,204,21,0.3)", color: "#facc15" }}>
-          <span className="material-symbols-outlined">policy</span>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div className="workspace-portal-mini">
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span className="workspace-portal-mini-icon" style={{ background: "rgba(245, 158, 11, 0.12)", borderColor: "rgba(245, 158, 11, 0.35)", color: "var(--warning)" }}>
+            <span className="material-symbols-outlined">policy</span>
+          </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h3 className="workspace-portal-mini-title">审计复核</h3>
+            <p className="workspace-portal-mini-desc">项目内直接看问题 Top5，规则校验与审计底稿去审计页。</p>
+          </div>
+          <Space>
+            <Button icon={<ReloadOutlined />} loading={loading} onClick={load}>重新校验</Button>
+            <Button type="primary" icon={<SafetyOutlined />} onClick={() => navigate("/pricing-audit")}>打开审计页</Button>
+          </Space>
         </div>
-        <div className="workspace-portal-body">
-          <h3 className="workspace-portal-title">审计复核</h3>
-          <p className="workspace-portal-desc">规则校验、计价审查、风险提示和审计汇总，形成可追踪的审计结论。</p>
-          {report && (
-            <div className="workspace-portal-stats">
-              <span><em>问题总数</em><strong style={{ color: (report.total_issues ?? 0) > 0 ? "#facc15" : "#34d399" }}>{report.total_issues ?? 0}</strong></span>
-              <span><em>错误</em><strong style={{ color: (report.errors ?? 0) > 0 ? "#f87171" : "#34d399" }}>{report.errors ?? 0}</strong></span>
-              <span><em>警告</em><strong>{report.warnings ?? 0}</strong></span>
-            </div>
-          )}
+        {report && (
+          <div className="workspace-portal-mini-stats">
+            <span><em>问题总数</em><strong className="num" style={{ color: (report.total_issues ?? 0) > 0 ? "var(--warning)" : "var(--success)" }}>{report.total_issues ?? 0}</strong></span>
+            <span><em>错误</em><strong className="num" style={{ color: (report.errors ?? 0) > 0 ? "var(--danger)" : "var(--success)" }}>{report.errors ?? 0}</strong></span>
+            <span><em>警告</em><strong className="num">{report.warnings ?? 0}</strong></span>
+          </div>
+        )}
+      </div>
+      <div className="content-card">
+        <div className="content-card-head">
+          <h3 className="content-card-title"><span className="material-symbols-outlined">report</span>待处理问题 Top5</h3>
         </div>
-        <Button type="primary" icon={<SafetyOutlined />} loading={loading} onClick={() => navigate("/pricing-audit")}>
-          打开审计页
-        </Button>
+        <div className="content-card-body flush">
+          <Table
+            rowKey={(row: { code: string; boq_item_id: number | null }) => `${row.code}-${row.boq_item_id ?? "na"}`}
+            size="small"
+            loading={loading}
+            pagination={false}
+            locale={{ emptyText: "暂无问题，校验通过" }}
+            dataSource={(report?.issues ?? []).slice(0, 5)}
+            columns={[
+              {
+                title: "级别", dataIndex: "severity", width: 90,
+                render: (v: string) => <Tag color={v === "error" ? "red" : "orange"}>{v === "error" ? "错误" : "警告"}</Tag>,
+              },
+              { title: "编码", dataIndex: "code", width: 120, ellipsis: true },
+              { title: "问题", dataIndex: "message", ellipsis: true },
+              { title: "建议", dataIndex: "suggestion", ellipsis: true },
+            ]}
+          />
+        </div>
       </div>
     </div>
   );
@@ -431,7 +506,16 @@ function SnapshotWorkspaceTab({ projectId }: { projectId: number }) {
   const [a, setA] = useState<number>();
   const [b, setB] = useState<number>();
   const [diff, setDiff] = useState<DiffReport | null>(null);
-  const load = useCallback(async () => setSnapshots(await api.listSnapshots(projectId)), [projectId]);
+  const [loading, setLoading] = useState(false);
+  const [comparing, setComparing] = useState(false);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setSnapshots(await api.listSnapshots(projectId));
+    } finally {
+      setLoading(false);
+    }
+  }, [projectId]);
   useEffect(() => { void load(); }, [load]);
 
   const create = async () => {
@@ -442,30 +526,46 @@ function SnapshotWorkspaceTab({ projectId }: { projectId: number }) {
   };
   const compare = async () => {
     if (!a || !b) return message.warning("请选择两个快照");
-    setDiff(await api.diffSnapshots(projectId, a, b));
+    if (a === b) return message.warning("请选择两个不同的快照");
+    setComparing(true);
+    try {
+      setDiff(await api.diffSnapshots(projectId, a, b));
+    } finally {
+      setComparing(false);
+    }
   };
 
-  const options = snapshots.map((snapshot) => ({ value: snapshot.id, label: `#${snapshot.id} ${snapshot.label}` }));
+  const options = snapshots.map((snapshot) => ({ value: snapshot.id, label: `#${snapshot.id} ${snapshot.label} · ${dateText(snapshot.created_at)}` }));
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div className="workspace-toolbar">
-        <Input placeholder="快照名称" value={label} onChange={(event) => setLabel(event.target.value)} style={{ width: 240 }} />
-        <Button type="primary" icon={<CameraOutlined />} onClick={create}>创建快照</Button>
-        <Select placeholder="快照 A" options={options} value={a} onChange={setA} style={{ width: 220 }} />
-        <Select placeholder="快照 B" options={options} value={b} onChange={setB} style={{ width: 220 }} />
-        <Button onClick={compare}>对比</Button>
+      <div className="workspace-toolbar" style={{ justifyContent: "space-between" }}>
+        <Space wrap>
+          <Input placeholder="快照名称" value={label} onChange={(event) => setLabel(event.target.value)} style={{ width: 200 }} maxLength={40} />
+          <Button type="primary" icon={<CameraOutlined />} onClick={create}>创建快照</Button>
+        </Space>
+        <Space wrap>
+          <Select placeholder="快照 A（旧）" options={options} value={a} onChange={setA} style={{ width: 240 }} allowClear />
+          <Select placeholder="快照 B（新）" options={options} value={b} onChange={setB} style={{ width: 240 }} allowClear />
+          <Button onClick={compare} loading={comparing}>对比</Button>
+          <Button icon={<ReloadOutlined />} loading={loading} onClick={load}>刷新</Button>
+        </Space>
       </div>
       <div className="content-card">
         <div className="content-card-head">
           <h3 className="content-card-title"><span className="material-symbols-outlined">photo_library</span>历史快照</h3>
         </div>
         <div className="content-card-body flush">
-          <Table rowKey="id" size="small" dataSource={snapshots} columns={[
-            { title: "ID", dataIndex: "id", width: 80 },
-            { title: "名称", dataIndex: "label" },
-            { title: "总造价", dataIndex: "grand_total", render: money },
-            { title: "创建时间", dataIndex: "created_at", render: dateText },
-          ]} />
+          <Table
+            rowKey="id" size="small" dataSource={snapshots} loading={loading}
+            pagination={{ pageSize: 10, showTotal: (t) => `共 ${t} 个快照` }}
+            locale={{ emptyText: "暂无快照，先创建一个基线" }}
+            columns={[
+              { title: "ID", dataIndex: "id", width: 80 },
+              { title: "名称", dataIndex: "label", ellipsis: true },
+              { title: "总造价", dataIndex: "grand_total", width: 150, align: "right", render: (v: number) => <span className="num">{money(v)}</span> },
+              { title: "创建时间", dataIndex: "created_at", width: 130, render: dateText },
+            ]}
+          />
         </div>
       </div>
       {diff && (
@@ -480,14 +580,19 @@ function SnapshotWorkspaceTab({ projectId }: { projectId: number }) {
               <Descriptions.Item label="差额">{money(diff.grand_total_delta)}</Descriptions.Item>
             </Descriptions>
             <Typography.Paragraph type="secondary">{diff.explanation}</Typography.Paragraph>
-            <Table rowKey={(row) => `${row.boq_code}-${row.change_type}`} size="small" dataSource={diff.lines} columns={[
-              { title: "编码", dataIndex: "boq_code" },
-              { title: "名称", dataIndex: "boq_name" },
-              { title: "变化", dataIndex: "change_type", render: (value: string) => <Tag>{value}</Tag> },
-              { title: "旧价", dataIndex: "old_total", render: money },
-              { title: "新价", dataIndex: "new_total", render: money },
-              { title: "差额", dataIndex: "delta", render: money },
-            ]} />
+            <Table
+              rowKey={(row: { boq_code: string; change_type: string }, index?: number) => `${row.boq_code}-${row.change_type}-${index ?? 0}`}
+              size="small" dataSource={diff.lines}
+              pagination={{ pageSize: 10, showTotal: (t) => `共 ${t} 条变化` }}
+              columns={[
+                { title: "编码", dataIndex: "boq_code", width: 130, ellipsis: true },
+                { title: "名称", dataIndex: "boq_name", ellipsis: true },
+                { title: "变化", dataIndex: "change_type", width: 100, render: (value: string) => <Tag>{value}</Tag> },
+                { title: "旧价", dataIndex: "old_total", width: 130, align: "right", render: (v: number) => <span className="num">{money(v)}</span> },
+                { title: "新价", dataIndex: "new_total", width: 130, align: "right", render: (v: number) => <span className="num">{money(v)}</span> },
+                { title: "差额", dataIndex: "delta", width: 130, align: "right", render: (v: number) => <span className="num" style={{ color: Number(v) > 0 ? "var(--danger)" : Number(v) < 0 ? "var(--success)" : undefined }}>{money(v)}</span> },
+              ]}
+            />
           </div>
         </div>
       )}
@@ -496,23 +601,20 @@ function SnapshotWorkspaceTab({ projectId }: { projectId: number }) {
 }
 
 function SettingsWorkspaceTab({ projectId }: { projectId: number }) {
-  const navigate = useNavigate();
   const [rules, setRules] = useState<RulePackage[]>([]);
-  const [materials, setMaterials] = useState<MaterialPrice[]>([]);
   const [measures, setMeasures] = useState<MeasureItem[]>([]);
+  const [boundRuleId, setBoundRuleId] = useState<number | null>(null);
   const [ruleForm] = Form.useForm();
   const [measureForm] = Form.useForm();
   const [ruleOpen, setRuleOpen] = useState(false);
   const [measureOpen, setMeasureOpen] = useState(false);
 
   const load = useCallback(async () => {
-    const [ruleData, materialData, measureData] = await Promise.all([
+    const [ruleData, measureData] = await Promise.all([
       api.listRulePackages().catch(() => []),
-      api.listMaterialPrices({ latest_only: true }).catch(() => []),
       api.listMeasures(projectId).catch(() => []),
     ]);
     setRules(ruleData);
-    setMaterials(materialData);
     setMeasures(measureData);
   }, [projectId]);
 
@@ -546,12 +648,12 @@ function SettingsWorkspaceTab({ projectId }: { projectId: number }) {
               {ruleOpen && (
                 <div className="content-card">
                   <div className="content-card-body">
-                    <Form form={ruleForm} layout="inline">
-                      <Form.Item name="name" rules={[{ required: true }]}><Input placeholder="名称" /></Form.Item>
-                      <Form.Item name="region"><Input placeholder="地区" /></Form.Item>
-                      <Form.Item name="management_rate"><InputNumber placeholder="管理费率" /></Form.Item>
-                      <Form.Item name="profit_rate"><InputNumber placeholder="利润率" /></Form.Item>
-                      <Form.Item name="tax_rate"><InputNumber placeholder="税率" /></Form.Item>
+                    <Form form={ruleForm} layout="inline" style={{ flexWrap: "wrap", gap: 8, rowGap: 12 }}>
+                      <Form.Item name="name" rules={[{ required: true, message: "请输入名称" }]} style={{ marginBottom: 0 }}><Input placeholder="名称" style={{ width: 180 }} /></Form.Item>
+                      <Form.Item name="region" style={{ marginBottom: 0 }}><Input placeholder="地区" style={{ width: 120 }} /></Form.Item>
+                      <Form.Item name="management_rate" style={{ marginBottom: 0 }}><InputNumber placeholder="管理费率" style={{ width: 120 }} /></Form.Item>
+                      <Form.Item name="profit_rate" style={{ marginBottom: 0 }}><InputNumber placeholder="利润率" style={{ width: 110 }} /></Form.Item>
+                      <Form.Item name="tax_rate" style={{ marginBottom: 0 }}><InputNumber placeholder="税率" style={{ width: 100 }} /></Form.Item>
                       <Button type="primary" onClick={createRule}>创建</Button>
                     </Form>
                   </div>
@@ -559,38 +661,25 @@ function SettingsWorkspaceTab({ projectId }: { projectId: number }) {
               )}
               <div className="content-card">
                 <div className="content-card-body flush">
-                  <Table rowKey="id" size="small" dataSource={rules} columns={[
-                    { title: "名称", dataIndex: "name" },
-                    { title: "地区", dataIndex: "region" },
-                    { title: "管理费率", dataIndex: "management_rate" },
-                    { title: "利润率", dataIndex: "profit_rate" },
-                    { title: "税率", dataIndex: "tax_rate" },
-                    { title: "操作", render: (_, row) => <Button type="link" onClick={async () => { await api.bindRulePackage(projectId, row.id); message.success("规则包已绑定"); }}>绑定</Button> },
-                  ]} />
+                  <Table
+                    rowKey="id" size="small" dataSource={rules} loading={false}
+                    pagination={{ pageSize: 10, showTotal: (t) => `共 ${t} 个规则包` }}
+                    locale={{ emptyText: "暂无规则包，先新建一个" }}
+                    columns={[
+                      { title: "名称", dataIndex: "name", ellipsis: true },
+                      { title: "地区", dataIndex: "region", width: 100, render: (v: string) => v ?? "-" },
+                      { title: "管理费率", dataIndex: "management_rate", width: 100, align: "right", render: (v: number) => <span className="num">{v ?? "-"}</span> },
+                      { title: "利润率", dataIndex: "profit_rate", width: 90, align: "right", render: (v: number) => <span className="num">{v ?? "-"}</span> },
+                      { title: "税率", dataIndex: "tax_rate", width: 90, align: "right", render: (v: number) => <span className="num">{v ?? "-"}</span> },
+                      {
+                        title: "操作", width: 130,
+                        render: (_, row) => boundRuleId === row.id
+                          ? <Tag color="green">当前绑定</Tag>
+                          : <Button type="link" onClick={async () => { await api.bindRulePackage(projectId, row.id); setBoundRuleId(row.id); message.success(`规则包「${row.name}」已绑定`); }}>绑定</Button>,
+                      },
+                    ]}
+                  />
                 </div>
-              </div>
-            </div>
-          ),
-        },
-        {
-          key: "materials",
-          label: "材料价格",
-          children: (
-            <div className="workspace-portal">
-              <div className="workspace-portal-card">
-                <div className="workspace-portal-icon" style={{ background: "linear-gradient(135deg, rgba(52,211,153,0.2), rgba(16,185,129,0.12))", borderColor: "rgba(52,211,153,0.3)", color: "#34d399" }}>
-                  <span className="material-symbols-outlined">payments</span>
-                </div>
-                <div className="workspace-portal-body">
-                  <h3 className="workspace-portal-title">市场价信息</h3>
-                  <p className="workspace-portal-desc">维护人工、材料、机械单价，在线抓取市场信息价，支持手工补录和价格源管理。</p>
-                  <div className="workspace-portal-stats">
-                    <span><em>当前材料价</em><strong>{materials.length} 条</strong></span>
-                  </div>
-                </div>
-                <Button type="primary" icon={<CalculatorOutlined />} onClick={() => navigate("/data-resources")}>
-                  打开市场价
-                </Button>
               </div>
             </div>
           ),
@@ -606,11 +695,11 @@ function SettingsWorkspaceTab({ projectId }: { projectId: number }) {
               {measureOpen && (
                 <div className="content-card">
                   <div className="content-card-body">
-                    <Form form={measureForm} layout="inline">
-                      <Form.Item name="name" rules={[{ required: true }]}><Input placeholder="名称" /></Form.Item>
-                      <Form.Item name="calc_base"><Select placeholder="计算基数" style={{ width: 120 }} options={[{ value: "direct", label: "直接费" }, { value: "pre_tax", label: "税前" }]} /></Form.Item>
-                      <Form.Item name="rate"><InputNumber placeholder="费率" /></Form.Item>
-                      <Form.Item name="amount"><InputNumber placeholder="金额" /></Form.Item>
+                    <Form form={measureForm} layout="inline" style={{ flexWrap: "wrap", gap: 8, rowGap: 12 }}>
+                      <Form.Item name="name" rules={[{ required: true, message: "请输入名称" }]} style={{ marginBottom: 0 }}><Input placeholder="名称" style={{ width: 180 }} /></Form.Item>
+                      <Form.Item name="calc_base" style={{ marginBottom: 0 }}><Select placeholder="计算基数" style={{ width: 130 }} options={[{ value: "direct", label: "直接费" }, { value: "pre_tax", label: "税前" }]} /></Form.Item>
+                      <Form.Item name="rate" style={{ marginBottom: 0 }}><InputNumber placeholder="费率" style={{ width: 110 }} /></Form.Item>
+                      <Form.Item name="amount" style={{ marginBottom: 0 }}><InputNumber placeholder="金额" style={{ width: 130 }} /></Form.Item>
                       <Button type="primary" onClick={createMeasure}>创建</Button>
                     </Form>
                   </div>
@@ -618,14 +707,22 @@ function SettingsWorkspaceTab({ projectId }: { projectId: number }) {
               )}
               <div className="content-card">
                 <div className="content-card-body flush">
-                  <Table rowKey="id" size="small" dataSource={measures} columns={[
-                    { title: "名称", dataIndex: "name" },
-                    { title: "计算基数", dataIndex: "calc_base" },
-                    { title: "费率", dataIndex: "rate" },
-                    { title: "金额", dataIndex: "amount", render: money },
-                    { title: "类型", dataIndex: "is_fixed", render: (value: boolean) => <Tag>{value ? "固定" : "费率"}</Tag> },
-                    { title: "操作", render: (_, row) => <Popconfirm title="确认删除？" onConfirm={async () => { await api.deleteMeasure(projectId, row.id); await load(); }}><Button icon={<DeleteOutlined />} danger size="small" /></Popconfirm> },
-                  ]} />
+                  <Table
+                    rowKey="id" size="small" dataSource={measures}
+                    pagination={{ pageSize: 10, showTotal: (t) => `共 ${t} 项` }}
+                    locale={{ emptyText: "暂无措施项目" }}
+                    columns={[
+                      { title: "名称", dataIndex: "name", ellipsis: true },
+                      {
+                        title: "计算基数", dataIndex: "calc_base", width: 110,
+                        render: (v: string) => (v === "direct" ? "直接费" : v === "pre_tax" ? "税前" : v ?? "-"),
+                      },
+                      { title: "费率", dataIndex: "rate", width: 100, align: "right", render: (v: number) => <span className="num">{v ?? "-"}</span> },
+                      { title: "金额", dataIndex: "amount", width: 130, align: "right", render: (v: number) => <span className="num">{money(v)}</span> },
+                      { title: "类型", dataIndex: "is_fixed", width: 90, render: (value: boolean) => <Tag>{value ? "固定" : "费率"}</Tag> },
+                      { title: "操作", width: 70, render: (_, row) => <Popconfirm title="确认删除？" onConfirm={async () => { await api.deleteMeasure(projectId, row.id); await load(); }}><Button icon={<DeleteOutlined />} danger size="small" /></Popconfirm> },
+                    ]}
+                  />
                 </div>
               </div>
             </div>
@@ -636,10 +733,17 @@ function SettingsWorkspaceTab({ projectId }: { projectId: number }) {
   );
 }
 
+const TAB_KEYS = ["overview", "boq", "binding", "calc", "validation", "snapshot", "settings"];
+
 export default function RestoredProjectWorkspace({ projectId, project }: Props) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requested = searchParams.get("tab");
+  const activeKey = TAB_KEYS.includes(requested ?? "") ? requested! : "overview";
   return (
     <Tabs
-      defaultActiveKey="overview"
+      className="ws-tabs"
+      activeKey={activeKey}
+      onChange={(key) => setSearchParams(key === "overview" ? {} : { tab: key })}
       items={[
         { key: "overview", label: <span><DashboardOutlined /> 项目总览</span>, children: <OverviewTab projectId={projectId} project={project} /> },
         { key: "boq", label: <span><FileTextOutlined /> 清单管理</span>, children: <BoqWorkspaceTab projectId={projectId} /> },

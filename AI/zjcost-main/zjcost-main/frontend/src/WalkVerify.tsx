@@ -512,6 +512,9 @@ export default function WalkVerify() {
   const [polling, setPolling] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadProgress, setLoadProgress] = useState(0);
+  // 退出过渡：先播 220ms 淡出再真正跳路由，避免“瞬间切走”的生硬感
+  const [exiting, setExiting] = useState(false);
+  const exitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [loadStage, setLoadStage] = useState("初始化漫游引擎");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const attemptsRef = useRef(0);
@@ -654,6 +657,7 @@ export default function WalkVerify() {
   useEffect(() => () => {
     stopPoll();
     loadAbortRef.current?.abort();
+    if (exitTimerRef.current) clearTimeout(exitTimerRef.current);
   }, [stopPoll]);
 
   const progressPercent = taskStatus?.progress
@@ -661,27 +665,35 @@ export default function WalkVerify() {
     : 0;
 
   const goBack = useCallback(() => {
-    if (window.history.length > 1) navigate(-1);
-    else navigate("/dashboard");
-  }, [navigate]);
+    if (exiting) return;
+    setExiting(true);
+    exitTimerRef.current = setTimeout(() => {
+      if (window.history.length > 1) navigate(-1);
+      else navigate("/dashboard");
+    }, 220);
+  }, [navigate, exiting]);
 
   const goHome = useCallback(() => {
-    navigate("/dashboard");
-  }, [navigate]);
+    if (exiting) return;
+    setExiting(true);
+    exitTimerRef.current = setTimeout(() => {
+      navigate("/dashboard");
+    }, 220);
+  }, [navigate, exiting]);
 
   return (
     <ConfigProvider
       theme={{
         algorithm: theme.darkAlgorithm,
         token: {
-          colorPrimary: "#1456b8",
+          colorPrimary: "#3d8bff",
           borderRadius: 8,
           fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif',
         },
       }}
     >
-      <div style={{ width: "100vw", height: "100vh", background: "#101c22", position: "relative", display: "flex", flexDirection: "column" }}>
-        {/* 顶部品牌栏 — 连接主应用 */}
+      <div className={`walk-tour-root${exiting ? " walk-tour-exiting" : ""}`} style={{ width: "100vw", height: "100vh", background: "#0d1f3c", position: "relative", display: "flex", flexDirection: "column" }}>
+        {/* 顶部品牌栏 · 与主应用同款工程蓝，衔接侧边栏视觉 */}
         <header style={{
           flexShrink: 0,
           height: 48,
@@ -689,18 +701,19 @@ export default function WalkVerify() {
           alignItems: "center",
           justifyContent: "space-between",
           padding: "0 16px",
-          background: "linear-gradient(180deg, #142530, #101c22)",
-          borderBottom: "1px solid rgba(56, 189, 248, 0.12)",
+          background: "linear-gradient(180deg, #132d52, #0d1f3c)",
+          borderBottom: "1px solid rgba(80, 160, 255, 0.16)",
           zIndex: 30,
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{
               display: "grid", placeItems: "center",
               width: 32, height: 32, borderRadius: 8,
-              background: "linear-gradient(135deg, #1456b8, #0d3d8a)",
-              border: "1px solid rgba(56, 189, 248, 0.25)",
+              background: "linear-gradient(135deg, #3d8bff, #1456b8)",
+              border: "1px solid rgba(80, 160, 255, 0.35)",
+              boxShadow: "0 0 12px rgba(61, 139, 255, 0.35)",
             }}>
-              <span className="material-symbols-outlined" style={{ fontSize: 18, color: "#7dd3fc" }}>architecture</span>
+              <span className="material-symbols-outlined" style={{ fontSize: 18, color: "#e8f2ff" }}>architecture</span>
             </div>
             <div className="walk-brand" style={{ lineHeight: 1.2 }}>
               <div className="walk-brand-title" style={{ fontSize: 15, fontWeight: 700, color: "#e2e8f0", letterSpacing: 0.5 }}>筑衡</div>
@@ -733,48 +746,48 @@ export default function WalkVerify() {
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              background: "rgba(16, 28, 34, 0.96)",
+              background: "rgba(13, 31, 60, 0.96)",
             }}>
-              <div style={{
+              <div className="walk-tour-loading-card" style={{
                 width: 360,
                 maxWidth: "90%",
                 padding: "32px 28px",
                 borderRadius: 14,
-                background: "linear-gradient(180deg, rgba(20, 37, 48, 0.9), rgba(16, 28, 34, 0.95))",
-                border: "1px solid rgba(56, 189, 248, 0.2)",
+                background: "linear-gradient(180deg, rgba(19, 45, 82, 0.92), rgba(13, 31, 60, 0.96))",
+                border: "1px solid rgba(80, 160, 255, 0.25)",
                 boxShadow: "0 16px 48px rgba(0, 0, 0, 0.5)",
                 textAlign: "center",
               }}>
                 <div style={{
                   display: "grid", placeItems: "center",
                   width: 48, height: 48, borderRadius: 12,
-                  background: "linear-gradient(135deg, rgba(56, 189, 248, 0.18), rgba(20, 86, 184, 0.12))",
-                  border: "1px solid rgba(56, 189, 248, 0.3)",
+                  background: "linear-gradient(135deg, rgba(61, 139, 255, 0.22), rgba(61, 139, 255, 0.08))",
+                  border: "1px solid rgba(80, 160, 255, 0.35)",
                   margin: "0 auto 16px",
                 }}>
-                  <span className="material-symbols-outlined" style={{ fontSize: 26, color: "#38bdf8" }}>deployed_code</span>
+                  <span className="material-symbols-outlined" style={{ fontSize: 26, color: "#4dd4ff" }}>deployed_code</span>
                 </div>
                 <div style={{ fontSize: 15, fontWeight: 600, color: "#e2e8f0", marginBottom: 4 }}>正在准备漫游场景</div>
                 <div style={{ fontSize: 12, color: "#64748b", marginBottom: 18 }}>{loadStage}</div>
                 <Progress
                   percent={Math.round(loadProgress)}
                   status="active"
-                  strokeColor={{ from: "#1456b8", to: "#38bdf8" }}
-                  railColor="rgba(56, 189, 248, 0.1)"
+                  strokeColor={{ from: "#3d8bff", to: "#4dd4ff" }}
+                  railColor="rgba(80, 160, 255, 0.12)"
                 />
               </div>
             </div>
           )}
 
           {/* 浮动工具栏 */}
-          <div style={{
+          <div className="walk-tour-floatbar" style={{
             position: "absolute", top: 14, left: 14, zIndex: 10,
             display: "flex", alignItems: "center", gap: 8,
             flexWrap: "wrap", maxWidth: "min(540px, calc(100% - 28px))",
             boxSizing: "border-box",
-            background: "rgba(16, 28, 34, 0.82)", borderRadius: 8,
+            background: "rgba(13, 31, 60, 0.85)", borderRadius: 8,
             padding: "8px 10px", backdropFilter: "blur(14px)",
-            border: "1px solid rgba(56, 189, 248, 0.15)", pointerEvents: "auto",
+            border: "1px solid rgba(80, 160, 255, 0.2)", pointerEvents: "auto",
             boxShadow: "0 8px 24px rgba(0, 0, 0, 0.3)",
           }}>
             <input ref={fileRef} type="file" accept=".ifc,.ifczip" hidden

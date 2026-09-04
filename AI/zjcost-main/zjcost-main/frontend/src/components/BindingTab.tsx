@@ -16,6 +16,18 @@ import { LinkOutlined, RobotOutlined, ThunderboltOutlined } from "@ant-design/ic
 import type { Binding, BoqItem, CalcProvenance, MatchCandidate } from "../api";
 import { api } from "../api";
 
+function money(value: number | null | undefined) {
+  return `¥${Number(value ?? 0).toFixed(2)}`;
+}
+
+function num2(value: number | null | undefined) {
+  return Number(value ?? 0).toFixed(2);
+}
+
+function fmtNum(value: number | null | undefined, digits = 2) {
+  return Number(value ?? 0).toFixed(digits);
+}
+
 interface Props {
   projectId: number;
 }
@@ -32,6 +44,10 @@ export default function BindingTab({ projectId }: Props) {
   const [provOpen, setProvOpen] = useState(false);
   const [provenance, setProvenance] = useState<CalcProvenance | null>(null);
   const [provLoading, setProvLoading] = useState(false);
+  const bindingsTotal = useMemo(
+    () => (provenance?.bindings ?? []).reduce((sum, b) => sum + Number(b.direct_cost ?? 0), 0),
+    [provenance],
+  );
   const [replaceOpen, setReplaceOpen] = useState(false);
   const [replaceRow, setReplaceRow] = useState<BoqBindingRow | null>(null);
   const [replaceCandidates, setReplaceCandidates] = useState<MatchCandidate[]>([]);
@@ -43,16 +59,24 @@ export default function BindingTab({ projectId }: Props) {
     setLoading(true);
     try {
       const items = await api.listBoqItems(projectId);
-      const enriched = await Promise.all(
-        items.map(async (item): Promise<BoqBindingRow> => {
+      // 并发上限 6：清单多时不再逐个串行请求绑定
+      const CONCURRENCY = 6;
+      const queue = [...items];
+      const enriched: BoqBindingRow[] = [];
+      const runners = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
+        while (queue.length) {
+          const item = queue.shift();
+          if (!item) break;
           try {
             const bindings = await api.listBindings(item.id);
-            return { ...item, bindings, bound: bindings.length > 0 };
+            enriched.push({ ...item, bindings, bound: bindings.length > 0 });
           } catch {
-            return { ...item, bindings: [], bound: false };
+            enriched.push({ ...item, bindings: [], bound: false });
           }
-        }),
-      );
+        }
+      });
+      await Promise.all(runners);
+      enriched.sort((x, y) => x.id - y.id);
       setRows(enriched);
     } catch (err) {
       message.error(err instanceof Error ? err.message : "加载清单绑定失败");
@@ -153,14 +177,15 @@ export default function BindingTab({ projectId }: Props) {
   };
 
   const columns: ColumnsType<BoqBindingRow> = [
-    { title: "清单编码", dataIndex: "code", width: 120 },
+    { title: "清单编码", dataIndex: "code", width: 120, ellipsis: true },
     { title: "项目名称", dataIndex: "name", ellipsis: true },
     { title: "单位", dataIndex: "unit", width: 80 },
     {
       title: "工程量",
       dataIndex: "quantity",
       width: 110,
-      render: (value: number) => Number(value ?? 0).toLocaleString("zh-CN"),
+      align: "right",
+      render: (value: number) => <span className="num">{Number(value ?? 0).toLocaleString("zh-CN")}</span>,
     },
     {
       title: "绑定状态",
@@ -199,17 +224,21 @@ export default function BindingTab({ projectId }: Props) {
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 16,
-          marginBottom: 20,
+          gap: 12,
+          marginBottom: 16,
           padding: "12px 16px",
           background: "var(--bg-surface)",
-          borderRadius: 8,
+          borderRadius: "var(--radius)",
           border: "1px solid var(--border)",
+          flexWrap: "wrap",
         }}
       >
-        <Tag color="green">已绑定 {boundCount}</Tag>
-        <Tag color={unboundRows.length > 0 ? "red" : "default"}>未绑定 {unboundRows.length}</Tag>
-        <Typography.Text type="secondary">绑定率 {boundRate}%</Typography.Text>
+        <Tag color="green" className="num">已绑定 {boundCount}</Tag>
+        <Tag color={unboundRows.length > 0 ? "red" : "default"} className="num">未绑定 {unboundRows.length}</Tag>
+        <Typography.Text type="secondary" className="num">绑定率 {boundRate}%</Typography.Text>
+        <div style={{ flex: 1, minWidth: 120, height: 5, borderRadius: 3, background: "rgba(30, 58, 95, 0.8)", overflow: "hidden" }}>
+          <div className="ws-bar-fill" style={{ height: "100%", width: `${boundRate}%`, borderRadius: 3, background: boundRate >= 95 ? "linear-gradient(90deg, #22c55e, #4dd4ff)" : "linear-gradient(90deg, #2563eb, #4dd4ff)", transition: "width 0.4s ease" }} />
+        </div>
         <div style={{ marginLeft: "auto" }}>
           <Button
             type="primary"
@@ -266,7 +295,10 @@ export default function BindingTab({ projectId }: Props) {
                 title: "置信度",
                 dataIndex: "confidence",
                 width: 90,
-                render: (value: number) => `${Math.round(Number(value ?? 0) * 100)}%`,
+                render: (value: number) => {
+                  const v = Math.round(Number(value ?? 0) * 100);
+                  return <span className="num" style={{ color: v >= 80 ? "var(--success)" : v >= 60 ? "var(--warning)" : "var(--danger)", fontWeight: 700 }}>{v}%</span>;
+                },
               },
               {
                 title: "理由",
@@ -295,6 +327,34 @@ export default function BindingTab({ projectId }: Props) {
             <Typography.Paragraph type="secondary">
               工程量：{provenance.boq_quantity} {provenance.boq_unit}
             </Typography.Paragraph>
+            {provenance.calc_breakdown && (
+              <div className="unit-formula" style={{ marginBottom: 16 }}>
+                <div className="unit-formula-row">
+                  <span className="unit-formula-label">直接费</span>
+                  <code title="各绑定定额直接费汇总">
+                    {(provenance.bindings.map((b) => num2(b.direct_cost)).join(" + ") || "0.00")} = {num2(bindingsTotal)}
+                  </code>
+                </div>
+                <div className="unit-formula-row">
+                  <span className="unit-formula-label">税前合计</span>
+                  <code title="直接费 + 管理费 + 利润 + 规费">
+                    {num2(provenance.calc_breakdown.direct_cost)} + {num2(provenance.calc_breakdown.management_fee)} + {num2(provenance.calc_breakdown.profit)} + {num2(provenance.calc_breakdown.regulatory_fee)} = {num2(provenance.calc_breakdown.pre_tax_total)}
+                  </code>
+                </div>
+                <div className="unit-formula-row">
+                  <span className="unit-formula-label">含税合计</span>
+                  <code title="税前合计 + 税金">
+                    {num2(provenance.calc_breakdown.pre_tax_total)} + {num2(provenance.calc_breakdown.tax)} = {num2(provenance.calc_breakdown.total)}
+                  </code>
+                </div>
+                <div className="unit-formula-row">
+                  <span className="unit-formula-label">合价</span>
+                  <code title="综合单价 × 工程量">
+                    {money(provenance.unit_price)} × {fmtNum(provenance.boq_quantity)} = {money(provenance.calc_total)}
+                  </code>
+                </div>
+              </div>
+            )}
             {provenance.bindings.length > 0 && (
               <div style={{ marginBottom: 16 }}>
                 <Typography.Text strong>绑定定额</Typography.Text>
@@ -321,7 +381,7 @@ export default function BindingTab({ projectId }: Props) {
             {provenance.calc_total != null && (
               <Typography.Title level={5}>合价：¥{Number(provenance.calc_total).toFixed(2)}</Typography.Title>
             )}
-            <div className="zh-explain-box" style={{ marginTop: 16 }}>
+            <div className="smart-explain-box" style={{ marginTop: 16 }}>
               <RobotOutlined style={{ color: "var(--primary)", marginRight: 8 }} />
               <Typography.Text strong>计算说明</Typography.Text>
               <div style={{ marginTop: 6, color: "var(--text-secondary)", lineHeight: 1.6 }}>

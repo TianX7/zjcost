@@ -225,6 +225,22 @@ function AuthGate({ children }: { children: ReactNode }) {
   );
 }
 
+function RouteFallback() {
+  const location = useLocation();
+  // 进漫游页时分包加载的那一下：用同主题过渡屏，避免白闪/底色跳变
+  if (location.pathname.startsWith("/ifc-walk-tour")) {
+    return (
+      <div className="walk-tour-root" style={{ width: "100vw", height: "100vh", background: "#0d1f3c", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div className="walk-tour-loading-card" style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "#e2e8f0", marginBottom: 6 }}>数字孪生漫游</div>
+          <div style={{ fontSize: 12, color: "#64748b" }}>正在进入漫游…</div>
+        </div>
+      </div>
+    );
+  }
+  return <div className="page-container">正在加载...</div>;
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
@@ -233,13 +249,13 @@ export default function App() {
           algorithm: theme.darkAlgorithm,
           token: {
             colorPrimary: "#3d8bff",
-            borderRadius: 8,
+            borderRadius: 10,
             fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif',
             colorBgContainer: "#132d52",
             colorBgElevated: "#1a3d6a",
-            colorBorder: "rgba(80, 160, 255, 0.30)",
+            colorBorder: "rgba(80, 160, 255, 0.16)",
             colorText: "#e2e8f0",
-            colorTextSecondary: "#9db8dd",
+            colorTextSecondary: "#94a3b8",
             colorBgLayout: "#0d1f3c",
             controlHeight: 36,
             colorBgTextHover: "rgba(64, 150, 255, 0.08)",
@@ -269,7 +285,7 @@ export default function App() {
           <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, "")}>
             <TourModeProvider>
             <AuthGate>
-              <Suspense fallback={<div className="page-container">正在加载...</div>}>
+              <Suspense fallback={<RouteFallback />}>
                 <Routes>
                   <Route path="/" element={<Navigate to="/dashboard" replace />} />
                   <Route path="/ifc-walk-tour" element={<WalkVerify />} />
@@ -278,7 +294,6 @@ export default function App() {
                     element={
                       <div className="app-layout">
                         <ParticleBackdrop />
-                        <div className="tech-scanline" />
                         <div className="tech-glow-line" />
                         <div className="tech-corner tech-corner--tl" />
                         <div className="tech-corner tech-corner--br" />

@@ -16,7 +16,7 @@ from app.models.quota_resource_material_mapping import QuotaResourceMaterialMapp
 IMPORT_BATCH_SIZE = 1000
 RETURN_ITEM_LIMIT = 200
 SQL_IN_CHUNK_SIZE = 500
-VALID_DISCIPLINES = {"土建", "给排水", "电气", "暖通消防", "仿古", "光伏", "水利灌溉", "旧材料"}
+VALID_DISCIPLINES = {"土建", "给排水", "电气", "暖通消防", "仿古", "光伏", "水利灌溉", "旧材料", "补充定额"}
 
 _HEADER_MAP: dict[str, str] = {
     "定额号": "quota_code",

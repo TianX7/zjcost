@@ -8,11 +8,13 @@ import {
   Input,
   InputNumber,
   Modal,
+  Pagination,
   Popconfirm,
   Row,
   Segmented,
   Select,
   Space,
+  Table,
   Tag,
   Tooltip,
   Typography,
@@ -117,25 +119,28 @@ export default function ProjectList() {
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
+  const [projectType, setProjectType] = useState("");
+  const [region, setRegion] = useState("");
   const [page, setPage] = useState(1);
-  const [pageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(12);
   const [view, setView] = useState<"card" | "table">("card");
   const [modalOpen, setModalOpen] = useState(false);
   const [creatingSample, setCreatingTour] = useState(false);
   const [form] = Form.useForm<ProjectCreateData>();
 
+  // KPI 口径说明：总数来自服务端 total；其余为本页统计，避免把 10 条当全部
   const summary = useMemo(() => {
     const active = items.filter((item) => item.status !== "archived").length;
+    const archived = items.filter((item) => item.status === "archived").length;
     const completed = items.filter((item) => item.status === "completed").length;
     const budgetTotal = items.reduce((sum, item) => sum + Number(item.budget ?? 0), 0);
-    const types = new Set(items.map((item) => item.project_type).filter(Boolean));
-    return { active, completed, budgetTotal, types: types.size };
+    return { active, archived, completed, budgetTotal };
   }, [items]);
 
   const animTotal = useCountUp(total);
   const animActive = useCountUp(summary.active);
   const animBudget = useCountUp(Math.round(summary.budgetTotal));
-  const animTypes = useCountUp(summary.types);
+  const animArchived = useCountUp(summary.archived);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -143,6 +148,8 @@ export default function ProjectList() {
       const params: ProjectListParams = {
         q: query.trim() || undefined,
         status: status || undefined,
+        project_type: projectType || undefined,
+        region: region || undefined,
         page,
         page_size: pageSize,
       };
@@ -154,7 +161,7 @@ export default function ProjectList() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, query, status]);
+  }, [page, pageSize, query, status, projectType, region]);
 
   useEffect(() => {
     void load();
@@ -203,7 +210,7 @@ export default function ProjectList() {
         <div className="pl-kpi-item">
           <span className="pl-kpi-icon blue"><span className="material-symbols-outlined">folder_open</span></span>
           <div>
-            <strong>{animTotal}</strong>
+            <strong className="num">{animTotal}</strong>
             <em>项目总数</em>
           </div>
           <span className="pl-kpi-sub">{animActive} 活跃</span>
@@ -211,26 +218,26 @@ export default function ProjectList() {
         <div className="pl-kpi-item">
           <span className="pl-kpi-icon green"><span className="material-symbols-outlined">check_circle</span></span>
           <div>
-            <strong>{summary.completed}</strong>
-            <em>已完工</em>
+            <strong className="num">{summary.completed}</strong>
+            <em>已完工（本页）</em>
           </div>
-          <span className="pl-kpi-sub">{total > 0 ? `${Math.round((summary.completed / total) * 100)}%` : "0%"}</span>
+          <span className="pl-kpi-sub">本页 {items.length} 项</span>
         </div>
         <div className="pl-kpi-item">
           <span className="pl-kpi-icon amber"><span className="material-symbols-outlined">request_quote</span></span>
           <div>
-            <strong>{money(animBudget)}</strong>
-            <em>预算合计</em>
+            <strong className="num">{money(animBudget)}</strong>
+            <em>预算合计（本页）</em>
           </div>
-          <span className="pl-kpi-sub">{total} 项</span>
+          <span className="pl-kpi-sub">仅统计当前页</span>
         </div>
         <div className="pl-kpi-item">
-          <span className="pl-kpi-icon purple"><span className="material-symbols-outlined">category</span></span>
+          <span className="pl-kpi-icon purple"><span className="material-symbols-outlined">archive</span></span>
           <div>
-            <strong>{animTypes}</strong>
-            <em>工程类型</em>
+            <strong className="num">{animArchived}</strong>
+            <em>已归档（本页）</em>
           </div>
-          <span className="pl-kpi-sub">分类</span>
+          <span className="pl-kpi-sub">归档后只读</span>
         </div>
       </div>
 
@@ -242,9 +249,27 @@ export default function ProjectList() {
             placeholder="搜索项目名称"
             value={query}
             onChange={(event) => { setQuery(event.target.value); setPage(1); }}
-            style={{ width: 240 }}
+            style={{ width: 220 }}
           />
-          <Select value={status} options={STATUS_OPTIONS} onChange={(value) => { setStatus(value); setPage(1); }} style={{ width: 130 }} />
+          <Select value={status} options={STATUS_OPTIONS} onChange={(value) => { setStatus(value); setPage(1); }} style={{ width: 130 }} placeholder="状态" />
+          <Select
+            value={projectType || undefined}
+            options={[{ value: "", label: "全部类型" }, ...PROJECT_TYPE_OPTIONS]}
+            onChange={(value) => { setProjectType(value); setPage(1); }}
+            style={{ width: 140 }}
+            placeholder="工程类型"
+            allowClear
+          />
+          <Select
+            value={region || undefined}
+            options={[{ value: "", label: "全部地区" }, ...REGION_OPTIONS]}
+            onChange={(value) => { setRegion(value ?? ""); setPage(1); }}
+            style={{ width: 130 }}
+            placeholder="地区"
+            showSearch
+            optionFilterProp="label"
+            allowClear
+          />
           <Button icon={<ReloadOutlined />} loading={loading} onClick={load}>刷新</Button>
         </Space>
         <Segmented
@@ -279,13 +304,13 @@ export default function ProjectList() {
                 <span className="pl-card-icon"><span className="material-symbols-outlined">apartment</span></span>
                 <div className="pl-card-title">
                   <strong>{project.name}</strong>
-                  <em>{project.project_type ?? "建筑工程"}</em>
+                  <em>{[project.project_type ?? "建筑工程", project.region].filter(Boolean).join(" · ")}</em>
                 </div>
                 <Tag color={STATUS_COLORS[project.status] ?? "default"}>{STATUS_LABELS[project.status] ?? project.status}</Tag>
               </div>
               <div className="pl-card-stats">
                 <div>
-                  <strong>{money(project.budget)}</strong>
+                  <strong className="num">{money(project.budget)}</strong>
                   <span>预算</span>
                 </div>
                 <div>
@@ -293,12 +318,12 @@ export default function ProjectList() {
                   <span>负责人</span>
                 </div>
                 <div>
-                  <strong>{project.updated_at ? new Date(project.updated_at).toLocaleDateString("zh-CN") : "-"}</strong>
+                  <strong className="num">{project.updated_at ? new Date(project.updated_at).toLocaleDateString("zh-CN") : "-"}</strong>
                   <span>更新</span>
                 </div>
               </div>
               <div className="pl-card-foot">
-                <span className="pl-card-desc">{project.description ?? "暂无说明"}</span>
+                <span className="pl-card-desc">{project.description?.trim() || "暂无说明，点击进入项目"}</span>
                 <div className="pl-card-actions">
                   <Tooltip title="复制">
                     <span
@@ -328,59 +353,69 @@ export default function ProjectList() {
           ))}
         </div>
       ) : (
-        <div className="pl-table-wrap">
-          <table className="pl-table">
-            <thead>
-              <tr>
-                <th>项目名称</th>
-                <th>类型</th>
-                <th>状态</th>
-                <th>预算</th>
-                <th>负责人</th>
-                <th>更新时间</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((project) => (
-                <tr key={project.id}>
-                  <td>
-                    <button className="pl-table-link" type="button" onClick={() => navigate(`/projects/${project.id}`)}>
-                      {project.name}
-                    </button>
-                  </td>
-                  <td>{project.project_type ?? "-"}</td>
-                  <td><Tag color={STATUS_COLORS[project.status] ?? "default"}>{STATUS_LABELS[project.status] ?? project.status}</Tag></td>
-                  <td>{money(project.budget)}</td>
-                  <td>{project.owner ?? "-"}</td>
-                  <td>{project.updated_at ? new Date(project.updated_at).toLocaleDateString("zh-CN") : "-"}</td>
-                  <td>
-                    <Space>
-                      <Button size="small" onClick={() => navigate(`/projects/${project.id}`)}>打开</Button>
-                      <Button size="small" icon={<CopyOutlined />} onClick={async () => { await api.duplicateProject(project.id); await load(); }} />
-                      <Popconfirm title="确认归档？" onConfirm={async () => { await api.archiveProject(project.id); await load(); }}>
-                        <Button size="small">归档</Button>
-                      </Popconfirm>
-                      <Popconfirm title="确认删除？" onConfirm={async () => { await api.deleteProject(project.id); await load(); }}>
-                        <Button size="small" danger icon={<DeleteOutlined />} />
-                      </Popconfirm>
-                    </Space>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table
+          rowKey="id"
+          loading={loading}
+          dataSource={items}
+          pagination={false}
+          onRow={(project) => ({ onClick: () => navigate(`/projects/${project.id}`) })}
+          columns={[
+            {
+              title: "项目名称", dataIndex: "name", key: "name", ellipsis: true,
+              render: (value: string, project: Project) => (
+                <Button type="link" style={{ padding: 0, height: "auto" }} onClick={(e) => { e.stopPropagation(); navigate(`/projects/${project.id}`); }}>
+                  {value}
+                </Button>
+              ),
+            },
+            { title: "类型", dataIndex: "project_type", key: "project_type", width: 110, render: (v: string) => v ?? "-" },
+            { title: "地区", dataIndex: "region", key: "region", width: 90, render: (v: string) => v ?? "-" },
+            {
+              title: "状态", dataIndex: "status", key: "status", width: 100,
+              render: (v: string) => <Tag color={STATUS_COLORS[v] ?? "default"}>{STATUS_LABELS[v] ?? v}</Tag>,
+            },
+            {
+              title: "预算", dataIndex: "budget", key: "budget", width: 130, align: "right",
+              render: (v: number) => <span className="num">{money(v)}</span>, sorter: (a: Project, b: Project) => Number(a.budget ?? 0) - Number(b.budget ?? 0),
+            },
+            { title: "负责人", dataIndex: "owner", key: "owner", width: 100, render: (v: string) => v ?? "-" },
+            {
+              title: "更新时间", dataIndex: "updated_at", key: "updated_at", width: 120,
+              render: (v: string) => (v ? new Date(v).toLocaleDateString("zh-CN") : "-"),
+              sorter: (a: Project, b: Project) => String(a.updated_at ?? "").localeCompare(String(b.updated_at ?? "")),
+            },
+            {
+              title: "操作", key: "actions", width: 200, fixed: "right",
+              render: (_: unknown, project: Project) => (
+                <Space onClick={(e) => e.stopPropagation()}>
+                  <Button size="small" onClick={() => navigate(`/projects/${project.id}`)}>打开</Button>
+                  <Button size="small" icon={<CopyOutlined />} onClick={async () => { await api.duplicateProject(project.id); await load(); }} />
+                  <Popconfirm title="确认归档？归档后只读。" onConfirm={async () => { await api.archiveProject(project.id); await load(); }}>
+                    <Button size="small">归档</Button>
+                  </Popconfirm>
+                  <Popconfirm title="确认删除？该操作不可恢复。" onConfirm={async () => { await api.deleteProject(project.id); await load(); }}>
+                    <Button size="small" danger icon={<DeleteOutlined />} />
+                  </Popconfirm>
+                </Space>
+              ),
+            },
+          ]}
+        />
       )}
 
-      {items.length > 0 && (
+      {total > 0 && (
         <div className="pl-pagination">
           <span>共 {total} 个项目</span>
-          <Space>
-            <Button size="small" disabled={page <= 1} onClick={() => setPage(page - 1)}>上一页</Button>
-            <span>第 {page} 页</span>
-            <Button size="small" disabled={items.length < pageSize} onClick={() => setPage(page + 1)}>下一页</Button>
-          </Space>
+          <Pagination
+            size="small"
+            current={page}
+            pageSize={pageSize}
+            total={total}
+            showSizeChanger
+            pageSizeOptions={[12, 20, 50]}
+            showTotal={(t) => `共 ${t} 项`}
+            onChange={(p, ps) => { setPage(p); setPageSize(ps); }}
+          />
         </div>
       )}
 
@@ -391,22 +426,20 @@ export default function ProjectList() {
         onOk={create}
         okText="创建"
         cancelText="取消"
-        width={640}
+        width={600}
+        destroyOnClose
       >
         <Form
           form={form}
           layout="vertical"
           initialValues={{ region: "全国", project_type: "建筑工程", status: "draft", standard_type: "GB50500" }}
           style={{ marginTop: 8 }}
+          preserve={false}
         >
-          <Row gutter={16}>
-            <Col span={24}>
-              <Form.Item name="name" label="项目名称" rules={[{ required: true, message: "请输入项目名称" }]}>
-                <Input placeholder="请输入项目名称" size="large" />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Row gutter={16}>
+          <Form.Item name="name" label="项目名称" rules={[{ required: true, message: "请输入项目名称" }]}>
+            <Input placeholder="如：XX 市政道路改造工程" maxLength={60} showCount />
+          </Form.Item>
+          <Row gutter={12}>
             <Col span={12}>
               <Form.Item name="region" label="地区" rules={[{ required: true, message: "请选择地区" }]}>
                 <Select
@@ -414,7 +447,6 @@ export default function ProjectList() {
                   options={REGION_OPTIONS}
                   showSearch
                   optionFilterProp="label"
-                  size="large"
                   allowClear
                 />
               </Form.Item>
@@ -426,50 +458,50 @@ export default function ProjectList() {
                   options={PROJECT_TYPE_OPTIONS}
                   showSearch
                   optionFilterProp="label"
-                  size="large"
                   allowClear
                 />
               </Form.Item>
             </Col>
           </Row>
-          <Row gutter={16}>
-            <Col span={8}>
+          <Row gutter={12}>
+            <Col span={12}>
               <Form.Item name="owner" label="负责人">
-                <Input placeholder="项目负责人" size="large" />
+                <Input placeholder="项目负责人" maxLength={20} />
               </Form.Item>
             </Col>
-            <Col span={8}>
+            <Col span={12}>
               <Form.Item name="budget" label="预算（元）">
-                <InputNumber
+                <InputNumber<number>
                   placeholder="项目预算"
                   min={0}
                   style={{ width: "100%" }}
-                  size="large"
-                  formatter={(value) => `${value ?? 0}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
-                  parser={(value) => value?.replace(/,/g, "") as unknown as 0}
+                  formatter={(value) => `${value ?? ""}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
+                  parser={(value) => Number((value ?? "").replace(/,/g, ""))}
                 />
               </Form.Item>
             </Col>
-            <Col span={8}>
+          </Row>
+          <Row gutter={12}>
+            <Col span={12}>
               <Form.Item name="standard_type" label="计价规范">
                 <Select
                   placeholder="计价规范"
                   options={STANDARD_OPTIONS}
                   showSearch
                   optionFilterProp="label"
-                  size="large"
                   allowClear
                 />
               </Form.Item>
             </Col>
-          </Row>
-          <Row gutter={16}>
-            <Col span={24}>
-              <Form.Item name="description" label="项目说明">
-                <Input.TextArea rows={3} placeholder="项目描述、备注信息..." style={{ resize: "none" }} />
+            <Col span={12}>
+              <Form.Item name="status" label="初始状态">
+                <Select options={STATUS_OPTIONS.filter((o) => o.value)} />
               </Form.Item>
             </Col>
           </Row>
+          <Form.Item name="description" label="项目说明">
+            <Input.TextArea rows={3} placeholder="项目描述、备注信息..." maxLength={300} showCount style={{ resize: "none" }} />
+          </Form.Item>
         </Form>
       </Modal>
     </div>

@@ -61,7 +61,7 @@ _geometry_lock = threading.Lock()
 # 嵌入式 CAD 快速看图状态：同一时间仅一个实例（task_id + 坐标文件）
 _EMBED_STATE: dict = {"task_id": "", "rect_file": None, "state_file": None, "proc": None}
 _embed_lock = threading.Lock()
-EMBED_START_TIMEOUT = 12.0
+EMBED_START_TIMEOUT = 24.0
 
 # 同一张图纸重复上传直接复用已有结果（sha256 -> task_id），秒出
 _RESULT_CACHE: dict[str, str] = {}
@@ -1134,8 +1134,22 @@ def _run_recognition(
                 daemon=True,
                 name="cad-raster-tail",
             ).start()
-            components = [_dump_model(ComponentOut(**item)) for item in raw.get("components", [])]
-            suggestions = [_dump_model(BoqSuggestionOut(**item)) for item in raw.get("boq_suggestions", [])]
+            # 逐项容错：单个构件/清单行校验失败只跳过该项并记入诊断，
+            # 绝不因一条坏数据就让整个任务被外层 except 清空成空结果
+            #（否则会出现"有预览没结果"）。
+            components = []
+            skipped_diag: list[str] = []
+            for _item in raw.get("components", []):
+                try:
+                    components.append(_dump_model(ComponentOut(**_item)))
+                except Exception as _e:  # noqa: BLE001
+                    skipped_diag.append(f"跳过非法构件行：{_e}")
+            suggestions = []
+            for _item in raw.get("boq_suggestions", []):
+                try:
+                    suggestions.append(_dump_model(BoqSuggestionOut(**_item)))
+                except Exception as _e:  # noqa: BLE001
+                    skipped_diag.append(f"跳过非法清单行：{_e}")
             has_error = bool(raw.get("error"))
             _store_result(task_id, {
                 "status": "error" if has_error else "done",
@@ -1143,7 +1157,7 @@ def _run_recognition(
                 "summary": raw.get("summary", ""),
                 "components": components,
                 "boq_suggestions": suggestions,
-                "diagnostics": raw.get("diagnostics", []),
+                "diagnostics": list(raw.get("diagnostics", [])) + skipped_diag,
                 "layer_summary": raw.get("layer_summary", []),
                 "disciplines": raw.get("disciplines", []),
                 "quality_score": raw.get("quality_score"),
@@ -1151,8 +1165,14 @@ def _run_recognition(
                 "preview_svg_hd": raw.get("preview_svg_hd", ""),
                 "cad_geometry": raw.get("cad_geometry"),
                 "cad_raster": raw.get("cad_raster"),
-                "cad_raster_ready": bool(raw.get("cad_raster")),
-                "cad_geometry_ready": bool((raw.get("cad_geometry") or {}).get("bbox")),
+                # 就绪标记优先保留进度通道（_cad_progress）推送过的 True 值：
+                # async 模式下 raw.cad_raster 恒为 None，直接用 raw 判断会把已推送的
+                # cad_raster_ready 覆盖成 False，导致前端终态后据标记拉 /raster 时误判
+                # "尚未就绪"而永久缺失高清预览。
+                "cad_raster_ready": bool((_get_task(task_id) or {}).get("cad_raster_ready"))
+                    or bool(raw.get("cad_raster")),
+                "cad_geometry_ready": bool((_get_task(task_id) or {}).get("cad_geometry_ready"))
+                    or bool((raw.get("cad_geometry") or {}).get("bbox")),
                 "valuation": None,
                 "valuation_status": "processing" if suggestions and not has_error else "skipped",
                 "valuation_progress": "识别完成，正在准备自动计价..." if suggestions and not has_error else "未生成可计价清单",

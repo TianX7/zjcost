@@ -15,6 +15,7 @@ const DISCIPLINE_COLORS: Record<string, string> = {
   "光伏": "#f97316",
   "水利灌溉": "#22d3ee",
   "旧材料": "#fb923c",
+  "补充定额": "#f472b6",
 };
 
 const DISCIPLINE_COLOR_FALLBACK = "#64748b";
@@ -42,6 +43,9 @@ function fmtNum(value: number | undefined | null, digits = 2) {
   return Number(value).toFixed(digits);
 }
 
+// 列表一次最多加载条数（超出后提示细化筛选，避免静默截断误导）
+const QUOTA_LIST_LIMIT = 200;
+
 export default function QuotaLibrary() {
   const [items, setItems] = useState<QuotaItemDTO[]>([]);
   const [stats, setStats] = useState<QuotaStatsResponse | null>(null);
@@ -66,7 +70,7 @@ export default function QuotaLibrary() {
     try {
       const [list, stat] = await Promise.all([
         api.listQuotaItems({
-          limit: 200,
+          limit: QUOTA_LIST_LIMIT,
           keyword: debouncedKeyword || undefined,
           discipline,
           chapter,
@@ -223,7 +227,9 @@ export default function QuotaLibrary() {
       width: 100,
       align: "right",
       sorter: (a, b) => Number(a.base_price ?? 0) - Number(b.base_price ?? 0),
-      render: (value: number | undefined) => value == null ? "-" : `¥${value.toFixed(2)}`,
+      render: (value: number | undefined) => value == null || value <= 0
+        ? <span style={{ color: "#f87171" }}>缺基价</span>
+        : `¥${value.toFixed(2)}`,
     },
   ];
 
@@ -249,7 +255,8 @@ export default function QuotaLibrary() {
       missingMachine,
       missingUnit,
       duplicateCodes,
-      healthRate: Math.round(((total - missingPrice - missingLabor - missingMaterial - missingMachine - missingUnit) / total) * 100),
+      // 五项缺失数叠加可能超总数，钳位到 0-100
+      healthRate: Math.max(0, Math.min(100, Math.round(((total - missingPrice - missingLabor - missingMaterial - missingMachine - missingUnit) / total) * 100))),
     };
   }, [items]);
 
@@ -268,9 +275,9 @@ export default function QuotaLibrary() {
   // TOP10 榜单
   const topLists = useMemo(() => {
     const byPrice = [...items].filter((item) => item.base_price != null && item.base_price > 0).sort((a, b) => b.base_price! - a.base_price!).slice(0, 10);
-    const byLabor = [...items].sort((a, b) => b.labor_qty - a.labor_qty).slice(0, 10);
-    const byMaterial = [...items].sort((a, b) => b.material_qty - a.material_qty).slice(0, 10);
-    const byMachine = [...items].sort((a, b) => b.machine_qty - a.machine_qty).slice(0, 10);
+    const byLabor = [...items].sort((a, b) => Number(b.labor_qty ?? 0) - Number(a.labor_qty ?? 0)).slice(0, 10);
+    const byMaterial = [...items].sort((a, b) => Number(b.material_qty ?? 0) - Number(a.material_qty ?? 0)).slice(0, 10);
+    const byMachine = [...items].sort((a, b) => Number(b.machine_qty ?? 0) - Number(a.machine_qty ?? 0)).slice(0, 10);
     return { byPrice, byLabor, byMaterial, byMachine };
   }, [items]);
 
@@ -397,6 +404,16 @@ export default function QuotaLibrary() {
                     ]}
                   />
                   <Button icon={<ReloadOutlined />} loading={loading} onClick={load}>刷新</Button>
+                  {qualityStats.missingPrice > 0 && (
+                    <Tooltip title="这些条目缺少基价，自动套价时无法计价，需补充维护">
+                      <Tag color="red">缺基价 {qualityStats.missingPrice} 条</Tag>
+                    </Tooltip>
+                  )}
+                  {items.length >= QUOTA_LIST_LIMIT && (
+                    <Tooltip title={`列表一次最多加载 ${QUOTA_LIST_LIMIT} 条，当前条件结果可能更多，请继续细化编码 / 名称 / 专业 / 章节筛选`}>
+                      <Tag color="orange">仅展示前 {QUOTA_LIST_LIMIT} 条</Tag>
+                    </Tooltip>
+                  )}
                 </div>
                 {/* 定额表格 */}
                 <div className="content-card">
@@ -407,7 +424,7 @@ export default function QuotaLibrary() {
                       dataSource={items}
                       loading={loading}
                       scroll={{ x: 980 }}
-                      pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }}
+                      pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `共 ${total} 条${items.length >= QUOTA_LIST_LIMIT ? `（仅加载前 ${QUOTA_LIST_LIMIT} 条）` : ""}` }}
                       rowClassName={(record) => record.id === selectedRowId ? "quota-row-selected" : ""}
                       onRow={(record) => ({
                         onClick: () => setSelectedRowId(selectedRowId === record.id ? null : record.id),

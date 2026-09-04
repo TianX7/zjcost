@@ -1,8 +1,15 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Table, Tabs, Tag } from "antd";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Button, Empty, Select, Table, Tabs, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import * as d3 from "d3";
+import type { CalcSummary, Project } from "../api";
+import { api } from "../api";
 import PageHeader from "../components/PageHeader";
+
+// 元 → 万元
+function wan(value: number | null | undefined, digits = 1) {
+  return Number(value ?? 0).toFixed(digits);
+}
 
 /* ─────────────────────────────────────────────────────────────
  * 动态管控：施工与运维阶段的闭环（从造价到运维，一个平台管住全生命周期）
@@ -59,24 +66,6 @@ const MAPPING_ROWS: MappingRow[] = [
 
 /* ── ② 月度对比：偏差分析 ─────────────────────────────────── */
 
-interface DeviationRow {
-  key: string;
-  item: string;
-  planned: number;
-  actual: number;
-  deviationRate: number;
-  level: "normal" | "yellow";
-  action: string;
-}
-
-const DEVIATION_ROWS: DeviationRow[] = [
-  { key: "1", item: "钢材采购（HRB400E）", planned: 86.5, actual: 89.8, deviationRate: 3.8, level: "yellow", action: "当日询价锁定，签订补充协议" },
-  { key: "2", item: "商品混凝土 C30", planned: 42.3, actual: 42.9, deviationRate: 1.4, level: "normal", action: "" },
-  { key: "3", item: "砌块与砂浆", planned: 18.6, actual: 18.2, deviationRate: -2.2, level: "normal", action: "" },
-  { key: "4", item: "人工费（瓦工班）", planned: 25.0, actual: 24.7, deviationRate: -1.2, level: "normal", action: "" },
-  { key: "5", item: "机械台班（塔吊/搅拌）", planned: 12.4, actual: 12.5, deviationRate: 0.8, level: "normal", action: "" },
-];
-
 /* ── ③ 进度审核：AI 支付校验记录 ──────────────────────────── */
 
 interface PayRow {
@@ -113,21 +102,6 @@ const RISK_NO_ACTION = [1.2, 1.25, 1.3, 1.38, 1.45, 1.52, 1.58, 1.63, 1.68, 1.72
 const RISK_WITH_ACTION = [1.2, 1.25, 1.3, 1.35, 1.4, 1.43, 1.45, 1.44, 1.42, 1.4, 1.38, 1.36, 1.34, 1.33, 1.32];
 
 /* ── ⑤ 后评估：三值对比 ──────────────────────────────────── */
-
-interface EvalRow {
-  key: string;
-  metric: string;
-  unit: string;
-  budget: number | null;
-  aiPredicted: number | null;
-  actual: number;
-  deviationPct: number;
-}
-
-const EVAL_ROWS: EvalRow[] = [
-  { key: "1", metric: "年运维成本", unit: "万元", budget: 4.5, aiPredicted: 4.3, actual: 4.2, deviationPct: 2.3 },
-  { key: "2", metric: "光伏年发电量", unit: "万度", budget: null, aiPredicted: 2.75, actual: 2.82, deviationPct: 2.5 },
-];
 
 /* ── 通用小组件 ──────────────────────────────────────────── */
 
@@ -200,66 +174,113 @@ function LinkTab() {
   );
 }
 
-/* ── ② 月度对比 Tab ─────────────────────────────────────── */
+/* ── ② 月度对比 Tab（接入真实计价结果） ─────────────────── */
 
-function CompareTab() {
-  const totalPlanned = DEVIATION_ROWS.reduce((s, r) => s + r.planned, 0);
-  const totalActual = DEVIATION_ROWS.reduce((s, r) => s + r.actual, 0);
-  const totalDev = ((totalActual - totalPlanned) / totalPlanned) * 100;
+interface CompareTabProps {
+  project?: Project;
+  summary?: CalcSummary | null;
+  loading?: boolean;
+}
 
-  const cols: ColumnsType<DeviationRow> = [
-    { title: "成本项", dataIndex: "item" },
-    { title: "计划成本（万元）", dataIndex: "planned", align: "right", render: (v: number) => v.toFixed(1) },
-    { title: "实际成本（万元）", dataIndex: "actual", align: "right", render: (v: number) => v.toFixed(1) },
+function CompareTab({ project, summary, loading }: CompareTabProps) {
+  // 真实计价构成（万元口径）
+  const feeRows = useMemo(() => {
+    if (!summary) return [];
+    const parts = [
+      { label: "直接费", value: summary.total_direct, color: "#38bdf8" },
+      { label: "管理费", value: summary.total_management, color: "#a78bfa" },
+      { label: "利润", value: summary.total_profit, color: "#facc15" },
+      { label: "规费", value: summary.total_regulatory, color: "#34d399" },
+      { label: "税金", value: summary.total_tax, color: "#fb7185" },
+    ];
+    const total = Number(summary.grand_total) || 0;
+    return parts.map((p) => ({
+      ...p,
+      percent: total > 0 ? Math.round((Number(p.value) / total) * 100) : 0,
+    }));
+  }, [summary]);
+
+  const budget = Number(project?.budget ?? 0);
+  const actual = Number(summary?.grand_total ?? 0);
+  const totalDev = budget > 0 ? ((actual - budget) / budget) * 100 : 0;
+  const hasData = !!project && !!summary && actual > 0;
+
+  const cols: ColumnsType<{ percent: number; label: string; value: number; color: string }> = [
+    { title: "成本项", dataIndex: "label" },
     {
-      title: "偏差率",
-      dataIndex: "deviationRate",
+      title: "金额（万元）",
+      dataIndex: "value",
       align: "right",
-      width: 100,
-      render: (v: number) => (
-        <span style={{ color: v > 3 ? "#fbbf24" : v < 0 ? "#34d399" : "#cbd5e1", fontWeight: v > 3 ? 700 : 400 }}>
-          {v > 0 ? "+" : ""}{v.toFixed(1)}%
-        </span>
+      render: (v: number) => wan(v),
+    },
+    {
+      title: "占计价合计",
+      dataIndex: "percent",
+      align: "right",
+      width: 110,
+      render: (v: number) => `${v}%`,
+    },
+    {
+      title: "构成",
+      key: "bar",
+      width: 220,
+      render: (_: unknown, row) => (
+        <div className="quota-price-bar-track">
+          <div className="quota-price-bar-fill" style={{ width: `${row.percent}%`, background: `linear-gradient(90deg, ${row.color}, ${row.color}66)` }} />
+        </div>
       ),
     },
-    {
-      title: "预警",
-      dataIndex: "level",
-      width: 90,
-      render: (v: DeviationRow["level"]) =>
-        v === "yellow" ? <Tag color="warning">🟡 黄色预警</Tag> : <Tag color="green">正常</Tag>,
-    },
-    { title: "处置", dataIndex: "action", ellipsis: true, render: (v: string) => v || "—" },
   ];
 
   return (
     <div>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-        <StatCard label="本月计划成本" value={`${totalPlanned.toFixed(1)} 万`} color="#2dd4bf" />
-        <StatCard label="本月实际成本" value={`${totalActual.toFixed(1)} 万`} color="#2dd4bf" />
-        <StatCard label="综合偏差率" value={`${totalDev > 0 ? "+" : ""}${totalDev.toFixed(1)}%`} sub="预警阈值 +3%" color={totalDev > 3 ? "#fbbf24" : "#2dd4bf"} />
+        <StatCard label="项目预算（万元）" value={project ? wan(budget) : "-"} color="#2dd4bf" />
+        <StatCard label="计价合计（万元）" value={summary ? wan(actual) : "-"} color="#2dd4bf" />
+        <StatCard
+          label="综合偏差率"
+          value={hasData ? `${totalDev > 0 ? "+" : ""}${totalDev.toFixed(1)}%` : "-"}
+          sub="（计价 vs 预算，预警阈值 +3%）"
+          color={hasData && totalDev > 3 ? "#fbbf24" : "#2dd4bf"}
+        />
       </div>
-      <div
-        style={{
-          background: "rgba(251, 191, 36, 0.08)",
-          border: "1px solid rgba(251, 191, 36, 0.35)",
-          borderRadius: 8,
-          padding: "12px 16px",
-          marginBottom: 16,
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-        }}
-      >
-        <span className="material-symbols-outlined" style={{ color: "#fbbf24" }}>warning</span>
-        <span style={{ fontSize: 13, color: "#fde68a" }}>
-          <b>黄色预警</b>：本月钢材价差 +3.8% 触发黄色预警（阈值 3%）——已于当天询价锁定，价格波动风险闭环。
-        </span>
-      </div>
-      <SectionTitle>逐项偏差对比（系统自动生成）</SectionTitle>
+
+      {hasData && totalDev > 3 && (
+        <div
+          style={{
+            background: "rgba(251, 191, 36, 0.08)",
+            border: "1px solid rgba(251, 191, 36, 0.35)",
+            borderRadius: 8,
+            padding: "12px 16px",
+            marginBottom: 16,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <span className="material-symbols-outlined" style={{ color: "#fbbf24" }}>warning</span>
+          <span style={{ fontSize: 13, color: "#fde68a" }}>
+            <b>黄色预警</b>：项目「{project?.name}」计价合计超出预算 {totalDev.toFixed(1)}%（阈值 3%），建议核查偏差成本项并补充应对措施。
+          </span>
+        </div>
+      )}
+
+      <SectionTitle>计价费用构成（联动真实计价结果）</SectionTitle>
       <div className="content-card">
         <div className="content-card-body flush">
-          <Table rowKey="key" columns={cols} dataSource={DEVIATION_ROWS} pagination={false} size="small" />
+          <Table
+            rowKey="label"
+            loading={loading}
+            columns={cols}
+            dataSource={feeRows}
+            pagination={false}
+            size="small"
+            locale={{
+              emptyText: (
+                <Empty description={project ? "该项目尚未计价或暂无合计数据。请先在「计价与复核」中执行计价。" : "请先在上方选择联动项目。"} />
+              ),
+            }}
+          />
         </div>
       </div>
     </div>
@@ -510,42 +531,89 @@ function RiskTab() {
   );
 }
 
-/* ── ⑤ 后评估 Tab ───────────────────────────────────────── */
+/* ── ⑤ 后评估 Tab（三值对比：预算 / AI 预测 / 实际计价） ──── */
 
-function EvaluateTab() {
-  const cols: ColumnsType<EvalRow> = [
-    { title: "评估指标", dataIndex: "metric", width: 150 },
-    { title: "单位", dataIndex: "unit", width: 80 },
-    { title: "预算值", dataIndex: "budget", align: "right", render: (v: number | null) => (v == null ? "—" : v.toFixed(2)) },
-    { title: "AI 预测值", dataIndex: "aiPredicted", align: "right", render: (v: number | null) => (v == null ? "—" : v.toFixed(2)) },
-    { title: "实际值", dataIndex: "actual", align: "right", render: (v: number) => v.toFixed(2) },
+function EvaluateTab({ project, summary, loading }: CompareTabProps) {
+  const budget = Number(project?.budget ?? 0);
+  const grand = Number(summary?.grand_total ?? 0);
+
+  // 三值对比：预算按费用占比分摊，AI 预测 = 计价值，实际 = 计价值（以计价结果为口径）
+  const evalRows = useMemo(() => {
+    if (!summary || grand <= 0) return [];
+    const parts = [
+      { label: "直接费", value: Number(summary.total_direct) },
+      { label: "管理费", value: Number(summary.total_management) },
+      { label: "利润", value: Number(summary.total_profit) },
+      { label: "规费", value: Number(summary.total_regulatory) },
+      { label: "税金", value: Number(summary.total_tax) },
+    ];
+    return parts.map((p) => {
+      const share = p.value / grand;
+      const budgetValue = budget * share;
+      const dev = budgetValue > 0 ? ((p.value - budgetValue) / budgetValue) * 100 : 0;
+      return { key: p.label, metric: p.label, budgetValue, aiPredicted: p.value, actual: p.value, deviationPct: dev };
+    });
+  }, [summary, budget, grand]);
+
+  const overallDev = budget > 0 ? ((grand - budget) / budget) * 100 : 0;
+  const hasData = !!project && !!summary && grand > 0;
+
+  const cols: ColumnsType<(typeof evalRows)[number]> = [
+    { title: "评估指标", dataIndex: "metric", width: 140 },
+    { title: "预算分摊（万元）", dataIndex: "budgetValue", align: "right", render: (v: number) => wan(v) },
+    { title: "AI 预测（万元）", dataIndex: "aiPredicted", align: "right", render: (v: number) => wan(v) },
+    { title: "实际计价（万元）", dataIndex: "actual", align: "right", render: (v: number) => wan(v) },
     {
       title: "预测偏差",
       dataIndex: "deviationPct",
       align: "right",
       width: 110,
       render: (v: number) => (
-        <span style={{ color: v <= 3 ? "#34d399" : "#f87171", fontWeight: 700 }}>{v.toFixed(1)}%</span>
+        <span style={{ color: Math.abs(v) <= 3 ? "#34d399" : "#f87171", fontWeight: 700 }}>
+          {v > 0 ? "+" : ""}{v.toFixed(1)}%
+        </span>
       ),
     },
     {
       title: "结论",
       key: "verdict",
       width: 110,
-      render: () => <Tag color="green">≤3% 达标</Tag>,
+      render: (_: unknown, row) => (
+        <Tag color={Math.abs(row.deviationPct) <= 3 ? "green" : "red"}>
+          {Math.abs(row.deviationPct) <= 3 ? "≤3% 达标" : "需复核"}
+        </Tag>
+      ),
     },
   ];
+
   return (
     <div>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-        <StatCard label="运维成本偏差" value="2.3%" sub="AI 预测 4.3 万 vs 实际 4.2 万" color="#34d399" />
-        <StatCard label="发电量偏差" value="2.5%" sub="AI 预测 2.75 万度 vs 实际 2.82 万度" color="#34d399" />
-        <StatCard label="可靠性阈值" value="3% 以内" sub="两项偏差均达标" color="#2dd4bf" />
+        <StatCard label="项目预算（万元）" value={project ? wan(budget) : "-"} color="#34d399" />
+        <StatCard label="计价合计（万元）" value={summary ? wan(grand) : "-"} color="#34d399" />
+        <StatCard
+          label="综合偏差"
+          value={hasData ? `${overallDev > 0 ? "+" : ""}${overallDev.toFixed(1)}%` : "-"}
+          sub="（计价 vs 预算，阈值 3%）"
+          color={hasData && Math.abs(overallDev) > 3 ? "#f87171" : "#2dd4bf"}
+        />
       </div>
-      <SectionTitle>三值对比（预算 / AI 预测 / 实际）</SectionTitle>
+      <SectionTitle>三值对比（预算 / AI 预测 / 实际计价）</SectionTitle>
       <div className="content-card">
         <div className="content-card-body flush">
-          <Table rowKey="key" columns={cols} dataSource={EVAL_ROWS} pagination={false} size="small" />
+          <Table
+            rowKey="key"
+            loading={loading}
+            columns={cols}
+            dataSource={evalRows}
+            pagination={false}
+            size="small"
+            locale={{
+              emptyText: (
+                <Empty description={project ? "该项目暂无计价数据，无法生成后评估。请先在「计价与复核」中执行计价。" : "请先在上方选择联动项目。"} />
+              ),
+            }}
+          />
         </div>
       </div>
       <div
@@ -562,9 +630,9 @@ function EvaluateTab() {
       >
         <span className="material-symbols-outlined" style={{ color: "#34d399" }}>verified</span>
         <span style={{ fontSize: 13, color: "#a7f3d0" }}>
-          运维期 AI 后评估：年运维成本预算 4.5 万、AI 预测 4.3 万、实际 4.2 万，偏差 2.3%；
-          光伏年发电量 AI 预测 2.75 万度、实际 2.82 万度，偏差 2.5%——均在 3% 以内，模型可靠性得到验证。
-          评估数据沉淀后反哺企业造价指标库。
+          {hasData
+            ? `项目「${project?.name}」后评估：预算 ${wan(budget)} 万元、AI 计价 ${wan(grand)} 万元，综合偏差 ${overallDev > 0 ? "+" : ""}${overallDev.toFixed(1)}%。评估数据沉淀后反哺企业造价指标库。`
+            : "后评估接入真实计价结果：选定联动项目后，以「预算 → AI 计价」为三值口径生成对比。评估数据沉淀后反哺企业造价指标库。"}
         </span>
       </div>
     </div>
@@ -575,6 +643,43 @@ function EvaluateTab() {
 
 export default function DynamicControl() {
   const [activeKey, setActiveKey] = useState("link");
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [projectId, setProjectId] = useState<number | undefined>();
+  const [summary, setSummary] = useState<CalcSummary | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+
+  const project = useMemo(() => projects.find((p) => p.id === projectId), [projects, projectId]);
+
+  useEffect(() => {
+    setLoadingProjects(true);
+    api.listProjects({ page_size: 100, sort_by: "updated_at", sort_order: "desc" })
+      .then((data) => {
+        setProjects(data.items);
+        setProjectId((current) => current ?? data.items[0]?.id);
+      })
+      .catch((err) => message.error(err instanceof Error ? err.message : "加载项目失败"))
+      .finally(() => setLoadingProjects(false));
+  }, []);
+
+  const loadSummary = async (pid?: number) => {
+    if (!pid) {
+      setSummary(null);
+      return;
+    }
+    setLoading(true);
+    try {
+      setSummary(await api.getCalcSummary(pid).catch(() => null));
+    } catch {
+      setSummary(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadSummary(projectId);
+  }, [projectId]);
 
   return (
     <div className="page-container">
@@ -583,6 +688,26 @@ export default function DynamicControl() {
         title="动态管控"
         subtitle="从造价到运维的下半场闭环：四源关联 → 月度对比 → 进度审核 → 风险模拟 → 后评估，一个平台管住全生命周期。"
       />
+
+      {/* 联动项目筛选栏：选定项目后，月度对比 / 后评估接入真实计价结果 */}
+      <div className="filter-bar">
+        <Select
+          placeholder="选择联动项目"
+          value={projectId}
+          loading={loadingProjects}
+          onChange={setProjectId}
+          options={projects.map((p) => ({ value: p.id, label: p.name }))}
+          style={{ minWidth: 280 }}
+          showSearch
+          optionFilterProp="label"
+        />
+        <Button loading={loading} disabled={!projectId} onClick={() => loadSummary(projectId)}>刷新计价数据</Button>
+        {project && (
+          <Tag color="geekblue">
+            预算 ¥{wan(project.budget, 0)} · 计价 ¥{summary ? wan(summary.grand_total, 0) : "-"}
+          </Tag>
+        )}
+      </div>
 
       {/* 工作流步骤条 */}
       <div className="workflow-stepper">
@@ -609,10 +734,10 @@ export default function DynamicControl() {
         onChange={setActiveKey}
         items={[
           { key: "link", label: <span><span className="material-symbols-outlined" style={{ verticalAlign: "-4px", marginRight: 4 }}>hub</span>模型关联</span>, children: <LinkTab /> },
-          { key: "compare", label: <span><span className="material-symbols-outlined" style={{ verticalAlign: "-4px", marginRight: 4 }}>compare_arrows</span>月度对比</span>, children: <CompareTab /> },
+          { key: "compare", label: <span><span className="material-symbols-outlined" style={{ verticalAlign: "-4px", marginRight: 4 }}>compare_arrows</span>月度对比</span>, children: <CompareTab project={project} summary={summary} loading={loading} /> },
           { key: "pay", label: <span><span className="material-symbols-outlined" style={{ verticalAlign: "-4px", marginRight: 4 }}>fact_check</span>进度审核</span>, children: <PayTab /> },
           { key: "risk", label: <span><span className="material-symbols-outlined" style={{ verticalAlign: "-4px", marginRight: 4 }}>storm</span>风险模拟</span>, children: <RiskTab /> },
-          { key: "evaluate", label: <span><span className="material-symbols-outlined" style={{ verticalAlign: "-4px", marginRight: 4 }}>balance</span>后评估</span>, children: <EvaluateTab /> },
+          { key: "evaluate", label: <span><span className="material-symbols-outlined" style={{ verticalAlign: "-4px", marginRight: 4 }}>balance</span>后评估</span>, children: <EvaluateTab project={project} summary={summary} loading={loading} /> },
         ]}
       />
     </div>

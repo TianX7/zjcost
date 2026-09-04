@@ -2975,6 +2975,31 @@ def _read_dxf_document(ezdxf: Any, tmp_path: str) -> tuple[Any, list[str]]:
         return doc, diagnostics
 
 
+def _safe_entity_list(msp: Any) -> tuple[list[Any], list[str]]:
+    """加载模型空间所有实体，并把"加载即抛错"的个体隔离开。
+
+    转换器（libredwg 等）生成的 DXF 可能含结构异常实体，例如 MTEXT 扩展数据里
+    非法的列类型值会让 ezdxf 在惰性加载该实体时抛出
+    "N is not a valid ColumnType"。这里逐个实体触发加载并捕获异常，
+    返回 (正常实体列表, 被跳过的实体说明)，保证后续遍历不会因单个坏实体中断。
+    """
+    entities: list[Any] = []
+    skipped: list[str] = []
+    for entity in msp:
+        try:
+            _ = entity.dxftype()
+            entities.append(entity)
+        except Exception as exc:
+            message = str(exc)
+            if "not a valid" in message:
+                skipped.append("已跳过 1 个带异常属性的图元（MTEXT 列类型失效），不影响其余图元。")
+            else:
+                skipped.append(
+                    f"已跳过 1 个异常图元（{entity.__class__.__name__}）：{message}"
+                )
+    return entities, skipped
+
+
 def _remove_zero_handle_pairs(tmp_path: str) -> int:
     path = Path(tmp_path)
     raw = path.read_text(encoding="utf-8", errors="ignore")
@@ -2996,9 +3021,18 @@ def _remove_zero_handle_pairs(tmp_path: str) -> int:
     return removed
 
 
+_BINARY_DXF_SIGNATURE = b"AutoCAD Binary DXF\r\n\x1a\x00"
+
+
 def _normalize_dxf_text(tmp_path: str) -> bool:
     path = Path(tmp_path)
     raw_bytes = path.read_bytes()
+    # 二进制 DXF（以 "AutoCAD Binary DXF\r\n\x1a\x00" 开头）内部是二进制编码的
+    # 实数/句柄/PROXY 数据，绝不能按文本方式解码后回写，否则数据会被破坏，
+    # 导致 ezdxf 读取时抛出 "invalid binary data near line: ..."。跳过文本清洗，
+    # 直接交给 ezdxf 按二进制格式解析。
+    if raw_bytes.startswith(_BINARY_DXF_SIGNATURE):
+        return False
     normalized = raw_bytes.replace(b"\r\r\n", b"\r\n")
     raw = normalized.decode("utf-8", errors="ignore")
     lines = raw.splitlines()
@@ -3090,13 +3124,17 @@ def analyze_dxf_bytes(
         _emit_analysis_progress(progress_callback, progress="正在解析 CAD 图层和模型空间...")
         doc, recover_diagnostics = _read_dxf_document(ezdxf, tmp_path)
         msp = doc.modelspace()
+        all_entities, skipped_entities = _safe_entity_list(msp)
         layer_names = [_clean_str(layer.dxf.name) for layer in doc.layers]
 
         # 优化：几何快速看图提前到管线最前——导出线条几何（约十余秒，GPU 渲染），
         # 前端 WebGL 立即看图；高清原图（matplotlib 全量渲染，大图需数分钟）
         # 在构件分析之后渲染，完成后前端自动替换为原样高清图
         _emit_analysis_progress(progress_callback, progress="正在收集图纸图元...")
-        preview_items = _iter_preview_items(doc.modelspace(), PREVIEW_COLLECTION_LIMIT)
+        # 先把模型空间实体全部"热身"（触发惰性加载）并逐实体隔离：
+        # 转换器生成的 DXF 可能含个别加载即抛错的实体（如 MTEXT 非法列类型），
+        # 提前滤除，避免后续所有遍历（快速看图、标注、分类）被一个坏实体打断。
+        preview_items = _iter_preview_items(all_entities, PREVIEW_COLLECTION_LIMIT)
         preview_bbox = _preview_bbox(preview_items)
         _emit_analysis_progress(progress_callback, progress="正在生成快速看图几何...")
         cad_geometry = build_cad_geometry(doc, items=preview_items, bbox=preview_bbox)
@@ -3107,7 +3145,6 @@ def analyze_dxf_bytes(
                 cad_geometry=cad_geometry,
             )
 
-        all_entities = list(msp)
         entity_total = len(all_entities)
         _emit_analysis_progress(
             progress_callback,
@@ -3188,6 +3225,7 @@ def analyze_dxf_bytes(
         components: list[dict[str, Any]] = []
         suggestions: list[dict[str, Any]] = []
         diagnostics: list[str] = [*conversion_diagnostics, *recover_diagnostics, unit_note]
+        diagnostics.extend(skipped_entities)
         if annotation_profile.story_height_m is not None:
             diagnostics.append(f"已从标注中识别层高 {annotation_profile.story_height_m:.2f}m")
 

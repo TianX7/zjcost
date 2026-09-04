@@ -636,9 +636,10 @@ def save_ifc_to_project(task_id: str, body: SaveToProjectRequest):
         raise HTTPException(400, "所有清单项的工程量都是 0，无法保存")
 
     try:
+        # 阶段一：同步写入清单项（仅 INSERT / UPDATE，足够快）
         with session_scope() as db:
-            saved_names = []
-            boq_items: list[BoqItem] = []
+            saved_names: list[str] = []
+            boq_item_ids: list[int] = []
             for idx, s in enumerate(valid_suggestions, start=1):
                 code = s.get("suggested_code", f"IFC{idx:03d}")
                 name = s.get("suggested_name", "")
@@ -678,14 +679,71 @@ def save_ifc_to_project(task_id: str, body: SaveToProjectRequest):
                         LineItemQuotaBinding.boq_item_id == item.id
                     ).delete(synchronize_session=False)
                     db.flush()
-                boq_items.append(item)
+                boq_item_ids.append(item.id)
                 saved_names.append(name)
 
-            # Auto quota matching
+            db.commit()
+    except Exception as exc:
+        logger.exception("IFC save-to-project write failed task_id=%s", task_id)
+        raise HTTPException(500, "保存失败")
+
+    # 阶段二：异步匹配定额并计价（重计算放后台，避免请求超时）
+    project_id = body.project_id
+    _store_result(task_id, {
+        "valuation_status": "processing",
+        "valuation_progress": f"正在保存到项目并匹配定额（共 {len(saved_names)} 条清单）...",
+        "valuation_progress_percent": 5,
+        "valuation_error": None,
+    })
+    threading.Thread(
+        target=_run_ifc_save_finish,
+        args=(task_id, project_id, boq_item_ids, saved_names),
+        daemon=True,
+    ).start()
+
+    return SaveToProjectResponse(
+        project_id=project_id,
+        boq_items_created=len(saved_names),
+        boq_items=saved_names,
+        matched=0,
+        skipped=0,
+        grand_total=None,
+        status="processing",
+        message=f"已保存 {len(saved_names)} 条清单，正在后台匹配定额并计价...",
+    )
+
+
+def _run_ifc_save_finish(task_id: str, project_id: int, boq_item_ids: list[int], saved_names: list[str]) -> None:
+    """后台完成 IFC 保存项目后的定额匹配与计价，结果写入任务 valuation 字段。"""
+    acquired = _ifc_valuation_slots.acquire(blocking=False)
+    if not acquired:
+        _store_result(task_id, {
+            "valuation_status": "error",
+            "valuation_error": "已有计价任务正在运行，请稍后在项目详情中重新计价。",
+            "valuation_progress": "等待计价资源失败",
+            "valuation_progress_percent": 0,
+        })
+        return
+
+    def _progress(message: str) -> None:
+        _store_result(task_id, {
+            "valuation_progress": message,
+            "valuation_progress_percent": _valuation_progress_percent(message),
+            "valuation_status": "processing",
+        })
+
+    try:
+        with session_scope() as db:
+            _progress("正在读取定额库...")
             quotas = db.query(QuotaItem).all()
+            boq_items = (
+                db.query(BoqItem).filter(BoqItem.id.in_(boq_item_ids)).all()
+            )
             matched = 0
             skipped = 0
-            for item in boq_items:
+            for index, item in enumerate(boq_items, start=1):
+                if index == 1 or index % 20 == 0 or index == len(boq_items):
+                    _progress(f"正在匹配定额 {index}/{len(boq_items)}...")
                 quota, confidence = match_quota_for_boq(item, quotas)
                 if quota and confidence >= 0.3:
                     db.add(LineItemQuotaBinding(
@@ -699,27 +757,39 @@ def save_ifc_to_project(task_id: str, body: SaveToProjectRequest):
 
             db.commit()
 
-            # Run calculation
-            grand_total = 0.0
+            grand_total: float | None = None
             if matched > 0:
                 try:
-                    summary, _ = run_project_calculation(project_id=body.project_id, db=db)
+                    _progress("正在计算项目造价...")
+                    summary, _ = run_project_calculation(project_id=project_id, db=db, incremental=True)
                     grand_total = summary.grand_total
                 except Exception:
                     logger.exception("IFC save-to-project calculation failed task_id=%s", task_id)
 
-            return SaveToProjectResponse(
-                project_id=body.project_id,
-                boq_items_created=len(saved_names),
-                boq_items=saved_names,
-                matched=matched,
-                skipped=skipped,
-                grand_total=grand_total if grand_total else None,
-            )
+        _store_result(task_id, {
+            "valuation_status": "done",
+            "valuation": {
+                "project_id": project_id,
+                "boq_items_created": len(saved_names),
+                "matched": matched,
+                "skipped": skipped,
+                "grand_total": grand_total if grand_total is not None else 0.0,
+                "error": None,
+            },
+            "valuation_progress": "自动计价完成",
+            "valuation_progress_percent": 100,
+            "valuation_error": None,
+        })
     except Exception as exc:
-        # 脱敏：不向前端暴露异常详情，仅记录日志
-        logger.exception("IFC save-to-project failed task_id=%s", task_id)
-        raise HTTPException(500, "保存失败")
+        logger.exception("IFC save-to-project finish failed task_id=%s", task_id)
+        _store_result(task_id, {
+            "valuation_status": "error",
+            "valuation_error": "保存并计价失败，请在项目详情中重新计价。",
+            "valuation_progress": "计价失败",
+            "valuation_progress_percent": 0,
+        })
+    finally:
+        _ifc_valuation_slots.release()
 
 
 def _export_excel(task_id: str, task: dict) -> bytes:

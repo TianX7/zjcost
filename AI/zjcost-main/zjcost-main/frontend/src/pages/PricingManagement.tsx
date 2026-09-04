@@ -16,6 +16,18 @@ const COST_COLORS: Record<string, string> = {
   measures: "#f97316",
 };
 
+// 费率快照字段中文名
+const FEE_RATE_LABELS: Record<string, string> = {
+  management_rate: "管理费率",
+  profit_rate: "利润费率",
+  regulatory_rate: "规费费率",
+  tax_rate: "增值税率",
+};
+
+function num2(value: number | null | undefined) {
+  return Number(value ?? 0).toFixed(2);
+}
+
 export default function PricingManagement() {
   const navigate = useNavigate();
   const [, setProjects] = useState<Project[]>([]);
@@ -97,9 +109,36 @@ export default function PricingManagement() {
   const fmt = (v: number | undefined | null) => `¥${Number(v ?? 0).toFixed(2)}`;
   const fmtNum = (v: number | undefined | null, digits = 2) => Number(v ?? 0).toFixed(digits);
 
+  // 溯源弹窗数据
+  const bindingsTotal = useMemo(
+    () => (provenance?.bindings ?? []).reduce((sum, b) => sum + Number(b.direct_cost ?? 0), 0),
+    [provenance],
+  );
+  const feeParts = useMemo(() => {
+    const bd = provenance?.calc_breakdown;
+    if (!bd) return [];
+    const total = Number(bd.total) || 0;
+    const rows = [
+      { label: "直接费", value: bd.direct_cost, color: COST_COLORS.direct },
+      { label: "管理费", value: bd.management_fee, color: COST_COLORS.management },
+      { label: "利润", value: bd.profit, color: COST_COLORS.profit },
+      { label: "规费", value: bd.regulatory_fee, color: COST_COLORS.regulatory },
+      { label: "税金", value: bd.tax, color: COST_COLORS.tax },
+    ];
+    return rows.map((r) => ({ ...r, percent: total > 0 ? Math.round((Number(r.value ?? 0) / total) * 100) : 0 }));
+  }, [provenance]);
+  const feeConfigEntries = useMemo(
+    () => Object.entries(provenance?.fee_config_snapshot ?? {}),
+    [provenance],
+  );
+  const bindDirectPercent = useMemo(() => {
+    const total = Number(provenance?.calc_breakdown?.total) || 0;
+    return total > 0 ? Math.round((bindingsTotal / total) * 100) : 0;
+  }, [provenance, bindingsTotal]);
+
   const columns: ColumnsType<LineCalcResult> = [
     { title: "编码", dataIndex: "boq_code", width: 130, fixed: "left" },
-    { title: "名称", dataIndex: "boq_name", ellipsis: true },
+    { title: "名称", dataIndex: "boq_name", width: 200, ellipsis: true },
     {
       title: "直接费",
       dataIndex: "direct_cost",
@@ -146,21 +185,6 @@ export default function PricingManagement() {
       fixed: "right",
       sorter: (a, b) => a.total - b.total,
       render: (v: number) => <strong style={{ color: "#e2e8f0" }}>{fmt(v)}</strong>,
-    },
-    {
-      title: "计算式",
-      key: "calc_expr",
-      width: 230,
-      fixed: "right",
-      render: (_: unknown, row: LineCalcResult) => {
-        const parts = [row.direct_cost, row.management_fee, row.profit, row.regulatory_fee, row.tax];
-        const sum = parts.reduce((s, p) => s + p, 0);
-        return (
-          <span title="合计 = 直接费 + 管理费 + 利润 + 规费 + 税金" style={{ fontFamily: "monospace", fontSize: 12, color: "#94a3b8", whiteSpace: "nowrap" }}>
-            {parts.map(fmtNum).join(" + ")} = {fmtNum(sum)}
-          </span>
-        );
-      },
     },
     {
       title: "操作",
@@ -268,21 +292,6 @@ export default function PricingManagement() {
       render: (v: number) => <strong style={{ color: "#e2e8f0" }}>{fmtNum(v)}</strong>,
     },
     {
-      title: "计算式",
-      key: "calc_expr",
-      width: 220,
-      render: (_: unknown, row: GbRow) => {
-        if (row.quantity <= 0) {
-          return <span style={{ fontFamily: "monospace", fontSize: 12, color: "#94a3b8" }}>-</span>;
-        }
-        return (
-          <span title="综合单价 = 合价 ÷ 工程量" style={{ fontFamily: "monospace", fontSize: 12, color: "#94a3b8", whiteSpace: "nowrap" }}>
-            {fmtNum(row.amount)} ÷ {fmtNum(row.quantity, 3)} = {fmtNum(row.unitPrice)}
-          </span>
-        );
-      },
-    },
-    {
       title: "操作",
       width: 90,
       fixed: "right",
@@ -302,15 +311,14 @@ export default function PricingManagement() {
       return;
     }
     const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
-    const exprOf = (r: GbRow) => (r.quantity > 0 ? `${fmtNum(r.amount)}÷${fmtNum(r.quantity, 3)}=${fmtNum(r.unitPrice)}` : "-");
     const lines: string[] = [
       "分部分项工程量清单与计价表",
       "依据《建设工程工程量清单计价规范》GB 50500-2013 编制；项目编码依据 GB 50854-2013",
-      ["序号", "项目编码", "项目名称", "项目特征描述", "计量单位", "工程量", "综合单价(元)", "合价(元)", "计算式"].map(esc).join(","),
-      ...gbRows.map((r) => [r.seq, r.code, r.name, r.characteristics, r.unit, fmtNum(r.quantity, 3), fmtNum(r.unitPrice), fmtNum(r.amount), exprOf(r)].map(esc).join(",")),
-      ["", "", "合计（本表）", "", "", "", "", fmtNum(gbTotal), ""].map(esc).join(","),
+      ["序号", "项目编码", "项目名称", "项目特征描述", "计量单位", "工程量", "综合单价(元)", "合价(元)"].map(esc).join(","),
+      ...gbRows.map((r) => [r.seq, r.code, r.name, r.characteristics, r.unit, fmtNum(r.quantity, 3), fmtNum(r.unitPrice), fmtNum(r.amount)].map(esc).join(",")),
+      ["", "", "合计（本表）", "", "", "", "", fmtNum(gbTotal)].map(esc).join(","),
     ];
-    const blob = new Blob([`﻿${lines.join("\r\n")}`], { type: "text/csv;charset=utf-8" });
+    const blob = new Blob([`\ufeff${lines.join("\r\n")}`], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -434,7 +442,7 @@ export default function PricingManagement() {
                 rowKey="boq_item_id"
                 loading={loading}
                 dataSource={summary?.line_results ?? []}
-                scroll={{ x: 1100 }}
+                scroll={{ x: 1120 }}
                 pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }}
                 columns={columns}
                 locale={{
@@ -484,6 +492,38 @@ export default function PricingManagement() {
 
             {provenance.calc_breakdown && (
               <div className="provenance-section">
+                <h4 className="provenance-section-title">计算式</h4>
+                <div className="unit-formula">
+                  <div className="unit-formula-row">
+                    <span className="unit-formula-label">直接费</span>
+                    <code title="各绑定定额直接费按系数加权汇总">
+                      {(provenance.bindings.map((b) => num2(b.direct_cost)).join(" + ") || "0.00")} = {num2(bindingsTotal)}
+                    </code>
+                  </div>
+                  <div className="unit-formula-row">
+                    <span className="unit-formula-label">税前合计</span>
+                    <code title="直接费 + 管理费 + 利润 + 规费">
+                      {num2(provenance.calc_breakdown.direct_cost)} + {num2(provenance.calc_breakdown.management_fee)} + {num2(provenance.calc_breakdown.profit)} + {num2(provenance.calc_breakdown.regulatory_fee)} = {num2(provenance.calc_breakdown.pre_tax_total)}
+                    </code>
+                  </div>
+                  <div className="unit-formula-row">
+                    <span className="unit-formula-label">含税合计</span>
+                    <code title="税前合计 + 税金">
+                      {num2(provenance.calc_breakdown.pre_tax_total)} + {num2(provenance.calc_breakdown.tax)} = {num2(provenance.calc_breakdown.total)}
+                    </code>
+                  </div>
+                  <div className="unit-formula-row">
+                    <span className="unit-formula-label">合价</span>
+                    <code title="综合单价 × 工程量">
+                      {fmt(provenance.unit_price)} × {fmtNum(provenance.boq_quantity)} = {fmt(provenance.calc_total)}
+                    </code>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {provenance.calc_breakdown && (
+              <div className="provenance-section">
                 <h4 className="provenance-section-title">费用分解</h4>
                 <div className="provenance-breakdown">
                   <div><span>直接费</span><strong style={{ color: COST_COLORS.direct }}>{fmt(provenance.calc_breakdown.direct_cost)}</strong></div>
@@ -494,30 +534,66 @@ export default function PricingManagement() {
                   <div><span>税金</span><strong style={{ color: COST_COLORS.tax }}>{fmt(provenance.calc_breakdown.tax)}</strong></div>
                   <div><span>合计</span><strong style={{ color: "#38bdf8" }}>{fmt(provenance.calc_breakdown.total)}</strong></div>
                 </div>
-              </div>
-            )}
-
-            {provenance.bindings.length > 0 && (
-              <div className="provenance-section">
-                <h4 className="provenance-section-title">定额绑定（{provenance.bindings.length} 项）</h4>
-                <div className="provenance-bindings">
-                  {provenance.bindings.map((binding, index) => (
-                    <div key={index} className="provenance-binding-item">
-                      <div className="provenance-binding-head">
-                        <strong>{binding.quota.quota_name}</strong>
-                        <Tag color="blue">{binding.quota.quota_code}</Tag>
-                        <Tag>系数 {fmtNum(binding.coefficient, 3)}</Tag>
+                <div className="quota-price-distribution" style={{ marginTop: 12 }}>
+                  {feeParts.map((p) => (
+                    <div key={p.label} className="quota-price-bar-row">
+                      <span className="quota-price-bar-label">{p.label}</span>
+                      <div className="quota-price-bar-track">
+                        <div className="quota-price-bar-fill" style={{ width: `${p.percent}%`, background: `linear-gradient(90deg, ${p.color}, ${p.color}66)` }} />
                       </div>
-                      <div className="provenance-binding-meta">
-                        <span>单位：{binding.quota.unit}</span>
-                        <span>人工：{fmtNum(binding.quota.labor_qty)}</span>
-                        <span>材料：{fmtNum(binding.quota.material_qty)}</span>
-                        <span>机械：{fmtNum(binding.quota.machine_qty)}</span>
-                        {binding.direct_cost != null && <span>直接费：{fmt(binding.direct_cost)}</span>}
-                      </div>
+                      <strong className="quota-price-bar-count">{fmt(p.value)}</strong>
                     </div>
                   ))}
                 </div>
+                {feeConfigEntries.length > 0 && (
+                  <div className="unit-fee-rates">
+                    {feeConfigEntries.map(([key, value]) => (
+                      <span key={key} className="unit-fee-rate">
+                        {FEE_RATE_LABELS[key] ?? key} {(Number(value) * 100).toFixed(2)}%
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {provenance.bindings.length > 0 ? (
+              <div className="provenance-section">
+                <h4 className="provenance-section-title">定额绑定（{provenance.bindings.length} 项）</h4>
+                <div className="provenance-bindings">
+                  {provenance.bindings.map((binding, index) => {
+                    const share = bindingsTotal > 0 ? Math.round((Number(binding.direct_cost ?? 0) / bindingsTotal) * 100) : 0;
+                    return (
+                      <div key={index} className="provenance-binding-item">
+                        <div className="provenance-binding-head">
+                          <strong>{binding.quota.quota_name}</strong>
+                          <Tag color="blue">{binding.quota.quota_code}</Tag>
+                          <Tag>系数 {fmtNum(binding.coefficient, 3)}</Tag>
+                          {binding.direct_cost != null && <Tag color="cyan">占比 {share}%</Tag>}
+                        </div>
+                        <div className="provenance-binding-meta">
+                          <span>单位：{binding.quota.unit}</span>
+                          <span>人工：{fmtNum(binding.quota.labor_qty)}</span>
+                          <span>材料：{fmtNum(binding.quota.material_qty)}</span>
+                          <span>机械：{fmtNum(binding.quota.machine_qty)}</span>
+                          {binding.direct_cost != null && <span>直接费：{fmt(binding.direct_cost)}</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="provenance-binding-total">
+                  <span>直接费合计</span>
+                  <strong>{fmt(bindingsTotal)}</strong>
+                  {provenance.calc_breakdown && <span>占含税合计 {bindDirectPercent}%</span>}
+                </div>
+              </div>
+            ) : (
+              <div className="provenance-section">
+                <h4 className="provenance-section-title">定额绑定</h4>
+                <p className="provenance-explanation" style={{ margin: 0 }}>
+                  该清单暂未绑定定额，无法计算综合单价。请回到项目工作台的「定额绑定」补充后重新计价。
+                </p>
               </div>
             )}
 

@@ -402,6 +402,16 @@ export default function Dashboard() {
   };
 
   const nextActions = flowSteps.filter((step) => step.current || !step.done).slice(0, 4);
+  const [showAllStages, setShowAllStages] = useState(false);
+  // 折叠模式只看 4 个关键里程碑：立项 / 清单 / 计价 / 归档
+  const keyStages = useMemo(() => {
+    const keys = ["init", "boq", "calc", "archive"];
+    const picked = keys
+      .map((k) => flowSteps.find((s) => s.key === k))
+      .filter((s): s is FlowStep => Boolean(s));
+    return picked.length === keys.length ? picked : flowSteps.slice(0, 4);
+  }, [flowSteps]);
+  const visibleStages = showAllStages ? flowSteps : keyStages;
 
   if (loading) {
     return (
@@ -533,93 +543,6 @@ export default function Dashboard() {
           </div>
         </section>
 
-        <section className="dash-progress-bar-card">
-          <div className="dash-progress-bar-head">
-            <h3>全过程阶段进度</h3>
-            <button className="dash-link-btn" type="button" onClick={() => navigate("/projects")}>
-              查看详情 <span className="material-symbols-outlined">arrow_forward</span>
-            </button>
-          </div>
-          <div className="dash-progress-track-wrap">
-            <div className="dash-progress-track-line" />
-            <div className="dash-progress-track-done" style={{ width: `${pct(flowSteps.filter((s) => s.done).length, flowSteps.length)}%` }} />
-            <div className="dash-progress-nodes">
-              {flowSteps.map((step) => (
-                <button
-                  key={step.key}
-                  type="button"
-                  className={`dash-progress-node${step.done ? " done" : ""}${step.current ? " current" : ""}`}
-                  onClick={() => navigate(step.route)}
-                  title={step.title}
-                >
-                  <span className="dash-progress-dot">
-                    <span className="material-symbols-outlined">{step.done ? "check" : step.icon}</span>
-                  </span>
-                  <span className="dash-progress-label">{step.title}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="dash-charts-grid">
-          <div className="dash-chart-card">
-            <div className="dash-chart-head">
-              <h3><span className="material-symbols-outlined">donut_large</span>造价构成</h3>
-              <span>当前项目</span>
-            </div>
-            <div className="dash-chart-body">
-              <DonutChart data={costComposition} size={200} stroke={22} centerLabel="总造价" />
-              <div className="dash-chart-legend">
-                {costComposition.map((item) => (
-                  <div key={item.label} className="dash-legend-item">
-                    <div className="dash-legend-head">
-                      <span style={{ background: item.color }} />
-                      <em>{item.label}</em>
-                      <span className="dash-legend-pct">{Math.round((item.value / Math.max(1, costComposition.reduce((s, d) => s + d.value, 0))) * 100)}%</span>
-                    </div>
-                    <strong>{money(item.value)}</strong>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="dash-chart-foot">
-              <span className="material-symbols-outlined">lightbulb</span>
-              <p>直接费占比最高，建议关注材料价格波动对总造价的影响。</p>
-              <span className="dash-chart-tag">辅助诊断</span>
-            </div>
-          </div>
-
-          <div className="dash-chart-card">
-            <div className="dash-chart-head">
-              <h3><span className="material-symbols-outlined">trending_up</span>清单项趋势</h3>
-              <span>近 7 天</span>
-            </div>
-            <div className="dash-chart-body column">
-              <BarTrend data={boqTrend} color="#38bdf8" />
-              <div className="dash-trend-meta">
-                <div>
-                  <em>7日新增</em>
-                  <strong>{boqTrend.reduce((a, b) => a + b, 0)}</strong>
-                </div>
-                <div>
-                  <em>日均</em>
-                  <strong>{Math.round(boqTrend.reduce((a, b) => a + b, 0) / boqTrend.length)}</strong>
-                </div>
-                <div>
-                  <em>峰值</em>
-                  <strong>{Math.max(...boqTrend)}</strong>
-                </div>
-              </div>
-            </div>
-            <div className="dash-chart-foot">
-              <span className="material-symbols-outlined">rocket_launch</span>
-              <p>近 7 天清单持续增长，优先处理未绑定项以推进计价。</p>
-              <span className="dash-chart-tag">趋势向上</span>
-            </div>
-          </div>
-        </section>
-
         <section className="dash-projects-card">
           <div className="dash-projects-head">
             <h3>项目概览</h3>
@@ -687,6 +610,98 @@ export default function Dashboard() {
               })}
             </div>
           )}
+        </section>
+
+        <section className="dash-progress-bar-card dash-progress-bar-card--foldable">
+          <div className="dash-progress-bar-head">
+            <h3>全过程阶段进度 <span className="dash-progress-count">{flowSteps.filter((s) => s.done).length}/{flowSteps.length}</span></h3>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <button className="dash-link-btn" type="button" onClick={() => setShowAllStages((v) => !v)}>
+                {showAllStages ? "收起" : "展开 12 阶段"} <span className="material-symbols-outlined">{showAllStages ? "expand_less" : "expand_more"}</span>
+              </button>
+              <button className="dash-link-btn" type="button" onClick={() => navigate("/projects")}>
+                查看详情 <span className="material-symbols-outlined">arrow_forward</span>
+              </button>
+            </div>
+          </div>
+          <div className="dash-progress-track-wrap">
+            <div className="dash-progress-track-line" />
+            <div className="dash-progress-track-done" style={{ width: `${pct(flowSteps.filter((s) => s.done).length, flowSteps.length)}%` }} />
+            <div className={`dash-progress-nodes${showAllStages ? "" : " dash-progress-nodes--key"}`}>
+              {visibleStages.map((step) => (
+                <button
+                  key={step.key}
+                  type="button"
+                  className={`dash-progress-node${step.done ? " done" : ""}${step.current ? " current" : ""}`}
+                  onClick={() => navigate(step.route)}
+                  title={`${step.title} · ${step.metric}`}
+                >
+                  <span className="dash-progress-dot">
+                    <span className="material-symbols-outlined">{step.done ? "check" : step.icon}</span>
+                  </span>
+                  <span className="dash-progress-label">{step.title}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="dash-charts-grid">
+          <div className="dash-chart-card">
+            <div className="dash-chart-head">
+              <h3><span className="material-symbols-outlined">donut_large</span>造价构成</h3>
+              <span>当前项目</span>
+            </div>
+            <div className="dash-chart-body">
+              <DonutChart data={costComposition} size={200} stroke={22} centerLabel="总造价" />
+              <div className="dash-chart-legend">
+                {costComposition.map((item) => (
+                  <div key={item.label} className="dash-legend-item">
+                    <div className="dash-legend-head">
+                      <span style={{ background: item.color }} />
+                      <em>{item.label}</em>
+                      <span className="dash-legend-pct">{Math.round((item.value / Math.max(1, costComposition.reduce((s, d) => s + d.value, 0))) * 100)}%</span>
+                    </div>
+                    <strong>{money(item.value)}</strong>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="dash-chart-foot">
+              <span className="material-symbols-outlined">lightbulb</span>
+              <p>直接费占比最高，建议关注材料价格波动对总造价的影响。</p>
+              <span className="dash-chart-tag">辅助诊断</span>
+            </div>
+          </div>
+
+          <div className="dash-chart-card">
+            <div className="dash-chart-head">
+              <h3><span className="material-symbols-outlined">trending_up</span>清单项趋势</h3>
+              <span>近 7 天</span>
+            </div>
+            <div className="dash-chart-body column">
+              <BarTrend data={boqTrend} color="#38bdf8" />
+              <div className="dash-trend-meta">
+                <div>
+                  <em>7日新增</em>
+                  <strong>{boqTrend.reduce((a, b) => a + b, 0)}</strong>
+                </div>
+                <div>
+                  <em>日均</em>
+                  <strong>{Math.round(boqTrend.reduce((a, b) => a + b, 0) / boqTrend.length)}</strong>
+                </div>
+                <div>
+                  <em>峰值</em>
+                  <strong>{Math.max(...boqTrend)}</strong>
+                </div>
+              </div>
+            </div>
+            <div className="dash-chart-foot">
+              <span className="material-symbols-outlined">rocket_launch</span>
+              <p>近 7 天清单持续增长，优先处理未绑定项以推进计价。</p>
+              <span className="dash-chart-tag">趋势向上</span>
+            </div>
+          </div>
         </section>
 
         <section className="dash-ops-section">

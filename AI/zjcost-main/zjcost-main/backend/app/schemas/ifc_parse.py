@@ -82,3 +82,5 @@ class SaveToProjectResponse(BaseModel):
     matched: int = 0
     skipped: int = 0
     grand_total: float | None = None
+    status: str = "done"  # "processing" | "done" | "error"
+    message: str = ""

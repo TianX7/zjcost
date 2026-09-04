@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════
    筑衡 — 全过程工程造价协同管控平台 / Dark Theme Design System
-   Matches code.html reference: #13a4ec primary, dark surfaces
+   主色 #3d8bff 唯一口径，语义色 success/warning/danger 收敛
    ═══════════════════════════════════════════════════════════════ */
 
 :root {
@@ -8,22 +8,35 @@
   --primary-hover: #5a9cff;
   --accent: #4dd4ff;
   --accent-2: #22c55e;
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --info: #4dd4ff;
 
   --bg: #0d1f3c;
   --bg-surface: #132d52;
   --bg-elevated: #1a3d6a;
   --bg-inset: #0b1a30;
 
-  --border: rgba(80, 160, 255, 0.25);
-  --border-light: rgba(80, 160, 255, 0.16);
+  --border: rgba(80, 160, 255, 0.16);
+  --border-strong: rgba(80, 160, 255, 0.30);
+  --border-light: rgba(80, 160, 255, 0.12);
 
   --text-primary: #e2e8f0;
   --text-secondary: #94a3b8;
-  --text-muted: #64748b;
+  --text-muted: #7d93b2;
 
-  --radius-sm: 4px;
-  --radius: 8px;
-  --radius-lg: 10px;
+  /* 字号层级：H1 24 / H2 18 / H3 14 / 正文 14 / 小字 12 / 说明 11 */
+  --fs-h1: 24px;
+  --fs-h2: 18px;
+  --fs-h3: 14px;
+  --fs-body: 14px;
+  --fs-sm: 12px;
+  --fs-xs: 11px;
+
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 12px;
   --radius-xl: 14px;
 
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
@@ -78,15 +91,16 @@ body::before {
   mask-image: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.35) 45%, transparent 78%);
   -webkit-mask-image: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.35) 45%, transparent 78%);
 }
-/* ============ Tech Decorative Elements ============ */
+/* ============ Tech Decorative Elements（已降噪：粒子/扫描线默认关闭） ============ */
 
-/* Animated floating particles */
+/* Animated floating particles — 造价录入页默认关闭，如需氛围只在 Dashboard 开启 */
 body::after {
   content: '';
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
+  display: none;
   background-image:
     radial-gradient(2px 2px at 10% 20%, rgba(77, 212, 255, 0.35) 0%, transparent 100%),
     radial-gradient(2px 2px at 25% 65%, rgba(61, 139, 255, 0.30) 0%, transparent 100%),
@@ -98,7 +112,6 @@ body::after {
     radial-gradient(1.5px 1.5px at 15% 90%, rgba(96, 165, 250, 0.22) 0%, transparent 100%),
     radial-gradient(2px 2px at 60% 45%, rgba(77, 212, 255, 0.20) 0%, transparent 100%),
     radial-gradient(1.5px 1.5px at 35% 35%, rgba(61, 139, 255, 0.28) 0%, transparent 100%);
-  animation: particle-drift 20s ease-in-out infinite alternate;
 }
 
 @keyframes particle-drift {
@@ -120,8 +133,9 @@ body::after {
   opacity: 0.9;
 }
 
-/* Subtle scan line effect */
+/* Subtle scan line effect — 默认关闭，避免盖住 Modal（z-index 曾为 9999） */
 .tech-scanline {
+  display: none;
   position: fixed;
   top: 0;
   left: 0;
@@ -134,9 +148,8 @@ body::after {
     rgba(77, 212, 255, 0.0) 80%,
     transparent 100%
   );
-  z-index: 9999;
+  z-index: 1;
   pointer-events: none;
-  animation: scanline-sweep 6s linear infinite;
 }
 
 @keyframes scanline-sweep {
@@ -171,7 +184,7 @@ body::after {
   border-right: 1px solid rgba(77, 212, 255, 0.18);
 }
 
-/* Horizontal accent glow line */
+/* Horizontal accent glow line — 降为内容层装饰，不再盖住弹窗 */
 .tech-glow-line {
   position: fixed;
   top: 0;
@@ -185,7 +198,7 @@ body::after {
     rgba(77, 212, 255, 0.25) 70%,
     transparent
   );
-  z-index: 9999;
+  z-index: 1;
   pointer-events: none;
 }
 
@@ -279,6 +292,13 @@ body::after {
 
 .smart-gradient-bg {
   background: linear-gradient(135deg, rgba(34,162,242,0.08), rgba(139,92,246,0.06));
+}
+
+/* ─── 数字等宽：金额/工程量/百分比统一加此类 ─────────────── */
+.num, .boq-section-total-value, .boq-quota-cost, .boq-quota-qty-value,
+.wizard-stat-value, .wizard-grand-total-value, .project-card-id {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
 }
 
 
@@ -543,16 +563,18 @@ body::after {
 }
 
 .content-header-info h2 {
-  font-size: 22px;
+  font-size: var(--fs-h2);
   font-weight: 700;
   color: var(--text-primary);
   margin: 0 0 4px;
+  line-height: 1.3;
 }
 
 .content-header-info p {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   color: var(--text-secondary);
   margin: 0;
+  line-height: 1.5;
 }
 
 .content-header-actions {
@@ -593,11 +615,11 @@ body::after {
   gap: 8px;
   height: 36px;
   padding: 0 16px;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius);
   background: var(--primary);
   color: #fff;
-  font-size: 13px;
-  font-weight: 700;
+  font-size: var(--fs-sm);
+  font-weight: 600;
   letter-spacing: 0.01em;
   font-family: inherit;
   border: none;
@@ -688,7 +710,8 @@ body::after {
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-  padding: 28px 32px;
+  padding: 24px 28px;
+  gap: 20px;
 }
 
 
@@ -714,9 +737,8 @@ body::after {
 }
 
 .project-card:hover {
-  border-color: var(--primary);
+  border-color: var(--border-strong);
   box-shadow: var(--shadow);
-  transform: translateY(-2px);
 }
 
 .project-card-header {
@@ -807,10 +829,11 @@ body::after {
 }
 
 .section-header h1 {
-  font-size: 26px;
+  font-size: var(--fs-h1);
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.02em;
+  line-height: 1.3;
 }
 
 .section-header p {
@@ -833,9 +856,8 @@ body::after {
 }
 
 .stat-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.2);
-  border-color: rgba(34,162,242,0.18);
+  box-shadow: var(--shadow);
+  border-color: var(--border-strong);
 }
 
 .stat-card-icon {
@@ -1101,14 +1123,14 @@ body::after {
   justify-content: space-between;
   padding: 8px 14px;
   margin-bottom: 4px;
-  border-radius: 8px;
-  background: rgba(99, 102, 241, 0.04);
-  border: 1px solid rgba(99, 102, 241, 0.1);
+  border-radius: var(--radius);
+  background: rgba(61, 139, 255, 0.06);
+  border: 1px solid var(--border-light);
   transition: all 0.15s;
 }
 .boq-quota-row:hover {
-  background: rgba(99, 102, 241, 0.08);
-  border-color: rgba(99, 102, 241, 0.2);
+  background: rgba(61, 139, 255, 0.10);
+  border-color: var(--border-strong);
 }
 .boq-quota-row:last-child {
   margin-bottom: 0;
@@ -1121,7 +1143,7 @@ body::after {
 }
 .boq-quota-icon {
   font-size: 16px;
-  color: #6366f1;
+  color: var(--primary);
   margin-right: 4px;
   flex-shrink: 0;
 }
@@ -1619,7 +1641,7 @@ body::after {
   padding: 0 4px;
 }
 
-/* Floating panel */
+/* Floating panel — 背景回归主色系，不再用 #161b22 */
 .smart-float-panel {
   position: fixed;
   bottom: 24px;
@@ -1629,11 +1651,11 @@ body::after {
   height: 520px;
   max-height: calc(100vh - 48px);
   border-radius: 20px;
-  background: rgba(22, 27, 34, 0.92);
+  background: rgba(19, 45, 82, 0.92);
   backdrop-filter: blur(20px) saturate(1.5);
   -webkit-backdrop-filter: blur(20px) saturate(1.5);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 24px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05) inset;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg), 0 0 0 1px rgba(255,255,255,0.05) inset;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -6383,7 +6405,7 @@ html.tour-mode .debug-only {
    ═══════════════════════════════════════════════════════════════ */
 
 .pl-page {
-  gap: 16px;
+  gap: 20px;
 }
 
 .pl-header {
@@ -6397,7 +6419,7 @@ html.tour-mode .debug-only {
 .pl-kpi-strip {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: 16px;
 }
 
 .pl-kpi-item {
@@ -6412,8 +6434,7 @@ html.tour-mode .debug-only {
 }
 
 .pl-kpi-item:hover {
-  border-color: rgba(56, 189, 248, 0.2);
-  transform: translateY(-2px);
+  border-color: var(--border-strong);
 }
 
 .pl-kpi-item > div {
@@ -6504,9 +6525,8 @@ html.tour-mode .debug-only {
 }
 
 .pl-project-card:hover {
-  border-color: rgba(56, 189, 248, 0.3);
-  transform: translateY(-3px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow);
 }
 
 .pl-project-card.archived {

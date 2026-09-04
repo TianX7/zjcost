@@ -22,6 +22,7 @@ DISCIPLINE_ORDER = {
     "光伏": 6,
     "水利灌溉": 7,
     "旧材料": 8,
+    "补充定额": 9,
 }
 
 
@@ -65,7 +66,10 @@ def list_quota_items(
     if chapter:
         q = q.filter(QuotaItem.chapter == chapter)
     if keyword:
-        q = q.filter(QuotaItem.name.contains(keyword))
+        q = q.filter(
+            (QuotaItem.name.contains(keyword))
+            | (QuotaItem.quota_code.contains(keyword))
+        )
     if acquisition_method:
         q = q.filter(QuotaItem.acquisition_method == acquisition_method)
 

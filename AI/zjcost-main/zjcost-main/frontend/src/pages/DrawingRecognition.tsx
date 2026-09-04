@@ -48,10 +48,35 @@ function downloadBlob(blob: Blob, filename: string) {
 }
 
 function confTag(value: number | undefined) {
+  // 全站统一口径：≥80 绿 / ≥60 黄 / 否则红（与定额绑定一致）
   const v = Math.round(Number(value ?? 0) * 100);
-  if (v >= 90) return <Tag color="green" className="dr-conf-tag">{v}%</Tag>;
-  if (v >= 75) return <Tag color="blue" className="dr-conf-tag">{v}%</Tag>;
-  return <Tag color="orange" className="dr-conf-tag">{v}%</Tag>;
+  if (v >= 80) return <Tag color="green" className="dr-conf-tag num">{v}%</Tag>;
+  if (v >= 60) return <Tag color="gold" className="dr-conf-tag num">{v}%</Tag>;
+  return <Tag color="red" className="dr-conf-tag num">{v}%</Tag>;
+}
+
+/** 0-1 小数与 0-100 百分数统一为 0-100 */
+function normPct(value: number | undefined) {
+  const v = Number(value ?? 0);
+  const pct = v <= 1 ? v * 100 : v;
+  return Math.max(0, Math.min(100, Math.round(pct)));
+}
+
+function QualityMetric({ label, pct }: { label: string; pct: number }) {
+  const v = normPct(pct);
+  return (
+    <div className="dr-quality-metric">
+      <span>{label}</span>
+      <strong className="num">{v}%</strong>
+      <span className="dr-metric-bar"><i style={{ width: `${v}%` }} /></span>
+    </div>
+  );
+}
+
+function ringColor(score: number) {
+  if (score >= 85) return "#22c55e";
+  if (score >= 70) return "#38bdf8";
+  return "#f59e0b";
 }
 
 function DisciplinePlaceholderSVG({ discipline }: { discipline: string }) {
@@ -217,7 +242,7 @@ function DisciplinePlaceholderSVG({ discipline }: { discipline: string }) {
   );
 
   switch (discipline) {
-    case "water":
+    case "installation":
       return (
         <svg className="dr-cad-placeholder" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid meet">
           {commonDefs}
@@ -282,288 +307,6 @@ function DisciplinePlaceholderSVG({ discipline }: { discipline: string }) {
             <text x="740" y="350">卫生间</text>
             <text x="260" y="470">主卧</text>
             <text x="740" y="470">次卧</text>
-          </g>
-          {scanLine}{titleBlock}
-        </svg>
-      );
-    case "electrical":
-      return (
-        <svg className="dr-cad-placeholder" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid meet">
-          {commonDefs}
-          {walls}
-          {axes}
-          {dimensions}
-          {elevationMarks}
-          {/* 强电线路（红色实线） */}
-          <g stroke="#ef4444" strokeWidth="1" fill="none" opacity="0.8">
-            <path d="M 200 200 L 380 200 L 380 280 L 620 280 L 620 200 L 860 200" />
-            <path d="M 380 440 L 380 560 L 620 560 L 620 440" />
-            <path d="M 860 440 L 860 560 L 980 560" />
-            <path d="M 200 600 L 380 600 L 380 660 L 620 660" />
-            <path d="M 860 600 L 980 600 L 980 660" />
-          </g>
-          {/* 弱电线路（蓝色虚线） */}
-          <g stroke="#3b82f6" strokeWidth="0.8" fill="none" opacity="0.7" strokeDasharray="4 2">
-            <path d="M 200 240 L 620 240 L 620 360 L 860 360" />
-            <path d="M 380 480 L 620 480 L 620 600" />
-          </g>
-          {/* 配电箱 */}
-          <g stroke="#ef4444" strokeWidth="1.2" fill="rgba(239,68,68,0.08)" opacity="0.9">
-            <rect x="190" y="190" width="24" height="36" />
-            <line x1="190" y1="202" x2="214" y2="202" />
-            <line x1="190" y1="214" x2="214" y2="214" />
-          </g>
-          <g fill="#ef4444" fontSize="8" fontFamily="ui-monospace, monospace" opacity="0.9" textAnchor="middle">
-            <text x="202" y="240">AL-1</text>
-          </g>
-          {/* 弱电箱 */}
-          <g stroke="#3b82f6" strokeWidth="1" fill="rgba(59,130,246,0.08)" opacity="0.85">
-            <rect x="190" y="230" width="20" height="20" />
-          </g>
-          <g fill="#3b82f6" fontSize="7" fontFamily="ui-monospace, monospace" opacity="0.9" textAnchor="middle">
-            <text x="200" y="262">AW-1</text>
-          </g>
-          {/* 灯具（圆圈+十字） */}
-          <g stroke="#fbbf24" strokeWidth="1" fill="none" opacity="0.85">
-            <circle cx="260" cy="360" r="12" /><line x1="248" y1="360" x2="272" y2="360" /><line x1="260" y1="348" x2="260" y2="372" />
-            <circle cx="500" cy="360" r="12" /><line x1="488" y1="360" x2="512" y2="360" /><line x1="500" y1="348" x2="500" y2="372" />
-            <circle cx="740" cy="360" r="12" /><line x1="728" y1="360" x2="752" y2="360" /><line x1="740" y1="348" x2="740" y2="372" />
-            <circle cx="960" cy="360" r="12" /><line x1="948" y1="360" x2="972" y2="360" /><line x1="960" y1="348" x2="960" y2="372" />
-            <circle cx="260" cy="520" r="10" /><line x1="250" y1="520" x2="270" y2="520" /><line x1="260" y1="510" x2="260" y2="530" />
-            <circle cx="500" cy="520" r="10" /><line x1="490" y1="520" x2="510" y2="520" /><line x1="500" y1="510" x2="500" y2="530" />
-            <circle cx="740" cy="520" r="10" /><line x1="730" y1="520" x2="750" y2="520" /><line x1="740" y1="510" x2="740" y2="530" />
-            <circle cx="960" cy="520" r="10" /><line x1="950" y1="520" x2="970" y2="520" /><line x1="960" y1="510" x2="960" y2="530" />
-          </g>
-          {/* 开关（单联/双联） */}
-          <g stroke="#ef4444" strokeWidth="1" fill="none" opacity="0.9">
-            <circle cx="380" cy="300" r="5" /><line x1="380" y1="295" x2="384" y2="291" />
-            <circle cx="620" cy="300" r="5" /><line x1="620" y1="295" x2="624" y2="291" /><line x1="620" y1="295" x2="616" y2="291" />
-            <circle cx="380" cy="460" r="5" /><line x1="380" y1="455" x2="384" y2="451" />
-            <circle cx="860" cy="460" r="5" /><line x1="860" y1="455" x2="864" y2="451" /><line x1="860" y1="455" x2="856" y2="451" />
-          </g>
-          {/* 插座（半圆+短线） */}
-          <g stroke="#ef4444" strokeWidth="1" fill="none" opacity="0.85">
-            <path d="M 250 400 A 6 6 0 0 1 262 400" /><line x1="250" y1="400" x2="262" y2="400" /><line x1="253" y1="404" x2="253" y2="406" /><line x1="259" y1="404" x2="259" y2="406" />
-            <path d="M 490 400 A 6 6 0 0 1 502 400" /><line x1="490" y1="400" x2="502" y2="400" /><line x1="493" y1="404" x2="493" y2="406" /><line x1="499" y1="404" x2="499" y2="406" />
-            <path d="M 730 400 A 6 6 0 0 1 742 400" /><line x1="730" y1="400" x2="742" y2="400" /><line x1="733" y1="404" x2="733" y2="406" /><line x1="739" y1="404" x2="739" y2="406" />
-            <path d="M 950 400 A 6 6 0 0 1 962 400" /><line x1="950" y1="400" x2="962" y2="400" /><line x1="953" y1="404" x2="953" y2="406" /><line x1="959" y1="404" x2="959" y2="406" />
-            <path d="M 250 560 A 6 6 0 0 1 262 560" /><line x1="250" y1="560" x2="262" y2="560" /><line x1="253" y1="564" x2="253" y2="566" /><line x1="259" y1="564" x2="259" y2="566" />
-            <path d="M 730 560 A 6 6 0 0 1 742 560" /><line x1="730" y1="560" x2="742" y2="560" /><line x1="733" y1="564" x2="733" y2="566" /><line x1="739" y1="564" x2="739" y2="566" />
-          </g>
-          {/* 回路编号 */}
-          <g fill="#ef4444" fontSize="7" fontFamily="ui-monospace, monospace" opacity="0.9">
-            <text x="300" y="195">WL1</text>
-            <text x="640" y="195">WL2</text>
-            <text x="400" y="435">WL3</text>
-            <text x="880" y="435">WL4</text>
-            <text x="220" y="595">WL5</text>
-            <text x="880" y="595">WL6</text>
-          </g>
-          <g fill="#3b82f6" fontSize="7" fontFamily="ui-monospace, monospace" opacity="0.85">
-            <text x="300" y="235">WD1</text>
-            <text x="400" y="475">WD2</text>
-          </g>
-          {/* 房间标注 */}
-          <g fill="#94a3b8" fontSize="10" fontFamily="ui-monospace, monospace" opacity="0.7" textAnchor="middle">
-            <text x="260" y="340">客厅</text>
-            <text x="500" y="340">餐厅</text>
-            <text x="740" y="340">主卧</text>
-            <text x="960" y="340">次卧</text>
-            <text x="260" y="500">厨房</text>
-            <text x="500" y="500">卫生间</text>
-            <text x="740" y="500">书房</text>
-            <text x="960" y="500">阳台</text>
-          </g>
-          {scanLine}{titleBlock}
-        </svg>
-      );
-    case "hvac":
-      return (
-        <svg className="dr-cad-placeholder" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid meet">
-          {commonDefs}
-          {walls}
-          {axes}
-          {dimensions}
-          {elevationMarks}
-          {/* 送风管（双线绿色） */}
-          <g stroke="#22c55e" strokeWidth="1.2" fill="none" opacity="0.85">
-            {/* 主干送风管 */}
-            <rect x="180" y="180" width="680" height="24" fill="none" />
-            <line x1="180" y1="180" x2="860" y2="180" /><line x1="180" y1="204" x2="860" y2="204" />
-            <line x1="180" y1="180" x2="180" y2="204" /><line x1="860" y1="180" x2="860" y2="204" />
-            {/* 支管1 */}
-            <rect x="260" y="204" width="16" height="120" fill="none" />
-            <line x1="260" y1="204" x2="276" y2="204" /><line x1="260" y1="324" x2="276" y2="324" />
-            <line x1="260" y1="204" x2="260" y2="324" /><line x1="276" y1="204" x2="276" y2="324" />
-            {/* 支管2 */}
-            <rect x="500" y="204" width="16" height="120" fill="none" />
-            <line x1="500" y1="204" x2="516" y2="204" /><line x1="500" y1="324" x2="516" y2="324" />
-            <line x1="500" y1="204" x2="500" y2="324" /><line x1="516" y1="204" x2="516" y2="324" />
-            {/* 支管3 */}
-            <rect x="740" y="204" width="16" height="120" fill="none" />
-            <line x1="740" y1="204" x2="756" y2="204" /><line x1="740" y1="324" x2="756" y2="324" />
-            <line x1="740" y1="204" x2="740" y2="324" /><line x1="756" y1="204" x2="756" y2="324" />
-            {/* 回风管 */}
-            <rect x="180" y="560" width="680" height="24" fill="none" />
-            <line x1="180" y1="560" x2="860" y2="560" /><line x1="180" y1="584" x2="860" y2="584" />
-            <line x1="180" y1="560" x2="180" y2="584" /><line x1="860" y1="560" x2="860" y2="584" />
-          </g>
-          {/* 回风管（蓝色虚线） */}
-          <g stroke="#3b82f6" strokeWidth="1" fill="none" opacity="0.7" strokeDasharray="6 3">
-            <line x1="268" y1="324" x2="268" y2="560" />
-            <line x1="508" y1="324" x2="508" y2="560" />
-            <line x1="748" y1="324" x2="748" y2="560" />
-          </g>
-          {/* 风口（方形散流器） */}
-          <g stroke="#22c55e" strokeWidth="0.8" fill="none" opacity="0.85">
-            <rect x="252" y="316" width="32" height="10" /><line x1="256" y1="316" x2="256" y2="326" /><line x1="260" y1="316" x2="260" y2="326" /><line x1="264" y1="316" x2="264" y2="326" /><line x1="268" y1="316" x2="268" y2="326" /><line x1="272" y1="316" x2="272" y2="326" /><line x1="276" y1="316" x2="276" y2="326" /><line x1="280" y1="316" x2="280" y2="326" />
-            <rect x="492" y="316" width="32" height="10" /><line x1="496" y1="316" x2="496" y2="326" /><line x1="500" y1="316" x2="500" y2="326" /><line x1="504" y1="316" x2="504" y2="326" /><line x1="508" y1="316" x2="508" y2="326" /><line x1="512" y1="316" x2="512" y2="326" /><line x1="516" y1="316" x2="516" y2="326" /><line x1="520" y1="316" x2="520" y2="326" />
-            <rect x="732" y="316" width="32" height="10" /><line x1="736" y1="316" x2="736" y2="326" /><line x1="740" y1="316" x2="740" y2="326" /><line x1="744" y1="316" x2="744" y2="326" /><line x1="748" y1="316" x2="748" y2="326" /><line x1="752" y1="316" x2="752" y2="326" /><line x1="756" y1="316" x2="756" y2="326" /><line x1="760" y1="316" x2="760" y2="326" />
-          </g>
-          {/* 风机盘管 */}
-          <g stroke="#22c55e" strokeWidth="1" fill="rgba(34,197,94,0.08)" opacity="0.9">
-            <rect x="240" y="440" width="56" height="28" rx="2" />
-            <line x1="248" y1="440" x2="248" y2="468" /><line x1="256" y1="440" x2="256" y2="468" /><line x1="264" y1="440" x2="264" y2="468" /><line x1="272" y1="440" x2="272" y2="468" /><line x1="280" y1="440" x2="280" y2="468" /><line x1="288" y1="440" x2="288" y2="468" />
-            <rect x="480" y="440" width="56" height="28" rx="2" />
-            <line x1="488" y1="440" x2="488" y2="468" /><line x1="496" y1="440" x2="496" y2="468" /><line x1="504" y1="440" x2="504" y2="468" /><line x1="512" y1="440" x2="512" y2="468" /><line x1="520" y1="440" x2="520" y2="468" /><line x1="528" y1="440" x2="528" y2="468" />
-            <rect x="720" y="440" width="56" height="28" rx="2" />
-            <line x1="728" y1="440" x2="728" y2="468" /><line x1="736" y1="440" x2="736" y2="468" /><line x1="744" y1="440" x2="744" y2="468" /><line x1="752" y1="440" x2="752" y2="468" /><line x1="760" y1="440" x2="760" y2="468" /><line x1="768" y1="440" x2="768" y2="468" />
-          </g>
-          {/* 空调机组 */}
-          <g stroke="#22c55e" strokeWidth="1.2" fill="rgba(34,197,94,0.12)" opacity="0.9">
-            <rect x="180" y="160" width="80" height="40" rx="3" />
-            <line x1="200" y1="160" x2="200" y2="200" /><line x1="220" y1="160" x2="220" y2="200" /><line x1="240" y1="160" x2="240" y2="200" />
-          </g>
-          {/* 冷媒管（红色虚线） */}
-          <g stroke="#ef4444" strokeWidth="0.8" fill="none" opacity="0.7" strokeDasharray="3 2">
-            <path d="M 268 440 L 268 380 L 200 380 L 200 200" />
-            <path d="M 508 440 L 508 380 L 220 380" />
-            <path d="M 748 440 L 748 380 L 260 380" />
-          </g>
-          {/* 冷凝水管（蓝色点线） */}
-          <g stroke="#3b82f6" strokeWidth="0.6" fill="none" opacity="0.6" strokeDasharray="2 2">
-            <path d="M 268 468 L 268 540 L 200 540" />
-            <path d="M 508 468 L 508 540 L 200 540" />
-            <path d="M 748 468 L 748 540 L 200 540" />
-          </g>
-          {/* 标注 */}
-          <g fill="#22c55e" fontSize="8" fontFamily="ui-monospace, monospace" opacity="0.9">
-            <text x="220" y="155">AHU-1</text>
-            <text x="268" y="435" textAnchor="middle">FCU-1</text>
-            <text x="508" y="435" textAnchor="middle">FCU-2</text>
-            <text x="748" y="435" textAnchor="middle">FCU-3</text>
-            <text x="520" y="175">送风主管 500×320</text>
-            <text x="520" y="555">回风主管 400×250</text>
-          </g>
-          {/* 房间标注 */}
-          <g fill="#94a3b8" fontSize="10" fontFamily="ui-monospace, monospace" opacity="0.7" textAnchor="middle">
-            <text x="260" y="380">办公室</text>
-            <text x="500" y="380">会议室</text>
-            <text x="740" y="380">接待室</text>
-            <text x="260" y="520">储物间</text>
-            <text x="500" y="520">走廊</text>
-            <text x="740" y="520">设备间</text>
-          </g>
-          {scanLine}{titleBlock}
-        </svg>
-      );
-    case "fire":
-      return (
-        <svg className="dr-cad-placeholder" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid meet">
-          {commonDefs}
-          {walls}
-          {axes}
-          {dimensions}
-          {elevationMarks}
-          {/* 喷淋管线（红色实线） */}
-          <g stroke="#ef4444" strokeWidth="1.2" fill="none" opacity="0.85">
-            {/* 主干管 */}
-            <path d="M 200 200 L 980 200" />
-            <path d="M 200 360 L 980 360" />
-            <path d="M 200 520 L 980 520" />
-            <path d="M 200 640 L 980 640" />
-            {/* 立管连接 */}
-            <line x1="200" y1="200" x2="200" y2="640" />
-            <line x1="980" y1="200" x2="980" y2="640" />
-            {/* 支管 */}
-            <line x1="320" y1="200" x2="320" y2="360" />
-            <line x1="540" y1="200" x2="540" y2="360" />
-            <line x1="760" y1="200" x2="760" y2="360" />
-            <line x1="320" y1="360" x2="320" y2="520" />
-            <line x1="540" y1="360" x2="540" y2="520" />
-            <line x1="760" y1="360" x2="760" y2="520" />
-            <line x1="320" y1="520" x2="320" y2="640" />
-            <line x1="540" y1="520" x2="540" y2="640" />
-            <line x1="760" y1="520" x2="760" y2="640" />
-          </g>
-          {/* 喷头（标准符号：圆圈+Y型） */}
-          <g stroke="#ef4444" strokeWidth="0.8" fill="none" opacity="0.9">
-            <g><circle cx="320" cy="240" r="5" /><line x1="316" y1="244" x2="320" y2="240" /><line x1="324" y1="244" x2="320" y2="240" /></g>
-            <g><circle cx="540" cy="240" r="5" /><line x1="536" y1="244" x2="540" y2="240" /><line x1="544" y1="244" x2="540" y2="240" /></g>
-            <g><circle cx="760" cy="240" r="5" /><line x1="756" y1="244" x2="760" y2="240" /><line x1="764" y1="244" x2="760" y2="240" /></g>
-            <g><circle cx="320" cy="400" r="5" /><line x1="316" y1="404" x2="320" y2="400" /><line x1="324" y1="404" x2="320" y2="400" /></g>
-            <g><circle cx="540" cy="400" r="5" /><line x1="536" y1="404" x2="540" y2="400" /><line x1="544" y1="404" x2="540" y2="400" /></g>
-            <g><circle cx="760" cy="400" r="5" /><line x1="756" y1="404" x2="760" y2="400" /><line x1="764" y1="404" x2="760" y2="400" /></g>
-            <g><circle cx="320" cy="560" r="5" /><line x1="316" y1="564" x2="320" y2="560" /><line x1="324" y1="564" x2="320" y2="560" /></g>
-            <g><circle cx="540" cy="560" r="5" /><line x1="536" y1="564" x2="540" y2="560" /><line x1="544" y1="564" x2="540" y2="560" /></g>
-            <g><circle cx="760" cy="560" r="5" /><line x1="756" y1="564" x2="760" y2="560" /><line x1="764" y1="564" x2="760" y2="560" /></g>
-          </g>
-          {/* 烟感探测器（方形+三角） */}
-          <g stroke="#fbbf24" strokeWidth="0.8" fill="rgba(251,191,36,0.1)" opacity="0.85">
-            <rect x="250" y="280" width="14" height="14" /><line x1="250" y1="280" x2="264" y2="294" /><line x1="264" y1="280" x2="250" y2="294" />
-            <rect x="470" y="280" width="14" height="14" /><line x1="470" y1="280" x2="484" y2="294" /><line x1="484" y1="280" x2="470" y2="294" />
-            <rect x="690" y="280" width="14" height="14" /><line x1="690" y1="280" x2="704" y2="294" /><line x1="704" y1="280" x2="690" y2="294" />
-            <rect x="910" y="280" width="14" height="14" /><line x1="910" y1="280" x2="924" y2="294" /><line x1="924" y1="280" x2="910" y2="294" />
-            <rect x="250" y="440" width="14" height="14" /><line x1="250" y1="440" x2="264" y2="454" /><line x1="264" y1="440" x2="250" y2="454" />
-            <rect x="470" y="440" width="14" height="14" /><line x1="470" y1="440" x2="484" y2="454" /><line x1="484" y1="440" x2="470" y2="454" />
-            <rect x="690" y="440" width="14" height="14" /><line x1="690" y1="440" x2="704" y2="454" /><line x1="704" y1="440" x2="690" y2="454" />
-            <rect x="910" y="440" width="14" height="14" /><line x1="910" y1="440" x2="924" y2="454" /><line x1="924" y1="440" x2="910" y2="454" />
-          </g>
-          {/* 温感探测器（方形+T型） */}
-          <g stroke="#f59e0b" strokeWidth="0.8" fill="rgba(245,158,11,0.1)" opacity="0.85">
-            <rect x="380" y="280" width="14" height="14" /><line x1="387" y1="280" x2="387" y2="294" /><line x1="383" y1="284" x2="391" y2="284" />
-            <rect x="600" y="280" width="14" height="14" /><line x1="607" y1="280" x2="607" y2="294" /><line x1="603" y1="284" x2="611" y2="284" />
-            <rect x="820" y="280" width="14" height="14" /><line x1="827" y1="280" x2="827" y2="294" /><line x1="823" y1="284" x2="831" y2="284" />
-          </g>
-          {/* 消火栓（矩形+对角线） */}
-          <g stroke="#ef4444" strokeWidth="1" fill="rgba(239,68,68,0.1)" opacity="0.9">
-            <rect x="160" y="240" width="24" height="32" /><line x1="160" y1="240" x2="184" y2="272" /><line x1="184" y1="240" x2="160" y2="272" />
-            <rect x="996" y="240" width="24" height="32" /><line x1="996" y1="240" x2="1020" y2="272" /><line x1="1020" y1="240" x2="996" y2="272" />
-            <rect x="160" y="560" width="24" height="32" /><line x1="160" y1="560" x2="184" y2="592" /><line x1="184" y1="560" x2="160" y2="592" />
-            <rect x="996" y="560" width="24" height="32" /><line x1="996" y1="560" x2="1020" y2="592" /><line x1="1020" y1="560" x2="996" y2="592" />
-          </g>
-          {/* 手动报警按钮（方形+圆点） */}
-          <g stroke="#ef4444" strokeWidth="0.8" fill="rgba(239,68,68,0.15)" opacity="0.9">
-            <rect x="170" y="400" width="16" height="16" /><circle cx="178" cy="408" r="3" fill="#ef4444" />
-            <rect x="994" y="400" width="16" height="16" /><circle cx="1002" cy="408" r="3" fill="#ef4444" />
-          </g>
-          {/* 喷淋立管 */}
-          <g fill="none" stroke="#ef4444" strokeWidth="1.2" opacity="0.9">
-            <circle cx="200" cy="200" r="7" /><circle cx="980" cy="200" r="7" />
-          </g>
-          <g fill="#ef4444" fontSize="7" fontFamily="ui-monospace, monospace" opacity="0.9" textAnchor="middle">
-            <text x="200" y="203">ZP-1</text><text x="980" y="203">ZP-2</text>
-          </g>
-          {/* 管径标注 */}
-          <g fill="#ef4444" fontSize="8" fontFamily="ui-monospace, monospace" opacity="0.9">
-            <text x="500" y="195">DN150</text>
-            <text x="500" y="355">DN100</text>
-            <text x="500" y="515">DN80</text>
-            <text x="500" y="635">DN50</text>
-          </g>
-          {/* 图例标注 */}
-          <g fill="#94a3b8" fontSize="8" fontFamily="ui-monospace, monospace" opacity="0.8">
-            <text x="257" y="270" fill="#fbbf24">烟感</text>
-            <text x="387" y="270" fill="#f59e0b">温感</text>
-            <text x="172" y="285">消火栓</text>
-            <text x="172" y="445">手报</text>
-          </g>
-          {/* 房间标注 */}
-          <g fill="#94a3b8" fontSize="10" fontFamily="ui-monospace, monospace" opacity="0.7" textAnchor="middle">
-            <text x="430" y="340">办公区</text>
-            <text x="650" y="340">会议区</text>
-            <text x="430" y="500">仓储区</text>
-            <text x="650" y="500">走廊</text>
           </g>
           {scanLine}{titleBlock}
         </svg>
@@ -677,10 +420,7 @@ type BottomTab = "components" | "boq" | "valuation" | "diagnostics" | null;
 
 const DISCIPLINES = [
   { key: "architecture", icon: "architecture", label: "建筑" },
-  { key: "water", icon: "water_drop", label: "给排水" },
-  { key: "electrical", icon: "bolt", label: "电气" },
-  { key: "hvac", icon: "hvac", label: "暖通" },
-  { key: "fire", icon: "local_fire_department", label: "消防" },
+  { key: "installation", icon: "plumbing", label: "安装" },
 ] as const;
 
 /** 轻量化三维立体识别动效：由若干透视拉伸的线框体块构成建筑体量，配合扫描平面快速复原空间结构观感 */
@@ -988,7 +728,7 @@ export default function DrawingRecognition() {
         if (saved.taskId) setTaskId(saved.taskId);
         if (saved.result) {
           setResult(saved.result);
-          const discKeyMap: Record<string, string> = { civil: "architecture", water: "water", electrical: "electrical", hvac: "hvac", fire: "fire" };
+          const discKeyMap: Record<string, string> = { civil: "architecture", water: "installation", electrical: "installation", hvac: "installation", fire: "installation" };
           const topDisc = (saved.result.disciplines ?? []).find((d) => discKeyMap[d.key]);
           if (topDisc) setActiveDiscipline(discKeyMap[topDisc.key]);
           if (saved.result.valuation?.project_id) setBottomTab("valuation");
@@ -1213,77 +953,81 @@ export default function DrawingRecognition() {
     // 会反复打满主线程，页面表现为卡死。中间轮询一律用轻量数据。
     let fullFetched = false;
     let finalFetched = false;
-    // 快速看图几何（十余秒）与高清原图（数分钟）就绪即拉取，解析未完成也能先看图
-    // （带重试计数：失败自动重试，成功即止）
-    let rasterTries = 0;
-    let geometryTries = 0;
+    // 快速看图几何（十余秒）与高清原图（数分钟）就绪即拉取，解析未完成也能先看图。
+    // 之前仅在 status==="processing" 分支内、且 3 次重试内拉取；解析较快/网络抖动/
+    // 轮询错过 processing 窗口都会永久缺预览。改为：与解析状态解耦，只要就绪就主动
+    // 拉取（成功才置锁，失败下轮继续重试，不设硬上限），杜绝"错过窗口即永久缺失"。
+    let geometryLoaded = false;
+    let rasterLoaded = false;
     timerRef.current = setInterval(async () => {
       try {
         const data = await api.getDrawingResult(id, false);
         failures = 0;
         const recognitionDone = data.status === "done" || data.status === "error";
         const valuationDone = data.valuation_status === "done" || data.valuation_status === "error" || data.valuation_status === "skipped";
+
+        // —— 预览拉取（与 status 无关）：按就绪标记主动拉取，成功即止 ——
+        let latestGeo: { groups: Record<string, number[]>; bbox: [number, number, number, number]; highlights: [number, number, number, number, string][]; texts: [number, number, number, string][] } | null = null;
+        if (!geometryLoaded) {
+          try {
+            const g = await api.getDrawingGeometry(id);
+            const geo = g?.cad_geometry;
+            if (geo?.bbox && geo.bbox.length === 4) {
+              // 接口返回裸数组，规范化为查看器需要的四元组
+              latestGeo = {
+                ...geo,
+                bbox: [geo.bbox[0], geo.bbox[1], geo.bbox[2], geo.bbox[3]] as [number, number, number, number],
+              };
+              geometryLoaded = true;
+            }
+          } catch { /* 几何未就绪(404)或网络抖动：下轮按标记重试 */ }
+        }
+        let latestRaster: { data_url: string; width: number; height: number } | null = null;
+        if (!rasterLoaded) {
+          try {
+            const r = await api.getDrawingRaster(id);
+            if (r?.cad_raster?.data_url) {
+              latestRaster = r.cad_raster;
+              rasterLoaded = true;
+            }
+          } catch { /* 渲染图未就绪(404)或网络抖动：下轮按标记重试 */ }
+        }
+
         if (data.status !== "processing" && !fullFetched) {
           try {
             const full = await api.getDrawingResult(id);
             fullFetched = true;
             setResult((prev) => ({
               ...full,
-              cad_raster: full.cad_raster ?? prev?.cad_raster ?? null,
-              cad_geometry: full.cad_geometry ?? prev?.cad_geometry ?? null,
+              // 完整结果恒把 cad_geometry/cad_raster 置 null，这里用本轮新拉取的覆盖，
+              // 未拉到再回退 prev；确保已就绪的预览不会因终态拉取而丢失。
+              cad_geometry: latestGeo ?? prev?.cad_geometry ?? full.cad_geometry ?? null,
+              cad_raster: latestRaster ?? prev?.cad_raster ?? full.cad_raster ?? null,
             }));
           } catch {
             // 完整结果拉取失败：下一轮重试；本轮先用轻量数据推进状态，
             // 绝不能让 UI 卡在"解析中"（进度条冻结在 93% 的根因）
             setResult((prev) => ({
               ...data,
-              cad_raster: prev?.cad_raster ?? null,
-              cad_geometry: prev?.cad_geometry ?? null,
+              cad_geometry: latestGeo ?? prev?.cad_geometry ?? null,
+              cad_raster: latestRaster ?? prev?.cad_raster ?? null,
             }));
           }
         } else if (recognitionDone && valuationDone && !finalFetched) {
           finalFetched = true;
-          setResult(await api.getDrawingResult(id));
-        } else if (data.status === "processing") {
-          // 高清原图就绪：拉取后前端自动从 WebGL 快速看图切换为原样高清图
-          // （失败自动重试最多 3 次，成功才置位，避免一次网络抖动就永远缺失）
-          if (data.cad_raster_ready && rasterTries < 3) {
-            rasterTries += 1;
-            try {
-              const r = await api.getDrawingRaster(id);
-              if (r.cad_raster?.data_url) {
-                setResult((prev) => ({ ...data, cad_raster: r.cad_raster, cad_geometry: prev?.cad_geometry ?? data.cad_geometry }));
-                return;
-              }
-            } catch { /* 渲染图拉取失败则继续轻量轮询 */ }
-          }
-          // 快速看图几何就绪：WebGL 秒开看图（后端渲染高清原图期间先看线框）
-          if (data.cad_geometry_ready && geometryTries < 3) {
-            geometryTries += 1;
-            try {
-              const g = await api.getDrawingGeometry(id);
-              const geo = g.cad_geometry;
-              if (geo?.bbox && geo.bbox.length === 4) {
-                // 接口返回裸数组，规范化为查看器需要的四元组
-                const normalized = {
-                  ...geo,
-                  bbox: [geo.bbox[0], geo.bbox[1], geo.bbox[2], geo.bbox[3]] as [number, number, number, number],
-                };
-                setResult((prev) => ({ ...data, cad_geometry: normalized, cad_raster: prev?.cad_raster ?? null }));
-                return;
-              }
-            } catch { /* 几何拉取失败则继续轻量轮询 */ }
-          }
-          // 轻量轮询不含大体积数据：保留已提前拉取的渲染图/几何，避免显示闪断
+          const final = await api.getDrawingResult(id);
           setResult((prev) => ({
-            ...data,
-            cad_raster: data.cad_raster ?? prev?.cad_raster ?? null,
-            cad_geometry: data.cad_geometry ?? prev?.cad_geometry ?? null,
+            ...final,
+            cad_geometry: latestGeo ?? prev?.cad_geometry ?? final.cad_geometry ?? null,
+            cad_raster: latestRaster ?? prev?.cad_raster ?? final.cad_raster ?? null,
           }));
         } else {
-          // 识别已完成：只同步计价进度字段，不重复挂载大 SVG
+          // 识别中或尚未到终态：同步进度/计价字段，并保留本轮拉到的预览，
+          // 避免 setResult 覆盖成 null 造成预览闪断/永久缺失
           setResult((prev) => prev ? {
             ...prev,
+            cad_geometry: latestGeo ?? prev.cad_geometry ?? data.cad_geometry ?? null,
+            cad_raster: latestRaster ?? prev.cad_raster ?? data.cad_raster ?? null,
             valuation: data.valuation ?? prev.valuation,
             valuation_status: data.valuation_status,
             valuation_progress: data.valuation_progress,
@@ -1293,8 +1037,8 @@ export default function DrawingRecognition() {
         }
         if (recognitionDone && !componentsShown && data.components?.length > 0) {
           setBottomTab("components");
-          // 解析结果包含给排水/电气/暖通/消防等安装专业时，自动切换到对应专业底图
-          const discKeyMap: Record<string, string> = { civil: "architecture", water: "water", electrical: "electrical", hvac: "hvac", fire: "fire" };
+          // 解析结果包含安装专业时，自动切换到安装专业底图
+          const discKeyMap: Record<string, string> = { civil: "architecture", water: "installation", electrical: "installation", hvac: "installation", fire: "installation" };
           const topDisc = (data.disciplines ?? []).find((d) => discKeyMap[d.key]);
           if (topDisc) setActiveDiscipline(discKeyMap[topDisc.key]);
           componentsShown = true;
@@ -1617,7 +1361,7 @@ export default function DrawingRecognition() {
             ) : fileName ? (
               <span className="dr-topbar-file">{fileName}</span>
             ) : (
-              <span className="dr-topbar-sub">DWG · DXF · PDF · PNG</span>
+              <span className="dr-topbar-sub">DWG · DXF</span>
             )}
           </div>
         </div>
@@ -1665,7 +1409,7 @@ export default function DrawingRecognition() {
         <div className="dr-cad-toolbar">
           {DISCIPLINES.map((disc) => {
             const parsed = (result?.disciplines ?? []).some(
-              (d) => d.key === (disc.key === "architecture" ? "civil" : disc.key),
+              (d) => (disc.key === "architecture" ? d.key === "civil" : ["water", "electrical", "hvac", "fire", "installation"].includes(d.key)),
             );
             return (
               <button
@@ -1716,8 +1460,9 @@ export default function DrawingRecognition() {
             <div className="dr-cad-grid" />
             <div className="dr-cad-vignette" />
 
-            {/* 专业切换底图 */}
+            {/* 专业切换底图（占位示例，非解析结果） */}
             <DisciplinePlaceholderSVG discipline={activeDiscipline} />
+            <div className="dr-cad-demo-badge"><span className="material-symbols-outlined">info</span>示例底图 · 非解析结果</div>
 
             {/* 十字光标 */}
             <div className="dr-cad-crosshair">
@@ -1725,12 +1470,12 @@ export default function DrawingRecognition() {
               <span className="dr-cad-cross-v" />
             </div>
 
-            {/* 状态栏 */}
+            {/* 状态栏（无图纸时不编造坐标/图层/比例） */}
             <div className="dr-cad-statusbar">
-              <span><span className="material-symbols-outlined">grid_on</span>坐标: 0.000, 0.000</span>
+              <span><span className="material-symbols-outlined">grid_on</span>坐标: -</span>
               <span><span className="material-symbols-outlined">straighten</span>单位: mm</span>
-              <span><span className="material-symbols-outlined">layers</span>图层: 0</span>
-              <span><span className="material-symbols-outlined">aspect_ratio</span>比例: 1:100</span>
+              <span><span className="material-symbols-outlined">layers</span>图层: -</span>
+              <span><span className="material-symbols-outlined">aspect_ratio</span>比例: -</span>
               <span className="dr-cad-status-wait"><span className="material-symbols-outlined">hourglass_empty</span>等待图纸</span>
             </div>
 
@@ -1740,7 +1485,7 @@ export default function DrawingRecognition() {
                 <span className="material-symbols-outlined">upload_file</span>
               </div>
               <strong>上传图纸开始辅助解析</strong>
-              <p>支持建筑、给排水、电气、暖通、消防全专业图纸，自动识别构件并套价</p>
+              <p>支持建筑、安装全专业图纸，自动识别构件并套价</p>
               <Upload {...uploadProps}>
                 <Button type="primary" size="large" icon={<CloudUploadOutlined />} loading={uploading}>
                   选择图纸文件
@@ -1754,7 +1499,7 @@ export default function DrawingRecognition() {
                 <span><span className="material-symbols-outlined">looks_3</span>匹配定额</span>
               </div>
               <div className="dr-cad-hint-formats">
-                <span>DWG</span><span>DXF</span><span>PDF</span><span>PNG</span>
+                <span>DWG</span><span>DXF</span>
               </div>
             </div>
           </div>
@@ -1887,15 +1632,19 @@ export default function DrawingRecognition() {
                     <span className={`dr-quality-level level-${result.quality_score.level}`}>{result.quality_score.level} 级</span>
                   </div>
                   <div className="dr-quality-score-row">
-                    <div className="dr-quality-score-ring">
-                      <span className="dr-quality-score-num">{result.quality_score.score}</span>
+                    <div
+                      className="dr-quality-score-ring"
+                      style={{ ["--ring-pct" as string]: result.quality_score.score, ["--ring-color" as string]: ringColor(result.quality_score.score) }}
+                      title={`解析质量 ${result.quality_score.score} 分`}
+                    >
+                      <span className="dr-quality-score-num num">{result.quality_score.score}</span>
                       <span className="dr-quality-score-unit">分</span>
                     </div>
                     <div className="dr-quality-metrics">
-                      <div className="dr-quality-metric"><span>覆盖</span><strong>{Math.round(result.quality_score.coverage * 100)}%</strong></div>
-                      <div className="dr-quality-metric"><span>置信</span><strong>{result.quality_score.avg_confidence}%</strong></div>
-                      <div className="dr-quality-metric"><span>完整</span><strong>{Math.round(result.quality_score.completeness * 100)}%</strong></div>
-                      <div className="dr-quality-metric"><span>规格</span><strong>{Math.round(result.quality_score.spec_extraction_rate * 100)}%</strong></div>
+                      <QualityMetric label="覆盖" pct={result.quality_score.coverage} />
+                      <QualityMetric label="置信" pct={result.quality_score.avg_confidence} />
+                      <QualityMetric label="完整" pct={result.quality_score.completeness} />
+                      <QualityMetric label="规格" pct={result.quality_score.spec_extraction_rate} />
                     </div>
                   </div>
                   {result.quality_score.issues.length > 0 && (
@@ -1979,13 +1728,7 @@ export default function DrawingRecognition() {
               <h3>{bottomTab === "components" ? "识别构件" : bottomTab === "boq" ? "清单建议" : bottomTab === "valuation" ? "计价复核" : "诊断信息"}</h3>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 {bottomTab === "valuation" && result?.valuation?.project_id && (
-                  <Button
-                    type="primary"
-                    size="small"
-                    onClick={() => navigate(`/projects/${result?.valuation?.project_id}`)}
-                  >
-                    进入项目
-                  </Button>
+                  <span className="dr-drawer-hint">入项目请点顶部“进入项目”</span>
                 )}
                 <button type="button" className="dr-drawer-close" onClick={() => setBottomTab(null)}>
                   <span className="material-symbols-outlined">close</span>

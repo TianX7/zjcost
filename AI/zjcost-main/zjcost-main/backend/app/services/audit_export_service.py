@@ -36,7 +36,7 @@ def export_audit_report_pdf(
     logs = (
         db.query(AuditLog)
         .filter(AuditLog.project_id == project_id)
-        .order_by(AuditLog.created_at.desc())
+        .order_by(AuditLog.timestamp.desc())
         .limit(500)
         .all()
     )

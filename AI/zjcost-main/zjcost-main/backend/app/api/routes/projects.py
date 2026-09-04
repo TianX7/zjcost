@@ -60,6 +60,7 @@ def _project_out(p: Project) -> ProjectOut:
         project_type=p.project_type, status=p.status, budget=p.budget,
         start_date=p.start_date, end_date=p.end_date, owner=p.owner,
         standard_type=p.standard_type, language=p.language, currency=p.currency,
+        rule_package_id=p.rule_package_id,
         created_at=p.created_at, updated_at=p.updated_at,
     )
 

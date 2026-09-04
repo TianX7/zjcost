@@ -27,8 +27,12 @@ class QuotaItem(Base):
     applicable_scope: Mapped[str] = mapped_column(Text, nullable=False, default="")  # 适用范围与条件
     chapter: Mapped[str] = mapped_column(String(100), nullable=False, default="")  # 所属章节/分部
     version: Mapped[str] = mapped_column(String(50), nullable=False, default="")  # 定额版本（如"2018通用版"）
-    base_price: Mapped[float] = mapped_column(Float, nullable=False, default=0)  # 定额基价（元）
+    base_price: Mapped[float] = mapped_column(Float, nullable=False, default=0)  # 综合单价（元）= 回收 + 加工 + 运输
     has_resource_details: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 1=有明细
+    # ── 循环材料三级计价（回收价 / 加工价 / 运输价） ──
+    recycle_price: Mapped[float] = mapped_column(Float, nullable=False, default=0)  # 回收价（元/单位）
+    process_price: Mapped[float] = mapped_column(Float, nullable=False, default=0)  # 加工价（元/单位）
+    transport_price: Mapped[float] = mapped_column(Float, nullable=False, default=0)  # 运输价（元/单位）
     # ── 旧材料（遗址修复材料）扩展字段 ──
     # 获取方式：recycle=当地回收旧材料 / reproduce=原材料复现 / 空字符串=普通定额
     acquisition_method: Mapped[str] = mapped_column(

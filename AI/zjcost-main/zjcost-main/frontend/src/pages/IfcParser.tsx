@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Button, Select, Table, Upload, message } from "antd";
+import { Button, Table, Tag, Upload, message } from "antd";
 import type { UploadProps } from "antd";
-import { CloudUploadOutlined, ClearOutlined, DownloadOutlined, FolderAddOutlined, PlayCircleOutlined, SaveOutlined } from "@ant-design/icons";
-import { api, type IfcElement, type IfcTaskStatus, type Project } from "../api";
+import { CloudUploadOutlined, ClearOutlined, DownloadOutlined, FolderAddOutlined } from "@ant-design/icons";
+import { api, type IfcElement, type IfcTaskStatus } from "../api";
 import Ifc3DViewer from "../components/Ifc3DViewer";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import ValuationReview from "../components/ValuationReview";
-import { createSampleProject } from "../sampleProject";
 
 type BottomTab = "elements" | "boq" | "valuation" | "diagnostics" | null;
 
@@ -25,6 +24,14 @@ function downloadBlob(blob: Blob, filename: string) {
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function confTag(value: number | undefined) {
+  // 全站统一口径：≥80 绿 / ≥60 黄 / 否则红（与定额绑定、图纸识别一致）
+  const v = Math.round(Number(value ?? 0) * 100);
+  if (v >= 80) return <Tag color="green" className="num">{v}%</Tag>;
+  if (v >= 60) return <Tag color="gold" className="num">{v}%</Tag>;
+  return <Tag color="red" className="num">{v}%</Tag>;
 }
 
 function toViewerElements(result: IfcTaskStatus | null): IfcElement[] {
@@ -120,15 +127,14 @@ export default function IfcParser() {
   const [taskId, setTaskId] = useState("");
   const [fileName, setFileName] = useState("");
   const [result, setResult] = useState<IfcTaskStatus | null>(null);
-  const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState<number>();
   const [uploading, setUploading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [valuating, setValuating] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [creatingSample, setCreatingTour] = useState(false);
   const [bottomTab, setBottomTab] = useState<BottomTab>(null);
+  const [panelOpen, setPanelOpen] = useState(() => typeof window === "undefined" || window.innerWidth > 1024);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // 解析完成一次后自动触发套价（防重复触发）
+  const autoValuatedRef = useRef(false);
 
   // TEMP: perf-tour loader for browser testing, removed after verification.
   useEffect(() => {
@@ -261,14 +267,7 @@ export default function IfcParser() {
     }
   }, [taskId, fileName, result, projectId, uploading]);
 
-  const loadProjects = async () => {
-    const res = await api.listProjects({ page_size: 100, sort_by: "updated_at", sort_order: "desc" });
-    setProjects(res.items);
-    setProjectId((current) => current ?? res.items[0]?.id);
-  };
-
   useEffect(() => {
-    void loadProjects();
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
@@ -287,13 +286,17 @@ export default function IfcParser() {
         const data = await api.getIfcParseResult(id);
         failures = 0;
         applyStatus(data);
-        if (data.status === "done" || data.status === "error") {
+        if (data.status === "done") {
           if (timerRef.current) clearInterval(timerRef.current);
-          if (data.status === "done") {
-            message.success("IFC 解析完成，模型、构件和清单建议已生成");
-          } else {
-            message.error(data.error || "IFC 解析失败");
+          message.success("IFC 解析完成，正在自动生成清单并套定额...");
+          // 解析完成自动触发套价（仅首次）
+          if (!autoValuatedRef.current) {
+            autoValuatedRef.current = true;
+            void triggerAutoValuation(id);
           }
+        } else if (data.status === "error") {
+          if (timerRef.current) clearInterval(timerRef.current);
+          message.error(data.error || "IFC 解析失败");
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : "查询 IFC 解析任务失败";
@@ -311,6 +314,21 @@ export default function IfcParser() {
         }
       }
     }, 1200);
+  };
+
+  /** 触发自动套价（后端创建独立项目并匹配定额、计价），完成后轮询 */
+  const triggerAutoValuation = async (id: string) => {
+    try {
+      const data = await api.autoValuateIfcParseResult(id);
+      applyStatus(data);
+      if (data.valuation_status === "done" || data.valuation_status === "error" || data.valuation_status === "skipped") {
+        handleValuationResult(data);
+      } else {
+        pollValuation(id);
+      }
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "自动套价提交失败");
+    }
   };
 
   const uploadProps: UploadProps = {
@@ -340,70 +358,42 @@ export default function IfcParser() {
     },
   };
 
-  const runAutoValuation = async () => {
-    if (!taskId || !isDone) return;
-    setValuating(true);
-    try {
-      const data = await api.autoValuateIfcParseResult(taskId);
-      applyStatus(data);
-      message.success("IFC 自动套定额和计价已完成");
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : "IFC 自动套定额失败");
-    } finally {
-      setValuating(false);
-    }
+  /** 轮询等待自动套价后台任务完成 */
+  const pollValuation = (id: string) => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    let failures = 0;
+    timerRef.current = setInterval(async () => {
+      try {
+        const data = await api.getIfcParseResult(id);
+        failures = 0;
+        applyStatus(data);
+        if (data.valuation_status === "done" || data.valuation_status === "error" || data.valuation_status === "skipped") {
+          if (timerRef.current) clearInterval(timerRef.current);
+          handleValuationResult(data);
+        }
+      } catch (err) {
+        failures += 1;
+        if (failures >= 5) {
+          if (timerRef.current) clearInterval(timerRef.current);
+          message.error("轮询套价结果失败，请在项目台账中查看");
+        }
+      }
+    }, 2000);
   };
 
-  const saveToProject = async () => {
-    if (!taskId || !projectId) return;
-    setSaving(true);
-    try {
-      const res = await api.saveIfcToProject(taskId, projectId);
-      message.success(`已保存到项目列表并完成计价：创建 ${res.boq_items_created} 条清单，匹配 ${res.matched} 条定额，合计 ${money(res.grand_total)}`);
-      await loadProjects();
-      navigate(`/projects/${projectId}`);
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : "保存到项目失败");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const saveToNewProject = async () => {
-    if (!taskId || !isDone) return;
-    setSaving(true);
-    try {
-      const baseName = (fileName || "BIM模型").replace(/\.(ifc|ifczip)$/i, "");
-      const project = await api.createProject({
-        name: `${baseName} 工程量套价`,
-        region: "CN",
-        project_type: "building",
-        standard_type: "GB50500",
-        description: "由 IFC 模型解析自动生成的工程量、清单建议和计价项目。",
-      });
-      setProjectId(project.id);
-      const res = await api.saveIfcToProject(taskId, project.id);
-      message.success(`已新建项目并保存 IFC 成果：创建 ${res.boq_items_created} 条清单，匹配 ${res.matched} 条定额，合计 ${money(res.grand_total)}`);
-      await loadProjects();
-      navigate(`/projects/${project.id}`);
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : "新建项目并保存 IFC 失败");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const startSample = async () => {
-    setCreatingTour(true);
-    try {
-      const project = await createSampleProject();
-      message.success("已创建示例项目，可用于保存 IFC 清单");
-      await loadProjects();
-      setProjectId(project.id);
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : "创建示例项目失败");
-    } finally {
-      setCreatingTour(false);
+  /** 处理自动套价完成后的结果展示 */
+  const handleValuationResult = (data: IfcTaskStatus) => {
+    const v = data.valuation;
+    if (data.valuation_status === "error") {
+      message.error(data.valuation_error || "自动套价失败");
+    } else if (data.valuation_status === "skipped") {
+      message.warning(data.valuation_error || "未生成可计价清单");
+    } else if (v?.project_id) {
+      message.success(
+        `自动套价完成：${v.boq_items_created ?? 0} 条清单，匹配 ${v.matched ?? 0} 条定额，右侧可进入项目`,
+      );
+    } else {
+      message.warning("套价已结束但未生成项目");
     }
   };
 
@@ -425,6 +415,7 @@ export default function IfcParser() {
   const resetSession = () => {
     if (timerRef.current) clearInterval(timerRef.current);
     sessionStorage.removeItem(IFC_SESSION_KEY);
+    autoValuatedRef.current = false;
     setTaskId("");
     setFileName("");
     setResult(null);
@@ -450,10 +441,31 @@ export default function IfcParser() {
           {(taskId || result) && (
             <Button icon={<ClearOutlined />} onClick={resetSession}>重新开始</Button>
           )}
-          <Button icon={<PlayCircleOutlined />} loading={valuating} disabled={!taskId || !isDone} onClick={runAutoValuation}>自动套定额</Button>
           <Button icon={<DownloadOutlined />} loading={exporting} disabled={!taskId || !isDone} onClick={exportResult}>导出</Button>
         </div>
       </header>
+
+      {/* KPI 概览条（嵌入 topbar 下方，不占舞台绝对定位） */}
+      {result && (
+        <div className="ifc-float-kpi">
+          <div className="ifc-float-kpi-item">
+            <span className="material-symbols-outlined">widgets</span>
+            <strong>{compCount}</strong><em>构件</em>
+          </div>
+          <div className="ifc-float-kpi-item">
+            <span className="material-symbols-outlined">view_in_ar</span>
+            <strong>{meshCount}</strong><em>网格</em>
+          </div>
+          <div className="ifc-float-kpi-item">
+            <span className="material-symbols-outlined">list_alt</span>
+            <strong>{boqCount}</strong><em>清单</em>
+          </div>
+          <div className="ifc-float-kpi-item">
+            <span className="material-symbols-outlined">payments</span>
+            <strong>{grandTotal != null ? money(grandTotal) : "-"}</strong>
+          </div>
+        </div>
+      )}
 
       {/* 全屏 3D 舞台 */}
       <div className="ifc-stage">
@@ -568,28 +580,6 @@ export default function IfcParser() {
           </div>
         )}
 
-        {/* 左上 KPI 浮层 */}
-        {result && (
-          <div className="ifc-float-kpi">
-            <div className="ifc-float-kpi-item">
-              <span className="material-symbols-outlined">widgets</span>
-              <strong>{compCount}</strong><em>构件</em>
-            </div>
-            <div className="ifc-float-kpi-item">
-              <span className="material-symbols-outlined">view_in_ar</span>
-              <strong>{meshCount}</strong><em>网格</em>
-            </div>
-            <div className="ifc-float-kpi-item">
-              <span className="material-symbols-outlined">list_alt</span>
-              <strong>{boqCount}</strong><em>清单</em>
-            </div>
-            <div className="ifc-float-kpi-item">
-              <span className="material-symbols-outlined">payments</span>
-              <strong>{grandTotal != null ? money(grandTotal) : "-"}</strong>
-            </div>
-          </div>
-        )}
-
         {/* 左下进度浮层 */}
         {showProgress && (progress > 0 || uploading) && (
           <div className="ifc-float-progress">
@@ -603,8 +593,18 @@ export default function IfcParser() {
           </div>
         )}
 
-        {/* 右侧浮动面板 */}
+        {/* 右侧浮动面板（可收起，小屏默认收起避免遮挡 3D） */}
         {result && (
+          <button
+            type="button"
+            className={`ifc-panel-toggle${panelOpen ? " is-open" : ""}`}
+            onClick={() => setPanelOpen((v) => !v)}
+            title={panelOpen ? "收起面板" : "展开面板"}
+          >
+            <span className="material-symbols-outlined">{panelOpen ? "chevron_right" : "chevron_left"}</span>
+          </button>
+        )}
+        {result && panelOpen && (
           <div className="ifc-float-panel">
             {/* 任务概览 */}
             <div className="ifc-panel-card">
@@ -620,39 +620,48 @@ export default function IfcParser() {
               {result.valuation_error && <div className="ifc-diag-list" style={{ marginTop: 10 }}><div className="ifc-diag-item"><span className="material-symbols-outlined">warning</span>{result.valuation_error}</div></div>}
             </div>
 
-            {/* 构件分类 */}
+            {/* 自动套价生成的项目链接 */}
+            {result.valuation?.project_id && (
+              <div className="ifc-panel-card ifc-panel-card-highlight">
+                <h3><span className="material-symbols-outlined">check_circle</span>套价结果</h3>
+                <div className="ifc-panel-meta">
+                  <div className="ifc-panel-meta-item"><span>清单</span><strong className="num">{result.valuation.boq_items_created ?? 0} 条</strong></div>
+                  <div className="ifc-panel-meta-item"><span>已套定额</span><strong className="num">{result.valuation.matched ?? 0}</strong></div>
+                  <div className="ifc-panel-meta-item"><span>合计</span><strong className="num">{money(result.valuation.grand_total)}</strong></div>
+                </div>
+                <Button
+                  type="primary"
+                  icon={<FolderAddOutlined />}
+                  onClick={() => navigate(`/projects/${result.valuation!.project_id}`)}
+                  style={{ width: "100%", marginTop: 8 }}
+                >
+                  前往套价项目
+                </Button>
+              </div>
+            )}
+
+            {/* 构件分类（含占比） */}
             {byType.length > 0 && (
               <div className="ifc-panel-card">
                 <h3><span className="material-symbols-outlined">category</span>构件分类</h3>
                 <div className="ifc-type-list">
-                  {byType.map((item) => (
-                    <div className="ifc-type-row" key={item.type}>
-                      <span className="ifc-type-name">{item.type}</span>
-                      <span className="ifc-type-count">{item.count}</span>
-                    </div>
-                  ))}
+                  {(() => {
+                    const total = byType.reduce((s, item) => s + Number(item.count ?? 0), 0);
+                    return byType.map((item) => {
+                      const ratio = total > 0 ? Math.round((Number(item.count ?? 0) / total) * 100) : 0;
+                      return (
+                        <div className="ifc-type-row" key={item.type} title={`${item.count} 个 · ${ratio}%`}>
+                          <span className="ifc-type-name">{item.type}</span>
+                          <span className="ifc-type-bar"><i style={{ width: `${ratio}%` }} /></span>
+                          <span className="ifc-type-count num">{item.count}</span>
+                          <span className="ifc-type-ratio num">{ratio}%</span>
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
               </div>
             )}
-
-            {/* 保存到项目 */}
-            <div className="ifc-panel-card">
-              <h3><span className="material-symbols-outlined">save</span>保存到项目</h3>
-              <div className="ifc-save-row">
-                <Select
-                  placeholder="选择项目"
-                  value={projectId}
-                  options={projects.map((project) => ({ value: project.id, label: project.name }))}
-                  onChange={setProjectId}
-                />
-                <div className="ifc-save-actions">
-                  <Button icon={<FolderAddOutlined />} loading={creatingSample} onClick={startSample}>导览</Button>
-                  <Button loading={saving} disabled={!taskId || !isDone} onClick={saveToNewProject}>新建</Button>
-                  <Button type="primary" icon={<SaveOutlined />} loading={saving} disabled={!taskId || !isDone || !projectId} onClick={saveToProject}>保存</Button>
-                </div>
-                <p className="ifc-save-hint">保存后形成独立 BIM 算量项目，可继续复核定额与导出报表。</p>
-              </div>
-            </div>
           </div>
         )}
 
@@ -686,7 +695,7 @@ export default function IfcParser() {
                     { title: "长", dataIndex: "length", width: 90, render: (value: number) => Number(value ?? 0).toFixed(2) },
                     { title: "宽", dataIndex: "width", width: 90, render: (value: number) => Number(value ?? 0).toFixed(2) },
                     { title: "高", dataIndex: "height", width: 90, render: (value: number) => Number(value ?? 0).toFixed(2) },
-                    { title: "置信度", dataIndex: "confidence", width: 100, render: (value: number) => `${Math.round(Number(value ?? 0) * 100)}%` },
+                    { title: "置信度", dataIndex: "confidence", width: 100, render: (value: number) => confTag(value) },
                   ]}
                 />
               )}
@@ -703,7 +712,7 @@ export default function IfcParser() {
                     { title: "单位", dataIndex: "suggested_unit", width: 80 },
                     { title: "工程量", dataIndex: "suggested_quantity", width: 120, render: (value: number) => Number(value ?? 0).toFixed(3) },
                     { title: "构件数", dataIndex: "element_count", width: 90 },
-                    { title: "置信度", dataIndex: "confidence", width: 100, render: (value: number) => `${Math.round(Number(value ?? 0) * 100)}%` },
+                    { title: "置信度", dataIndex: "confidence", width: 100, render: (value: number) => confTag(value) },
                     { title: "项目特征", dataIndex: "characteristics", ellipsis: true },
                   ]}
                 />

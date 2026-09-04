@@ -33,7 +33,10 @@ class OldMaterialBase(BaseModel):
     labor_qty: float = Field(0, ge=0, description="人工消耗量")
     material_qty: float = Field(0, ge=0, description="材料消耗量")
     machine_qty: float = Field(0, ge=0, description="机械消耗量")
-    base_price: float = Field(0, ge=0, description="基价（元）")
+    base_price: float = Field(0, ge=0, description="综合单价（元）= 回收 + 加工 + 运输")
+    recycle_price: float = Field(0, ge=0, description="回收价（元）")
+    process_price: float = Field(0, ge=0, description="加工价（元）")
+    transport_price: float = Field(0, ge=0, description="运输价（元）")
     chapter: str = Field("", description="所属章节")
     version: str = Field("", description="定额版本")
     work_content: str = Field("", description="工作内容")
@@ -68,6 +71,9 @@ class OldMaterialUpdatePayload(BaseModel):
     material_qty: float | None = Field(None, ge=0)
     machine_qty: float | None = Field(None, ge=0)
     base_price: float | None = Field(None, ge=0)
+    recycle_price: float | None = Field(None, ge=0)
+    process_price: float | None = Field(None, ge=0)
+    transport_price: float | None = Field(None, ge=0)
     chapter: str | None = None
     version: str | None = None
     work_content: str | None = None
@@ -92,6 +98,9 @@ def _to_dict(item: QuotaItem) -> dict:
         "material_qty": item.material_qty,
         "machine_qty": item.machine_qty,
         "base_price": item.base_price,
+        "recycle_price": getattr(item, "recycle_price", 0) or 0,
+        "process_price": getattr(item, "process_price", 0) or 0,
+        "transport_price": getattr(item, "transport_price", 0) or 0,
         "chapter": item.chapter,
         "version": item.version,
         "work_content": item.work_content,
@@ -389,6 +398,11 @@ def create_old_material(
 
     data = payload.model_dump()
     data["discipline"] = OLD_MATERIAL_DISCIPLINE
+    # 三级计价自动汇总综合单价：任一档价 >0 时综合单价 = 回收 + 加工 + 运输
+    if any(data.get(k, 0) > 0 for k in ("recycle_price", "process_price", "transport_price")):
+        data["base_price"] = (
+            data.get("recycle_price", 0) + data.get("process_price", 0) + data.get("transport_price", 0)
+        )
 
     if existing is None:
         item = QuotaItem(**data)
@@ -430,6 +444,12 @@ def update_old_material(
 
     for key, value in updates.items():
         setattr(item, key, value)
+
+    # 三级计价联动：改任意一档价后重新汇总综合单价 = 回收 + 加工 + 运输
+    if any(k in updates for k in ("recycle_price", "process_price", "transport_price")):
+        item.base_price = (
+            (item.recycle_price or 0) + (item.process_price or 0) + (item.transport_price or 0)
+        )
 
     db.commit()
     db.refresh(item)

@@ -4,7 +4,7 @@ import { CloudSyncOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, RiseOutli
 import type { MaterialPrice, PriceSourceInfo, SourceHealthInfo, PreviewPriceItem, FetchResult } from "../api";
 import { api } from "../api";
 
-function useCountUp(target: number, duration = 700) {
+function useCountUp(target: number, duration = 700, digits = 0) {
   const [val, setVal] = useState(0);
   const prev = useRef(0);
   useEffect(() => {
@@ -16,13 +16,14 @@ function useCountUp(target: number, duration = 700) {
     const step = (now: number) => {
       const p = Math.min((now - t0) / duration, 1);
       const eased = 1 - Math.pow(1 - p, 3);
-      setVal(Math.round(start + diff * eased));
+      const next = start + diff * eased;
+      setVal(digits > 0 ? Number(next.toFixed(digits)) : Math.round(next));
       if (p < 1) raf = requestAnimationFrame(step);
     };
     raf = requestAnimationFrame(step);
     prev.current = target;
     return () => cancelAnimationFrame(raf);
-  }, [target, duration]);
+  }, [target, duration, digits]);
   return val;
 }
 
@@ -130,16 +131,22 @@ export default function PriceManagement() {
   }, [materials, sources]);
 
   const animTotal = useCountUp(overview.total);
-  const animAvg = useCountUp(Math.round(overview.avg));
+  const animAvg = useCountUp(overview.avg, 700, 2);
   const animSources = useCountUp(overview.availableSources);
 
   const create = async () => {
-    const values = await form.validateFields();
-    await api.createMaterialPrice({ ...values, effective_date: values.effective_date || new Date().toISOString().slice(0, 10) });
-    message.success("材料价格已新增");
-    setOpen(false);
-    form.resetFields();
-    await load();
+    try {
+      const values = await form.validateFields();
+      await api.createMaterialPrice({ ...values, effective_date: values.effective_date || new Date().toISOString().slice(0, 10) });
+      message.success("材料价格已新增");
+      setOpen(false);
+      form.resetFields();
+      await load();
+    } catch (err) {
+      // 表单校验不通过时静默（表单已标红）；仅接口失败才提示
+      if (err && typeof err === "object" && "errorFields" in err) return;
+      message.error(err instanceof Error ? err.message : "新增材料价格失败");
+    }
   };
 
   // 真实采集：基于选中的源逐个采集，实时更新进度和结果
@@ -185,6 +192,11 @@ export default function PriceManagement() {
 
     const totalFetched = results.reduce((sum, r) => sum + r.fetched, 0);
     const totalSaved = results.reduce((sum, r) => sum + r.new_or_updated, 0);
+    const failed = results.filter((r) => r.error);
+    if (failed.length > 0) {
+      const names = failed.map((r) => SOURCE_LABELS[r.source_name] ?? r.source_name).join("、");
+      setLastFetchError(`${names}：${failed[0].error}${failed.length > 1 ? ` 等 ${failed.length} 个源失败` : ""}`);
+    }
     if (totalFetched > 0) {
       message.success(`采集完成：共 ${totalFetched} 条，新增/更新 ${totalSaved} 条`);
     } else {
@@ -531,6 +543,7 @@ export default function PriceManagement() {
                       rowKey="id"
                       loading={loading}
                       dataSource={materials}
+                      pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }}
                       locale={{
                         emptyText: (
                           <Empty description="暂无材料市场价。可联网采集，也可手工补录关键材料价。">
@@ -554,10 +567,12 @@ export default function PriceManagement() {
                             const { rate } = pseudoTrend(row.id, Number(row.unit_price ?? 0));
                             const up = rate >= 0;
                             return (
-                              <Tag color={up ? "red" : "green"} style={{ display: "flex", alignItems: "center", gap: 4, width: "fit-content" }}>
-                                {up ? <RiseOutlined /> : <FallOutlined />}
-                                <span>{`${(Math.abs(rate) * 100).toFixed(2)}%`}</span>
-                              </Tag>
+                              <Tooltip title="示例涨跌幅（由价格ID估算），仅供参考；接入历史价格后将按真实环比计算">
+                                <Tag color={up ? "red" : "green"} style={{ display: "flex", alignItems: "center", gap: 4, width: "fit-content" }}>
+                                  {up ? <RiseOutlined /> : <FallOutlined />}
+                                  <span>{`${(Math.abs(rate) * 100).toFixed(2)}%`}</span>
+                                </Tag>
+                              </Tooltip>
                             );
                           },
                         },

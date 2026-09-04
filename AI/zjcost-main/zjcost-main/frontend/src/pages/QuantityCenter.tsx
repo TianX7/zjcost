@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Empty, Select, Spin, Tag } from "antd";
+import { useNavigate } from "react-router-dom";
+import { Alert, Button, Empty, Select, Space, Spin, Table, Tag, Typography } from "antd";
+import { DownloadOutlined, ReloadOutlined } from "@ant-design/icons";
 import PageHeader from "../components/PageHeader";
-import { api, type CalcSummary, type Project } from "../api";
+import { api, type CalcSummary, type LineCalcResult, type Project } from "../api";
 
 /**
  * 《房屋建筑与装饰工程工程量计算规范》GB 50854-2013 附录标准分项类目。
@@ -38,11 +40,11 @@ function fmtMoney(n: number) {
 }
 
 export default function QuantityCenter() {
+  const navigate = useNavigate();
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState<number | null>(null);
   const [summary, setSummary] = useState<CalcSummary | null>(null);
   const [loading, setLoading] = useState(false);
-  const [scanning, setScanning] = useState(true);
 
   useEffect(() => {
     let mounted = true;
@@ -57,37 +59,45 @@ export default function QuantityCenter() {
         /* 项目列表不可用时仅展示标准分类 */
       }
     })();
-    const t = setTimeout(() => setScanning(false), 2600);
-    return () => { mounted = false; clearTimeout(t); };
+    return () => { mounted = false; };
   }, []);
+
+  const reload = async () => {
+    if (projectId == null) return;
+    setLoading(true);
+    try {
+      setSummary(await api.getCalcSummary(projectId));
+    } catch {
+      setSummary(null);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (projectId == null) return;
     let mounted = true;
     setLoading(true);
     setSummary(null);
-    setScanning(true);
     api
       .getCalcSummary(projectId)
-      .then((data) => {
-        if (!mounted) return;
-        setSummary(data);
-      })
+      .then((data) => { if (mounted) setSummary(data); })
       .catch(() => { if (mounted) setSummary(null); })
-      .finally(() => { if (mounted) { setLoading(false); setTimeout(() => setScanning(false), 900); } });
+      .finally(() => { if (mounted) setLoading(false); });
     return () => { mounted = false; };
   }, [projectId]);
 
-  // 按 GB 50854 / GB 50856 标准分项归集：清单编码六位段匹配
+  // 按 GB 50854 / GB 50856 标准分项归集：清单编码六位段匹配。
+  // 诚实口径：匹配不上的如实列为“未落入”，绝不按比例编造分布。
   const buckets = useMemo(() => {
     const lines = summary?.line_results ?? [];
     const map = new Map<string, { count: number; amount: number }>(ALL_CATEGORIES.map((c) => [c.key, { count: 0, amount: 0 }]));
-    let others = 0;
+    const unmatched: LineCalcResult[] = [];
     for (const line of lines) {
       const code = String(line.boq_code ?? "").replace(/\D/g, "");
       const cat = ALL_CATEGORIES.find((c) => c.prefixes.some((p) => code.startsWith(p)));
       if (!cat) {
-        others += 1;
+        unmatched.push(line);
         continue;
       }
       const entry = map.get(cat.key);
@@ -96,32 +106,37 @@ export default function QuantityCenter() {
         entry.amount += line.total ?? 0;
       }
     }
-    const computed = ALL_CATEGORIES.map((c) => ({ ...c, ...map.get(c.key)! }));
-    // fallback：若完全按编码匹配不到，按面积比例展示国标分类结构（标注为结构预览）
-    const isFallback = lines.length > 0 && computed.every((c) => c.count === 0);
-    const fallbackRatios = [0.06, 0.03, 0.10, 0.07, 0.26, 0.05, 0.04, 0.22, 0.07, 0.05, 0.03, 0.02];
-    const fallback: Record<string, { count: number; amount: number }> = isFallback
-      ? Object.fromEntries(
-          ALL_CATEGORIES.map((c, i) => {
-            const ratio = fallbackRatios[((i % fallbackRatios.length) + fallbackRatios.length) % fallbackRatios.length];
-            const amt = (summary!.grand_total ?? 0) * ratio;
-            return [c.key, { count: Math.max(1, Math.round(lines.length * ratio)), amount: amt }];
-          }),
-        )
-      : {};
-    return {
-      rows: isFallback ? ALL_CATEGORIES.map((c) => ({ ...c, ...fallback[c.key] })) : computed,
-      isFallback,
-      others,
-      totalItems: lines.length,
-    };
+    const rows = ALL_CATEGORIES.map((c) => ({ ...c, ...map.get(c.key)! }));
+    const matched = lines.length - unmatched.length;
+    return { rows, unmatched, matched, totalItems: lines.length };
   }, [summary]);
 
   const totalAmount = buckets.rows.reduce((s, r) => s + (r.amount ?? 0), 0);
+  const projectName = projects.find((p) => p.id === projectId)?.name ?? "";
+  const allUnmatched = buckets.totalItems > 0 && buckets.matched === 0;
+
+  const openBoq = () => {
+    if (projectId != null) navigate(`/projects/${projectId}?tab=boq`);
+  };
+
+  const exportCsv = () => {
+    const head = "分类,编码范围,清单项数,金额(元),占比(%)";
+    const lines = buckets.rows.map((r) => {
+      const ratio = totalAmount > 0 ? Math.round(((r.amount ?? 0) / totalAmount) * 100) : 0;
+      return `${r.name},${r.codeRange},${r.count},${(r.amount ?? 0).toFixed(2)},${ratio}`;
+    });
+    lines.push(`未落入分类,,${buckets.unmatched.length},${buckets.unmatched.reduce((s, l) => s + (l.total ?? 0), 0).toFixed(2)},`);
+    const blob = new Blob(["\uFEFF" + [head, ...lines].join("\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `算量归集_${projectName || "全部"}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="page-container qc-root">
-      <div className={`qc-scan-bar${scanning ? " is-on" : ""}`} />
       <PageHeader
         icon="square_foot"
         title="算量中心"
@@ -129,27 +144,95 @@ export default function QuantityCenter() {
       />
 
       <div className="qc-toolbar">
-        <span className="qc-toolbar-label"><span className="material-symbols-outlined">account_tree</span>归集项目</span>
-        {projects.length > 0 ? (
-          <Select
-            className="qc-project-select"
-            value={projectId ?? undefined}
-            onChange={setProjectId}
-            options={projects.map((p) => ({ value: p.id, label: p.name }))}
-            style={{ minWidth: 260 }}
-          />
-        ) : (
-          <Tag color="blue">暂无项目，展示标准类目框架</Tag>
-        )}
-        {summary && <Tag color="cyan">清单 {buckets.totalItems} 项 · 造价合计 {fmtMoney(summary.grand_total)}</Tag>}
+        <Space wrap>
+          <span className="qc-toolbar-label"><span className="material-symbols-outlined">account_tree</span>归集项目</span>
+          {projects.length > 0 ? (
+            <Select
+              className="qc-project-select"
+              value={projectId ?? undefined}
+              onChange={setProjectId}
+              options={projects.map((p) => ({ value: p.id, label: p.name }))}
+              style={{ minWidth: 260 }}
+              showSearch
+              optionFilterProp="label"
+              placeholder="选择项目"
+            />
+          ) : (
+            <Tag color="blue">暂无项目，展示标准类目框架</Tag>
+          )}
+          {summary && <Tag color="blue">清单 {buckets.totalItems} 项 · 造价合计 {fmtMoney(summary.grand_total)}</Tag>}
+        </Space>
+        <Space wrap>
+          <Button icon={<ReloadOutlined />} loading={loading} onClick={reload}>刷新</Button>
+          <Button icon={<DownloadOutlined />} disabled={!summary} onClick={exportCsv}>导出 CSV</Button>
+        </Space>
       </div>
+
+      {summary && (
+        <div className="kpi-grid">
+          <div className="kpi-card">
+            <span className="material-symbols-outlined kpi-card-icon">list_alt</span>
+            <div className="kpi-card-body">
+              <span className="kpi-card-label">清单总数</span>
+              <span className="kpi-card-value num">{buckets.totalItems}</span>
+            </div>
+          </div>
+          <div className="kpi-card">
+            <span className="material-symbols-outlined kpi-card-icon" style={{ color: "#22c55e", background: "rgba(34,197,94,0.12)", borderColor: "rgba(34,197,94,0.2)" }}>check_circle</span>
+            <div className="kpi-card-body">
+              <span className="kpi-card-label">已归集</span>
+              <span className="kpi-card-value num">{buckets.matched}</span>
+            </div>
+          </div>
+          <div className="kpi-card">
+            <span
+              className="material-symbols-outlined kpi-card-icon"
+              style={buckets.unmatched.length > 0
+                ? { color: "#f87171", background: "rgba(248,113,113,0.12)", borderColor: "rgba(248,113,113,0.2)" }
+                : undefined}
+            >
+              warning
+            </span>
+            <div className="kpi-card-body">
+              <span className="kpi-card-label">未落入分类</span>
+              <span className="kpi-card-value num" style={buckets.unmatched.length > 0 ? { color: "#f87171" } : undefined}>
+                {buckets.unmatched.length}
+              </span>
+            </div>
+          </div>
+          <div className="kpi-card">
+            <span className="material-symbols-outlined kpi-card-icon">payments</span>
+            <div className="kpi-card-body">
+              <span className="kpi-card-label">造价合计</span>
+              <span className="kpi-card-value num">{fmtMoney(summary.grand_total)}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {summary && allUnmatched && (
+        <Alert
+          type="warning"
+          showIcon
+          message="编码未按国标分类段填写，无法归集"
+          description="当前项目清单编码均未命中 GB 50854 / GB 50856 分类段，各分类如实显示为 0。请为清单补齐国标编码后自动归位，切勿按占比估算。"
+        />
+      )}
 
       <Spin spinning={loading}>
         <div className="qc-category-grid">
           {buckets.rows.map((cat, idx) => {
             const ratio = totalAmount > 0 ? Math.round(((cat.amount ?? 0) / totalAmount) * 100) : 0;
             return (
-              <div key={cat.key} className="qc-category-card" style={{ animationDelay: `${idx * 0.08}s` }}>
+              <button
+                key={cat.key}
+                type="button"
+                className="qc-category-card qc-clickable"
+                style={{ animationDelay: `${Math.min(idx, 11) * 0.05}s` }}
+                onClick={openBoq}
+                title={projectId != null ? "点击进入项目清单" : cat.name}
+                disabled={projectId == null}
+              >
                 <div className="qc-category-head">
                   <span className="material-symbols-outlined qc-category-icon">{cat.icon}</span>
                   <div>
@@ -158,22 +241,40 @@ export default function QuantityCenter() {
                   </div>
                 </div>
                 <div className="qc-category-stats">
-                  <div><em>清单项</em><strong>{cat.count}</strong></div>
-                  <div><em>金额</em><strong>{fmtMoney(cat.amount)}</strong></div>
-                  <div><em>占比</em><strong>{ratio}%</strong></div>
+                  <div><em>清单项</em><strong className="num">{cat.count}</strong></div>
+                  <div><em>金额</em><strong className="num">{fmtMoney(cat.amount)}</strong></div>
+                  <div><em>占比</em><strong className="num">{ratio}%</strong></div>
                 </div>
                 <div className="qc-category-meter">
                   <span style={{ width: `${Math.max(ratio, cat.count > 0 ? 3 : 0)}%` }} />
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>
-        {buckets.isFallback && summary && (
-          <p className="qc-fallback-note">清单编码未按国标分类段填写时已按造价构成占比分布预览；请为清单补齐 GB 50500/50854 标准编码后自动归位。</p>
-        )}
-        {buckets.others > 0 && <p className="qc-fallback-note">另有 {buckets.others} 项编码未落入 GB 50854 / GB 50856 分类范围（可能属措施或其他专业项目），未纳入本统计。</p>}
       </Spin>
+
+      {buckets.unmatched.length > 0 && (
+        <div className="content-card">
+          <div className="content-card-head">
+            <h3 className="content-card-title"><span className="material-symbols-outlined">warning</span>未落入分类的清单（{buckets.unmatched.length} 项）</h3>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>可能属措施或其他专业项目，请核对编码</Typography.Text>
+          </div>
+          <div className="content-card-body flush">
+            <Table
+              rowKey="boq_item_id"
+              size="small"
+              dataSource={buckets.unmatched}
+              pagination={{ pageSize: 8, showTotal: (t) => `共 ${t} 项` }}
+              columns={[
+                { title: "编码", dataIndex: "boq_code", width: 130, ellipsis: true },
+                { title: "名称", dataIndex: "boq_name", ellipsis: true },
+                { title: "合价", dataIndex: "total", width: 140, align: "right", render: (v: number) => <span className="num">{fmtMoney(v ?? 0)}</span> },
+              ]}
+            />
+          </div>
+        </div>
+      )}
 
       {!summary && !loading && projects.length === 0 && (
         <Empty description="暂无工程量数据，可先在图纸识别或 BIM 算量页生成清单" />

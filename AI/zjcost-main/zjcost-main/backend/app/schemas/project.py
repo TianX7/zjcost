@@ -49,6 +49,7 @@ class ProjectOut(BaseModel):
     standard_type: str = "GB50500"
     language: str = "zh"
     currency: str = "CNY"
+    rule_package_id: int | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

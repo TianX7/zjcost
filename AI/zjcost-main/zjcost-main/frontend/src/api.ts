@@ -30,6 +30,7 @@ export interface Project {
   project_type: string; status: string; budget: number | null;
   start_date: string | null; end_date: string | null; owner: string | null;
   standard_type: string; language: string; currency: string;
+  rule_package_id: number | null;
   created_at: string | null; updated_at: string | null;
 }
 
@@ -579,6 +580,9 @@ export interface OldMaterialDTO {
   material_qty: number;
   machine_qty: number;
   base_price: number;
+  recycle_price: number;
+  process_price: number;
+  transport_price: number;
   chapter: string;
   version: string;
   work_content: string;
@@ -608,6 +612,9 @@ export interface OldMaterialCreatePayload {
   material_qty?: number;
   machine_qty?: number;
   base_price?: number;
+  recycle_price?: number;
+  process_price?: number;
+  transport_price?: number;
   chapter?: string;
   version?: string;
   work_content?: string;
@@ -629,6 +636,9 @@ export interface OldMaterialUpdatePayload {
   material_qty?: number;
   machine_qty?: number;
   base_price?: number;
+  recycle_price?: number;
+  process_price?: number;
+  transport_price?: number;
   chapter?: string;
   version?: string;
   work_content?: string;
@@ -1415,6 +1425,7 @@ export const api = {
     return request<{
       project_id: number; boq_items_created: number; boq_items: string[];
       matched: number; skipped: number; grand_total: number | null;
+      status?: string; message?: string;
     }>(
       `/ifc-parse/${taskId}/save-to-project`,
       { method: "POST", body: JSON.stringify({ project_id: projectId }) },

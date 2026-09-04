@@ -11,6 +11,7 @@ import {
   Select,
   Table,
   Tag,
+  Tooltip,
   message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
@@ -68,6 +69,9 @@ const LOSS_METHOD_OPTIONS = [
   { value: "mechanical", label: "机械化作业" },
 ];
 
+// 列表一次最多加载条数（超出后提示细化筛选，避免静默截断误导）
+const OML_LIST_LIMIT = 200;
+
 export default function OldMaterialLibrary() {
   const [items, setItems] = useState<OldMaterialDTO[]>([]);
   const [stats, setStats] = useState<OldMaterialStatsResponse | null>(null);
@@ -80,6 +84,8 @@ export default function OldMaterialLibrary() {
   const [editing, setEditing] = useState<OldMaterialDTO | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm();
+  // 弹窗内当前选择的获取方式（来源说明占位文案跟随它，而非列表筛选值）
+  const modalMethod = Form.useWatch("acquisition_method", form);
   const [lossModalOpen, setLossModalOpen] = useState(false);
   const [lossResult, setLossResult] = useState<LossEstimateResponse | null>(null);
   const [lossCalculating, setLossCalculating] = useState(false);
@@ -95,7 +101,7 @@ export default function OldMaterialLibrary() {
     try {
       const [list, stat] = await Promise.all([
         api.listOldMaterials({
-          limit: 200,
+          limit: OML_LIST_LIMIT,
           keyword: debouncedKeyword || undefined,
           acquisition_method: acquisitionMethod,
           heritage_site: heritageSite || undefined,
@@ -144,6 +150,9 @@ export default function OldMaterialLibrary() {
       material_qty: 0,
       machine_qty: 0,
       base_price: 0,
+      recycle_price: 0,
+      process_price: 0,
+      transport_price: 0,
       chapter: "遗址修复旧材料定额",
       relic_level: "一般文物",
     });
@@ -177,6 +186,18 @@ export default function OldMaterialLibrary() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // 三级计价：录入任意一档价后自动汇总综合单价 = 回收价 + 加工价 + 运输价
+  const handleFormValuesChange = (changed: Record<string, unknown>) => {
+    const levelKeys = ["recycle_price", "process_price", "transport_price"];
+    if (!levelKeys.some((k) => k in changed)) return;
+    const values = form.getFieldsValue(levelKeys);
+    const sum =
+      Number(values.recycle_price ?? 0) +
+      Number(values.process_price ?? 0) +
+      Number(values.transport_price ?? 0);
+    form.setFieldValue("base_price", Number(sum.toFixed(2)));
   };
 
   const handleDelete = async (id: number) => {
@@ -243,12 +264,34 @@ export default function OldMaterialLibrary() {
     { title: "成色", dataIndex: "condition_grade", width: 80, render: (v: string) => v || "-" },
     { title: "单位", dataIndex: "unit", width: 70 },
     {
-      title: "基价",
+      title: "综合单价",
       dataIndex: "base_price",
-      width: 100,
+      width: 105,
       align: "right",
-      sorter: (a, b) => a.base_price - b.base_price,
-      render: (v: number) => `¥${v.toFixed(2)}`,
+      sorter: (a, b) => Number(a.base_price ?? 0) - Number(b.base_price ?? 0),
+      render: (v: number | undefined) => v == null || v <= 0
+        ? <span style={{ color: "#f87171" }}>缺综合单价</span>
+        : `¥${v.toFixed(2)}`,
+    },
+    {
+      title: "三级价格（回收/加工/运输）",
+      key: "level_prices",
+      width: 210,
+      render: (_, record) => {
+        const r = Number(record.recycle_price ?? 0);
+        const p = Number(record.process_price ?? 0);
+        const t = Number(record.transport_price ?? 0);
+        if (r <= 0 && p <= 0 && t <= 0) {
+          return <span style={{ color: "var(--text-secondary)" }}>-</span>;
+        }
+        return (
+          <span style={{ display: "inline-flex", gap: 6, fontSize: 12 }}>
+            <Tag style={{ marginRight: 0 }} color="green">收 {r.toFixed(2)}</Tag>
+            <Tag style={{ marginRight: 0 }} color="blue">加 {p.toFixed(2)}</Tag>
+            <Tag style={{ marginRight: 0 }} color="orange">运 {t.toFixed(2)}</Tag>
+          </span>
+        );
+      },
     },
     {
       title: "批次号",
@@ -397,6 +440,16 @@ export default function OldMaterialLibrary() {
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
           新增旧材料
         </Button>
+        {items.some((item) => item.base_price == null || item.base_price <= 0) && (
+          <Tooltip title="这些条目缺少综合单价，套价时无法计价，需补充维护回收/加工/运输三级价格">
+            <Tag color="red">缺综合单价 {items.filter((item) => item.base_price == null || item.base_price <= 0).length} 条</Tag>
+          </Tooltip>
+        )}
+        {items.length >= OML_LIST_LIMIT && (
+          <Tooltip title={`列表一次最多加载 ${OML_LIST_LIMIT} 条，当前条件结果可能更多，请继续细化编码 / 名称 / 获取方式 / 遗址筛选`}>
+            <Tag color="orange">仅展示前 {OML_LIST_LIMIT} 条</Tag>
+          </Tooltip>
+        )}
       </div>
 
       {/* 旧材料定额表格 */}
@@ -407,8 +460,8 @@ export default function OldMaterialLibrary() {
             columns={columns}
             dataSource={items}
             loading={loading}
-            scroll={{ x: 1500 }}
-            pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `共 ${t} 条` }}
+            scroll={{ x: 1750 }}
+            pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `共 ${t} 条${items.length >= OML_LIST_LIMIT ? `（仅加载前 ${OML_LIST_LIMIT} 条）` : ""}` }}
             locale={{
               emptyText: (
                 <Empty description="未找到旧材料定额，可点击「新增旧材料」添加">
@@ -434,7 +487,7 @@ export default function OldMaterialLibrary() {
         width={820}
         destroyOnHidden
       >
-        <Form form={form} layout="vertical" preserve={false}>
+        <Form form={form} layout="vertical" preserve={false} onValuesChange={handleFormValuesChange}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
             <Form.Item
               name="quota_code"
@@ -479,8 +532,17 @@ export default function OldMaterialLibrary() {
             <Form.Item name="inspection_report_no" label="检测报告编号">
               <Input placeholder="如 JC-2026-001" />
             </Form.Item>
-            <Form.Item name="base_price" label="基价（元）">
-              <InputNumber min={0} style={{ width: "100%" }} />
+            <Form.Item name="base_price" label="综合单价（元）" tooltip="回收价 + 加工价 + 运输价 自动汇总">
+              <InputNumber min={0} style={{ width: "100%" }} disabled />
+            </Form.Item>
+            <Form.Item name="recycle_price" label="回收价（元）" tooltip="三级计价第一级：旧建材市场调研均价，有来源凭证">
+              <InputNumber min={0} precision={2} style={{ width: "100%" }} placeholder="如 0.80" />
+            </Form.Item>
+            <Form.Item name="process_price" label="加工价（元）" tooltip="三级计价第二级：清洗、切割、打磨、钻孔四道工序合计">
+              <InputNumber min={0} precision={2} style={{ width: "100%" }} placeholder="如 0.85" />
+            </Form.Item>
+            <Form.Item name="transport_price" label="运输价（元）" tooltip="三级计价第三级：就地回收短运距计取，附运输距离">
+              <InputNumber min={0} precision={2} style={{ width: "100%" }} placeholder="如 0.50" />
             </Form.Item>
             <Form.Item name="chapter" label="章节">
               <Input placeholder="所属章节" />
@@ -501,9 +563,9 @@ export default function OldMaterialLibrary() {
               <Input.TextArea
                 rows={2}
                 placeholder={
-                  acquisitionMethod === "recycle"
-                    ? "回收地点，如：当地旧料市场回收"
-                    : "复现依据，如：按遗址原始配料比重新烧制"
+                  modalMethod === "reproduce"
+                    ? "复现依据，如：按遗址原始配料比重新烧制"
+                    : "回收地点，如：当地旧料市场回收"
                 }
               />
             </Form.Item>
@@ -539,7 +601,7 @@ export default function OldMaterialLibrary() {
         width={600}
         destroyOnHidden
       >
-        <p style={{ color: "#64748b", marginBottom: 16 }}>
+        <p style={{ color: "var(--text-secondary)", marginBottom: 16 }}>
           输入材料类别、来源、存储条件、运输距离与施工方式，模型输出预测损耗率，并与老师傅经验值相互印证。预测损耗率直接计入材料消耗量，为补充定额编制提供数据。
         </p>
         <Form form={lossForm} layout="vertical">
@@ -580,13 +642,13 @@ export default function OldMaterialLibrary() {
           </Form.Item>
         </Form>
         {lossResult && (
-          <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: 16 }}>
+          <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
             <div style={{ textAlign: "center", marginBottom: 16 }}>
-              <div style={{ fontSize: 13, color: "#64748b" }}>预测损耗率</div>
-              <div style={{ fontSize: 32, fontWeight: 700, color: "#0f766e" }}>
+              <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>预测损耗率</div>
+              <div style={{ fontSize: 32, fontWeight: 700, color: "#34d399" }}>
                 {lossResult.loss_rate_expected}%
               </div>
-              <div style={{ fontSize: 13, color: "#64748b" }}>
+              <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
                 区间 {lossResult.loss_rate_low}% ~ {lossResult.loss_rate_high}%
               </div>
             </div>
@@ -595,14 +657,14 @@ export default function OldMaterialLibrary() {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                background: "#f0fdfa",
-                border: "1px solid #ccfbf1",
+                background: "rgba(52, 211, 153, 0.08)",
+                border: "1px solid rgba(52, 211, 153, 0.3)",
                 borderRadius: 8,
                 padding: "10px 14px",
                 marginBottom: 16,
               }}
             >
-              <span style={{ fontSize: 13, color: "#0f766e" }}>
+              <span style={{ fontSize: 13, color: "#34d399" }}>
                 老师傅经验值 <b>{lossResult.experience_rate}%</b>
               </span>
               <Tag color="green">

@@ -22,6 +22,36 @@ import threading
 import time
 from pathlib import Path
 
+# ── 早期诊断日志 ─────────────────────────────────────────────
+# 本文件被 PyInstaller 打包为 windowed（console=False）的 cad_viewer.exe，
+# 此时 stdout/stderr 通常丢弃：一旦启动早期失败（缺 DLL、导入崩溃等），
+# 整个进程静默退出，后端只能笼统判"进程已退出"，看不到真实原因。
+# 这里在模块最前把 stdout/stderr 无条件重定向到 %TEMP% 文件并写标记：
+# 只要 Python 解释器能起来，任何 print/traceback 都会落盘，便于远端定位。
+_STARTED_MARKER_FILE = os.path.join(os.environ.get("TEMP", os.environ.get("TMP", "/tmp")),
+                                    "zjcost_cad_viewer.log")
+def _log(msg: str) -> None:
+    try:
+        with open(_STARTED_MARKER_FILE, "a", encoding="utf-8") as _mf:
+            _mf.write("[%s pid=%s] %s\n"
+                      % (time.strftime("%H:%M:%S"), os.getpid(), msg))
+    except Exception:
+        pass
+
+_log("=== started pid=%s %s ===" % (os.getpid(), time.strftime("%Y-%m-%d %H:%M:%S")))
+
+def _install_stream_log():
+    # windowed 下 sys.stdout/stderr 可能是 None 或无效流，统一覆盖为文件
+    try:
+        import sys as _sys
+        _fh = open(_STARTED_MARKER_FILE, "a", encoding="utf-8")
+        _sys.stdout = _fh
+        _sys.stderr = _fh
+    except Exception:
+        pass
+_install_stream_log()
+_log("module top: imports loaded, installing ctypes")
+
 u32 = ctypes.windll.user32
 k32 = ctypes.windll.kernel32
 
@@ -54,7 +84,13 @@ SW_HIDE = 0
 SW_SHOWNA = 8  # 显示但不抢焦点（网页保持前台）
 
 CAD_EXE_CANDIDATES = [
-    # 项目内置的 CAD 快速看图（随项目分发，部署零依赖）
+    # 打包版（PyInstaller frozen）内置内核：cad_viewer.exe 在便携版根目录，
+    # 内置 CADReader 在 _internal/backend/tools/CADReader/（__file__ 指向根目录，
+    # 直接拼 parent/CADReader 会找不到内核，必须先探测这一条）
+    str(Path(sys.executable).resolve().parent / "_internal" / "backend" / "tools" / "CADReader" / "CADReader.exe"),
+    # 打包版尾部布局（个别 COLLECT 结构 CADReader 直接与 exe 同级）
+    str(Path(sys.executable).resolve().parent / "CADReader" / "CADReader.exe"),
+    # 源码开发模式：cad_viewer.py 位于 backend/tools/，内核在同目录 CADReader/
     str(Path(__file__).resolve().parent / "CADReader" / "CADReader.exe"),
     # 本机安装的 CAD 快速看图
     r"D:\CADReader\CADReader.exe",
@@ -62,6 +98,11 @@ CAD_EXE_CANDIDATES = [
     r"C:\Program Files (x86)\CADReader\CADReader.exe",
 ]
 LOAD_TIMEOUT = 180  # 大图加载最长等待秒数
+# 冷启动后多少秒内仍没检测到 CADReader 主窗口就判失败。
+# CADReader 被"屏外/隐藏启动"时初始化（QtWebKit + OpenGL）常比单独双击慢，
+# 6 秒过严会把仍在正常加载中的实例误杀，导致前端"启动超时"。放宽到 10 秒，
+# 仍早于后端 EMBED_START_TIMEOUT(=12s)，保证到时状态已写成 failed 而非笼统超时。
+WAIT_MAIN_HWND_ABORT_S = 10.0
 
 
 def find_cad_exe() -> str:
@@ -69,6 +110,30 @@ def find_cad_exe() -> str:
         if os.path.isfile(exe):
             return exe
     return ""
+
+
+def _cad_reader_dir(exe: str) -> str | None:
+    """CADReader 自身所在目录：Qt4 程序必须从自身目录读取同级 DLL 与
+    plugins/imageformats 等资源，cwd 指向别处（尤其跨机器慢速冷启动时）
+    会导致 Qt 初始化/图像插件加载异常。"""
+    d = os.path.dirname(os.path.abspath(exe))
+    return d if d else None
+
+
+def _cad_popen(exe: str, dwg: str, startupinfo=None):
+    """调起 CADReader，强制 cwd 指向其自身目录并注入 Qt 插件搜索路径，
+    避免 Qt4 在非自身目录启动时找不到 plugins/DLL。"""
+    cad_dir = _cad_reader_dir(exe)
+    env = dict(os.environ)
+    if cad_dir:
+        # Qt4 的 imageformats/platforms 插件目录
+        env["QT_PLUGIN_PATH"] = cad_dir
+    return subprocess.Popen(
+        [exe, dwg],
+        startupinfo=startupinfo,
+        cwd=cad_dir,
+        env=env,
+    )
 
 
 def _exe_file_version(path: str) -> str:
@@ -601,9 +666,13 @@ def wait_cad_ready(proc, deadline: float, keep_hidden: bool = False, watcher=Non
                 if r.right - r.left >= 400 and r.bottom - r.top >= 250:
                     main_hwnd = cand
                     break
-            if main_hwnd is None and time.time() - t_start > 6.0:
-                # 6 秒仍无正常主窗：单实例交接卡死/启动失败等异常状态，
+            if main_hwnd is None and time.time() - t_start > WAIT_MAIN_HWND_ABORT_S:
+                # 超时仍无正常主窗：单实例交接卡死/启动失败等异常状态，
                 # 干等 180 秒只会让前端超时报错，尽快失败让调用方重试
+                print("超过 %.1fs 未见 CAD 主窗口（proc alive=%s）"
+                      % (WAIT_MAIN_HWND_ABORT_S,
+                         "yes" if proc.poll() is None else "no"),
+                      flush=True)
                 return None
         if main_hwnd is not None:
             pid_now = window_pid(main_hwnd)
@@ -704,6 +773,7 @@ def run_embed(rect_file: str, dwg: str) -> int:
     再次启用时优先复用驻留实例（秒级贴合），驻留实例打开的图纸与当前
     不一致时走单实例文件交接（毫秒级、零闪现），交接失败才冷启动。
     """
+    print("[enter] run_embed rect_file=%s dwg=%s" % (rect_file, os.path.basename(dwg)), flush=True)
     exe = find_cad_exe()
     if not exe:
         print("未找到 CAD 快速看图内核", flush=True)
@@ -756,7 +826,7 @@ def run_embed(rect_file: str, dwg: str) -> int:
         make_park_invisible(main_hwnd)
         strip_taskbar(main_hwnd)
         park_all_cad_windows(offscreen, None)
-        proc = subprocess.Popen([exe, dwg], startupinfo=si)
+        proc = _cad_popen(exe, dwg, si)
         deadline = time.time() + 8.0
         while time.time() < deadline:
             pump_messages()
@@ -782,7 +852,7 @@ def run_embed(rect_file: str, dwg: str) -> int:
         kill_existing_cad()
         start_watcher()
         park_all_cad_windows(offscreen)
-        proc = subprocess.Popen([exe, dwg], startupinfo=si)
+        proc = _cad_popen(exe, dwg, si)
         deadline = time.time() + LOAD_TIMEOUT
         main_hwnd = wait_cad_ready(
             proc, deadline, keep_hidden=True, watcher=watcher_stop,
@@ -792,7 +862,7 @@ def run_embed(rect_file: str, dwg: str) -> int:
             print("首次调起未就绪，重试一次", flush=True)
             kill_existing_cad()
             park_all_cad_windows(offscreen)
-            proc = subprocess.Popen([exe, dwg], startupinfo=si)
+            proc = _cad_popen(exe, dwg, si)
             deadline = time.time() + LOAD_TIMEOUT
             main_hwnd = wait_cad_ready(
                 proc, deadline, keep_hidden=True, watcher=watcher_stop,
@@ -865,8 +935,19 @@ def run_embed(rect_file: str, dwg: str) -> int:
         pump_messages()
         # 判活看真实看图窗口：重定向场景原 proc 已退出，窗口没了才算结束
         if not u32.IsWindow(main_hwnd):
+            # 退出前写具体原因：CAD 看图窗口消失（多为 CADReader 自身被
+            # attach/屏外/Layered 等操纵后自我保护退出，或系统/驱动差异），
+            # 后端据此能给出可读 message，而非笼统"进程已退出"。
+            pid_now2 = ctypes.c_ulong()
+            u32.GetWindowThreadProcessId(main_hwnd, ctypes.byref(pid_now2))
+            write_state(state_file, "exited",
+                        message="CAD 看图窗口已消失（窗口句柄失效/WinError，CADReader 可能退出）")
+            print("[exit] branch=A CAD主窗消失 IsWindow=false", flush=True)
             break
         if not u32.IsWindow(host):
+            write_state(state_file, "exited",
+                        message="查看器宿主窗口已消失")
+            print("[exit] branch=B 宿主窗口消失", flush=True)
             break
         try:
             with open(rect_file, "r", encoding="utf-8") as f:
@@ -875,6 +956,7 @@ def run_embed(rect_file: str, dwg: str) -> int:
         except FileNotFoundError:
             # 坐标文件被删除 = 前端切回内置渲染：CAD 进程驻留不杀，
             # 解挂隐藏，下次切换秒级复用
+            print("[exit] branch=C 坐标文件被删除(detach_park)", flush=True)
             detach_and_park(main_hwnd)
             break
         except Exception:
@@ -900,6 +982,7 @@ def run_embed(rect_file: str, dwg: str) -> int:
                 visible = True
         if age > 60.0:
             write_state(state_file, "exited", message="坐标流停止")
+            print("[exit] branch=D 坐标流停止(age>60)", flush=True)
             detach_and_park(main_hwnd)
             break  # 坐标长时间未更新（前端已关闭/崩溃），驻留退出
         if visible:
@@ -973,7 +1056,7 @@ def run_standalone(dwg: str) -> int:
     dwg = os.path.abspath(dwg)
     preseed_cad_config()
     kill_existing_cad()
-    proc = subprocess.Popen([exe, dwg])
+    proc = _cad_popen(exe, dwg)
     deadline = time.time() + LOAD_TIMEOUT
     main_hwnd = wait_cad_ready(proc, deadline)
     if not main_hwnd:
@@ -1033,11 +1116,28 @@ def run_standalone(dwg: str) -> int:
 
 def main() -> int:
     args = sys.argv[1:]
+    state_file = None
     if args and args[0] == "--embed":
         if len(args) < 3:
             print("用法：cad_viewer.py --embed <坐标文件> <图纸路径>")
             return 2
-        return run_embed(args[1], args[2])
+        # 坐标文件同级 .state.json 即后端读取的启动状态文件
+        state_file = Path(args[1]).with_suffix(".state.json")
+        try:
+            ret = run_embed(args[1], args[2])
+            print("[main] run_embed returned %s" % ret, flush=True)
+            return ret
+        except Exception as exc:  # noqa: BLE001
+            # 兜底：任何未捕获异常都落到状态文件，绝不静默停在 starting，
+            # 否则后端只能等到超时，前端只显示笼统的"启动超时/进程已退出"，
+            # 无法定位真实失败环节。
+            import traceback
+            traceback.print_exc()
+            try:
+                write_state(state_file, "failed", message=f"查看器内部错误: {type(exc).__name__}: {exc}")
+            except Exception:  # noqa: BLE001
+                pass
+            return 1
     if len(args) < 1:
         print("用法：cad_viewer.py [--embed <坐标文件>] <图纸路径>")
         return 2
@@ -1045,4 +1145,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    try:
+        _log("__main__ about to call main(), argv=%s" % (sys.argv,))
+    except Exception:
+        pass
     sys.exit(main())

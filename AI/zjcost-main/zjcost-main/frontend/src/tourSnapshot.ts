@@ -32,6 +32,7 @@ const SAMPLE_PROJECT: Project = {
   standard_type: "GB/T50500-2024",
   language: "zh-CN",
   currency: "CNY",
+  rule_package_id: null,
   created_at: "2025-03-01T08:00:00Z",
   updated_at: "2025-06-15T14:30:00Z",
 };

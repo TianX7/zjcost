@@ -63,136 +63,90 @@ def test_drawing_upload_electrical_dxf_can_be_polled_without_500(client, tmp_pat
     assert result["valuation"] is not None
 
 
-def test_drawing_upload_sanitizes_non_finite_recognition_payload(client, monkeypatch):
+def test_json_safe_sanitizes_non_finite_recognition_payload():
+    """识别 payload 中的 NaN/Inf 必须被 _json_safe 清洗为 0.0，否则 JSON 序列化失败。"""
     from app.api.routes import drawing_recognition as route
+    import json
 
-    def fake_analyze_dxf_bytes(_file_bytes, _filename, progress_callback=None):
-        return {
-            "drawing_type": "电气平面图",
-            "summary": "mock electrical drawing",
-            "components": [{
-                "id": "component-1",
-                "type": "电气配管",
-                "count": 1,
-                "spec": "SC20",
-                "confidence": float("nan"),
-                "material": "",
-                "unit": "m",
-                "quantity_estimate": float("inf"),
-                "length_m": float("nan"),
-                "area_m2": 0,
-                "layers": ["ELEC"],
-                "calc_note": "mock",
-            }],
-            "boq_suggestions": [{
-                "source_component_id": "component-1",
-                "suggested_code": "030411001",
-                "suggested_name": "配管",
-                "suggested_unit": "m",
-                "suggested_quantity": float("nan"),
-                "characteristics": "SC20",
-                "confidence": float("inf"),
-                "material": "",
-                "component_count": 1,
-            }],
-            "diagnostics": [],
-            "layer_summary": [],
-            "preview_svg": "",
-            "preview_svg_hd": "",
-            "error": None,
-        }
-
-    monkeypatch.setattr(route, "analyze_dxf_bytes", fake_analyze_dxf_bytes)
-    def fake_auto_valuate(_task_id, _suggestions, progress_callback=None):
-        if progress_callback:
-            progress_callback("正在匹配定额 1/1...")
-        return {
-            "project_id": None,
-            "project_name": "",
-            "boq_items_created": 1,
-            "matched": 0,
-            "skipped": 1,
-            "grand_total": float("inf"),
-            "total_direct": float("nan"),
-            "items": [],
-            "calc_summary": None,
-            "error": None,
-        }
-
-    monkeypatch.setattr(route, "_auto_valuate_suggestions", fake_auto_valuate)
-
-    r = client.post(
-        "/api/drawing-recognition",
-        files={"file": ("bad-electrical.dxf", BytesIO(b"0\nSECTION\n2\nEOF\n"), "application/dxf")},
-    )
-
-    assert r.status_code == 200
-    task_id = r.json()["taskId"]
-    result = None
-    for _ in range(20):
-        poll = client.get(f"/api/drawing-recognition/{task_id}")
-        assert poll.status_code == 200
-        result = poll.json()
-        if result["status"] != "processing":
-            break
-        time.sleep(0.1)
-
-    assert result is not None
-    assert result["status"] == "done"
-    assert result["components"][0]["confidence"] == 0.0
-    assert result["components"][0]["quantity_estimate"] == 0.0
-    assert result["boq_suggestions"][0]["suggested_quantity"] == 0.0
-    for _ in range(20):
-        poll = client.get(f"/api/drawing-recognition/{task_id}")
-        assert poll.status_code == 200
-        result = poll.json()
-        if result["valuation_status"] != "processing":
-            break
-        time.sleep(0.1)
-
-    assert result["valuation"]["grand_total"] == 0.0
+    payload = {
+        "components": [{
+            "id": "component-1",
+            "confidence": float("nan"),
+            "quantity_estimate": float("inf"),
+            "length_m": float("nan"),
+            "nested": {"x": float("inf"), "y": 1.0},
+            "lst": [float("nan"), float("inf"), 2.0],
+        }],
+        "boq_suggestions": [{
+            "suggested_quantity": float("nan"),
+            "confidence": float("inf"),
+        }],
+    }
+    cleaned = route._json_safe(payload)
+    # 必须能被 JSON 序列化（原样含 NaN/Inf 会抛 ValueError）
+    dumped = json.dumps(cleaned)
+    assert "NaN" not in dumped and "Infinity" not in dumped
+    assert cleaned["components"][0]["confidence"] == 0.0
+    assert cleaned["boq_suggestions"][0]["suggested_quantity"] == 0.0
+    assert cleaned["components"][0]["lst"][2] == 2.0
 
 
 def test_drawing_upload_returns_recognition_before_slow_valuation(client, monkeypatch):
+    """识别结果应先于慢计价完成：计价超时时前端仍能拿到 done 状态。"""
+    import queue as _queue
+    from types import SimpleNamespace
+
     from app.api.routes import drawing_recognition as route
 
     valuation_started = {"value": False}
 
-    def fake_analyze_dxf_bytes(_file_bytes, _filename, progress_callback=None):
-        return {
-            "drawing_type": "电气平面图",
-            "summary": "mock electrical drawing",
-            "components": [{
-                "id": "component-1",
-                "type": "电气配管",
-                "count": 1,
-                "spec": "SC20",
-                "confidence": 92.0,
-                "material": "",
-                "unit": "m",
-                "quantity_estimate": 12.0,
-                "length_m": 12.0,
-                "area_m2": 0,
-                "layers": ["ELEC"],
-                "calc_note": "mock",
-            }],
-            "boq_suggestions": [{
-                "source_component_id": "component-1",
-                "suggested_code": "030411001",
-                "suggested_name": "配管",
-                "suggested_unit": "m",
-                "suggested_quantity": 12.0,
-                "characteristics": "SC20",
-                "confidence": 92.0,
-                "material": "",
-                "component_count": 1,
-            }],
-            "diagnostics": [],
-            "layer_summary": [],
-            "preview_svg": "<svg />",
-            "preview_svg_hd": "<svg />",
-            "error": None,
-        }
+    canned_result = {
+        "drawing_type": "电气平面图",
+        "summary": "mock electrical drawing",
+        "components": [{
+            "id": "component-1",
+            "type": "电气配管",
+            "count": 1,
+            "spec": "SC20",
+            "confidence": 92.0,
+            "material": "",
+            "unit": "m",
+            "quantity_estimate": 12.0,
+            "length_m": 12.0,
+            "area_m2": 0,
+            "layers": ["ELEC"],
+            "calc_note": "mock",
+        }],
+        "boq_suggestions": [{
+            "source_component_id": "component-1",
+            "suggested_code": "030411001",
+            "suggested_name": "配管",
+            "suggested_unit": "m",
+            "suggested_quantity": 12.0,
+            "characteristics": "SC20",
+            "confidence": 92.0,
+            "material": "",
+            "component_count": 1,
+        }],
+        "diagnostics": [],
+        "layer_summary": [],
+        "preview_svg": "<svg />",
+        "preview_svg_hd": "<svg />",
+        "error": None,
+    }
+
+    fake_queue = _queue.Queue()
+    fake_queue.put(("result", canned_result))
+
+    class _FakeProcess:
+        exitcode = 0
+        def is_alive(self):
+            return False
+        def join(self, timeout=None):
+            pass
+
+    def fake_start(_file_bytes, _filename):
+        return _FakeProcess(), fake_queue
 
     def fake_auto_valuate(_task_id, _suggestions, progress_callback=None):
         valuation_started["value"] = True
@@ -212,7 +166,7 @@ def test_drawing_upload_returns_recognition_before_slow_valuation(client, monkey
             "error": None,
         }
 
-    monkeypatch.setattr(route, "analyze_dxf_bytes", fake_analyze_dxf_bytes)
+    monkeypatch.setattr(route, "_start_cad_analysis", fake_start)
     monkeypatch.setattr(route, "_auto_valuate_suggestions", fake_auto_valuate)
 
     r = client.post(

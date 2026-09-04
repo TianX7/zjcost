@@ -1,42 +1,198 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
 
 /* ─────────────────────────────────────────────────────────────
  * 运营期专题页面：光伏发电监测 / 净水与中水回用 / 设施运维管理
  * 以动态可视化图形为主：实时驱动数值 + SVG 动效图表
+ * 动态检测说明：阈值判定 + 趋势诊断均为前端实时计算；
+ * 遥测数值当前为仿真信号（deterministic wave），后续接真实
+ * 传感器/平台时只需替换各页顶部的信号源即可，判定逻辑不变。
  * ───────────────────────────────────────────────────────────── */
 
-/** 全局时间心跳：驱动所有动态图形 */
+/** 是否偏好减少动态效果 */
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(
+    () => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    if (!mq) return;
+    const onChange = () => setReduced(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  return reduced;
+}
+
+/** 全局时间心跳：驱动所有动态图形（页面不可见时暂停，避免恢复后数据跳变） */
 function useTick(intervalMs = 1000) {
   const [tick, setTick] = useState(0);
   useEffect(() => {
-    const t = setInterval(() => setTick((v) => v + 1), intervalMs);
-    return () => clearInterval(t);
+    let t: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (t) return;
+      t = setInterval(() => setTick((v) => v + 1), intervalMs);
+    };
+    const stop = () => {
+      if (t) clearInterval(t);
+      t = null;
+    };
+    const onVis = () => (document.hidden ? stop() : start());
+    start();
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, [intervalMs]);
   return tick;
 }
 
-/** 平滑数值动画 */
+/** 平滑数值动画（收敛后自动停止 rAF，偏好减弱动效时直接跳变） */
 function useSpring(target: number, speed = 0.08) {
   const [val, setVal] = useState(target);
   const raf = useRef(0);
+  const reduced = usePrefersReducedMotion();
   useEffect(() => {
+    if (reduced) {
+      setVal(target);
+      return;
+    }
     const step = () => {
+      let settled = false;
       setVal((v) => {
         const next = v + (target - v) * speed;
-        return Math.abs(target - next) < 0.01 ? target : next;
+        if (Math.abs(target - next) < 0.01) {
+          settled = true;
+          return target;
+        }
+        return next;
       });
+      if (settled) return;
       raf.current = requestAnimationFrame(step);
     };
     raf.current = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf.current);
-  }, [target, speed]);
+  }, [target, speed, reduced]);
   return val;
 }
 
-/** 正弦波动 + 抖动，模拟实时遥测 */
-function wave(t: number, base: number, amp: number, period = 12, noise = 0.15) {
-  return base + Math.sin((t / period) * Math.PI * 2) * amp + (Math.random() - 0.5) * amp * noise;
+/** 确定性伪噪声（同一 t 输出一致，避免 Math.random 抖动导致曲线毛刺） */
+function pseudoNoise(t: number, seed = 0) {
+  const n = Math.sin(t * 12.9898 + seed * 78.233) * 43758.5453;
+  return n - Math.floor(n) - 0.5;
+}
+
+/** 正弦波动 + 确定性抖动，模拟实时遥测 */
+function wave(t: number, base: number, amp: number, period = 12, noise = 0.15, seed = 0) {
+  return base + Math.sin((t / period) * Math.PI * 2) * amp + pseudoNoise(t, seed) * amp * noise;
+}
+
+/* ── 动态检测：阈值判定 + 趋势诊断（各页共用） ───────────────── */
+
+export type DetectLevel = "ok" | "warn" | "alarm";
+
+export const LEVEL_COLOR: Record<DetectLevel, string> = {
+  ok: "#34d399",
+  warn: "#fbbf24",
+  alarm: "#f87171",
+};
+
+export const LEVEL_TEXT: Record<DetectLevel, string> = {
+  ok: "正常",
+  warn: "预警",
+  alarm: "告警",
+};
+
+/** 越高越危险（如温度、浊度、压差） */
+export function assessHigh(v: number, warnAt: number, alarmAt: number): DetectLevel {
+  if (v >= alarmAt) return "alarm";
+  if (v >= warnAt) return "warn";
+  return "ok";
+}
+
+/** 越低越危险（如效率、性能比） */
+export function assessLow(v: number, warnAt: number, alarmAt: number): DetectLevel {
+  if (v <= alarmAt) return "alarm";
+  if (v <= warnAt) return "warn";
+  return "ok";
+}
+
+export type TrendDir = "up" | "down" | "flat";
+
+const TREND_ICON: Record<TrendDir, string> = { up: "↑", down: "↓", flat: "→" };
+const TREND_CLASS: Record<TrendDir, string> = {
+  up: "ops-trend-up",
+  down: "ops-trend-down",
+  flat: "ops-trend-flat",
+};
+
+/** 对比近 N 点与再前 N 点均值，给出趋势方向 */
+export function trendOf(series: number[], window = 5): TrendDir {
+  if (series.length < window * 2) return "flat";
+  const tail = series.slice(-window);
+  const prev = series.slice(-window * 2, -window);
+  const avg = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length;
+  const diff = avg(tail) - avg(prev);
+  const scale = Math.max(1e-6, Math.abs(avg(prev)));
+  if (diff / scale > 0.02) return "up";
+  if (diff / scale < -0.02) return "down";
+  return "flat";
+}
+
+/** 趋势箭头小组件（invert 用于越低越好的指标） */
+export function TrendTag({ series, invert = false }: { series: number[]; invert?: boolean }) {
+  const dir = trendOf(series);
+  const shown = invert ? (dir === "up" ? "down" : dir === "down" ? "up" : "flat") : dir;
+  return <span className={TREND_CLASS[shown]} title="近段趋势">{TREND_ICON[shown]}</span>;
+}
+
+export interface OpsAlert {
+  level: DetectLevel;
+  icon: string;
+  text: string;
+  detail: string;
+  action?: string;
+  /** 站内路由跳转，如 /facility-ops */
+  to?: string;
+}
+
+/** 动态检测结果条（复用 ops-alert 视觉） */
+export function DetectStrip({ alerts, emptyText = "各项指标正常，暂无预警" }: {
+  alerts: OpsAlert[]; emptyText?: string;
+}) {
+  const nav = useNavigate();
+  if (alerts.length === 0) {
+    return (
+      <div className="ops-alert-list">
+        <div className="ops-alert-row">
+          <span className="ops-alert-icon ok"><span className="material-symbols-outlined">check_circle</span></span>
+          <div className="ops-alert-body"><strong>运行正常</strong><em>{emptyText}</em></div>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="ops-alert-list">
+      {alerts.map((a, i) => (
+        <div key={`${a.text}-${i}`} className="ops-alert-row" style={{ animationDelay: `${i * 0.06}s` }}>
+          <span className={`ops-alert-icon ${a.level === "alarm" ? "alarm" : a.level}`}>
+            <span className="material-symbols-outlined">{a.icon}</span>
+          </span>
+          <div className="ops-alert-body">
+            <strong>{LEVEL_TEXT[a.level]} · {a.text}</strong>
+            <em>{a.detail}{a.action ? ` → ${a.action}` : ""}</em>
+          </div>
+          {a.to && (
+            <button type="button" className="ops-link-btn" onClick={() => nav(a.to!)}>
+              去处理
+            </button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function clamp(v: number, min: number, max: number) {
@@ -98,17 +254,18 @@ function GaugeRing({ value, max, label, unit, color, size = 130 }: {
               key={i}
               x1={cx + Math.cos(tk.a) * rIn} y1={cy + Math.sin(tk.a) * rIn}
               x2={cx + Math.cos(tk.a) * rOut} y2={cy + Math.sin(tk.a) * rOut}
-              stroke={tk.active ? color : "rgba(148,163,184,0.2)"}
+              stroke={tk.active ? color : "rgba(125, 211, 252, 0.3)"}
               strokeWidth="2" opacity={tk.active ? 0.85 : 1}
             />
           );
         })}
-        <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(148,163,184,0.1)" strokeWidth={stroke} />
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(80,160,255,0.18)" strokeWidth={stroke} />
         <circle
           cx={cx} cy={cy} r={r} fill="none"
           stroke={`url(#${gid}-arc)`} strokeWidth={stroke} strokeLinecap="round"
           strokeDasharray={`${ratio * c} ${c}`} transform={`rotate(-90 ${cx} ${cy})`}
-          style={{ transition: "stroke-dasharray 0.25s linear", filter: `drop-shadow(0 0 6px ${color}66)` }}
+          className="ops-gauge-arc"
+          style={{ transition: "stroke-dasharray 0.25s linear", filter: `drop-shadow(0 0 8px ${color}88)` }}
         />
       </svg>
       <div className="ops-gauge-center">
@@ -123,6 +280,8 @@ interface LiveSeries {
   data: number[];
   color: string;
   unit: string;
+  /** 图例名称，如“发电功率” */
+  name: string;
   max?: number;
   dashed?: boolean;
 }
@@ -146,7 +305,7 @@ function LiveLineChart({ series, height = 176 }: { series: LiveSeries[]; height?
           ))}
         </defs>
         {[0.25, 0.5, 0.75].map((r) => (
-          <line key={r} x1={pad.l} y1={pad.t + chartH * r} x2={w - pad.r} y2={pad.t + chartH * r} stroke="rgba(148,163,184,0.08)" strokeDasharray="3 4" />
+          <line key={r} x1={pad.l} y1={pad.t + chartH * r} x2={w - pad.r} y2={pad.t + chartH * r} stroke="rgba(80,160,255,0.14)" strokeDasharray="3 4" />
         ))}
         {series.map((s, si) => {
           const top = Math.max(...s.data, s.max ?? 0, 1) * 1.08;
@@ -166,12 +325,20 @@ function LiveLineChart({ series, height = 176 }: { series: LiveSeries[]; height?
                 strokeLinejoin="round" strokeLinecap="round"
                 strokeDasharray={s.dashed ? "5 4" : undefined}
               />
+              {/* 流光 overlay：沿曲线方向持续流动，强化“实时”感 */}
+              {!s.dashed && (
+                <path d={line} fill="none" stroke="#fff" strokeOpacity="0.4" strokeWidth="1.2" className="ops-flow-line" />
+              )}
               <circle cx={head[0]} cy={head[1]} r="4" fill={s.color}>
                 <animate attributeName="r" values="3;5;3" dur="1.6s" repeatCount="indefinite" />
               </circle>
               <circle cx={head[0]} cy={head[1]} r="7" fill="none" stroke={s.color} strokeWidth="1.5">
                 <animate attributeName="r" values="5;12" dur="1.6s" repeatCount="indefinite" />
                 <animate attributeName="stroke-opacity" values="0.55;0" dur="1.6s" repeatCount="indefinite" />
+              </circle>
+              <circle cx={head[0]} cy={head[1]} r="7" fill="none" stroke={s.color} strokeWidth="1">
+                <animate attributeName="r" values="5;14" dur="2.4s" repeatCount="indefinite" />
+                <animate attributeName="stroke-opacity" values="0.4;0" dur="2.4s" repeatCount="indefinite" />
               </circle>
             </g>
           );
@@ -183,9 +350,11 @@ function LiveLineChart({ series, height = 176 }: { series: LiveSeries[]; height?
             const last = s.data[s.data.length - 1] ?? 0;
             const peak = Math.max(...s.data, 1);
             return (
-              <span key={`${s.unit}-${s.color}`}>
+              <span key={`${s.name}-${s.color}`}>
                 <i style={{ background: s.color }} />
+                <em>{s.name}</em>
                 <strong style={{ color: s.color }}>{fmt(last, 1)} {s.unit}</strong>
+                <TrendTag series={s.data} />
                 <em>峰值 {fmt(peak, 1)}</em>
               </span>
             );
@@ -259,10 +428,54 @@ export function PvPowerPage() {
   }, [t]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const inverters = [
-    { id: "INV-01", power: power * 0.36, eff: 98.6, temp: wave(t, 41, 2, 11), kwh: todayKwh * 0.37, state: "normal" },
-    { id: "INV-02", power: power * 0.35, eff: 98.2, temp: wave(t, 43, 2, 9), kwh: todayKwh * 0.36, state: "normal" },
-    { id: "INV-03", power: power * 0.29, eff: 96.2, temp: wave(t, 51, 3, 7), kwh: todayKwh * 0.27, state: "warn" },
-  ];
+    { id: "INV-01", share: 0.37, effBase: 98.6, effAmp: 0.25, tempBase: 41, tempSeed: 11 },
+    { id: "INV-02", share: 0.36, effBase: 98.2, effAmp: 0.3, tempBase: 43, tempSeed: 12 },
+    // INV-03 效率基线偏低、温度偏高：阈值线会动态穿越，演示预警的产生与恢复
+    { id: "INV-03", share: 0.27, effBase: 97.1, effAmp: 0.9, tempBase: 49, tempSeed: 13 },
+  ].map((inv) => {
+    const eff = wave(t, inv.effBase, inv.effAmp, 9, 0.3, inv.tempSeed);
+    const temp = wave(t, inv.tempBase, 2.5, 7, 0.25, inv.tempSeed + 5);
+    const effLevel = assessLow(eff, 97.5, 96.5);
+    const tempLevel = assessHigh(temp, 50, 60);
+    const level: DetectLevel = effLevel === "alarm" || tempLevel === "alarm" ? "alarm" : effLevel === "warn" || tempLevel === "warn" ? "warn" : "ok";
+    return {
+      ...inv,
+      power: power * inv.share,
+      eff,
+      temp,
+      kwh: todayKwh * inv.share,
+      level,
+      dot: level === "ok" ? "normal" : "warn",
+    };
+  });
+
+  // 动态检测：阈值判定 → 预警/告警 → 处置建议 → 联动运维
+  const pvAlerts: OpsAlert[] = [];
+  const prLevel = assessLow(pr, 80, 76);
+  if (prLevel !== "ok") {
+    pvAlerts.push({
+      level: prLevel, icon: "trending_down", text: `系统效率比 PR 偏低（${fmt(pr, 1)}%）`,
+      detail: `低于 ${prLevel === "alarm" ? "76%" : "80%"} ${prLevel === "alarm" ? "告警" : "预警"}线，重点查组串失配与逆变器效率`,
+      action: "安排组串 IV 曲线抽检", to: "/facility-ops",
+    });
+  }
+  const cellLevel = assessHigh(cellTemp, 60, 70);
+  if (cellLevel !== "ok") {
+    pvAlerts.push({
+      level: cellLevel, icon: "thermostat", text: `组件背板温度偏高（${fmt(cellTemp, 1)}℃）`,
+      detail: "高温导致出力折损，检查通风间隙与积灰遮挡",
+      action: "清洁组件并检查支架通风", to: "/facility-ops",
+    });
+  }
+  for (const inv of inverters) {
+    if (inv.level === "ok") continue;
+    const cause = inv.eff <= 97.5 ? `转换效率 ${fmt(inv.eff, 1)}%（基线 97.5%）` : `机内温度 ${fmt(inv.temp, 1)}℃（预警 50℃）`;
+    pvAlerts.push({
+      level: inv.level, icon: "electrical_services", text: `${inv.id} 运行异常 · ${cause}`,
+      detail: "疑似 MPPT 跟踪偏差或散热不良",
+      action: "排查 MPPT 并检查散热风道", to: "/facility-ops",
+    });
+  }
 
   const envStats = [
     { icon: "bolt", label: "累计发电量", value: "12.86", unit: "万kWh", color: "#fbbf24" },
@@ -303,8 +516,8 @@ export function PvPowerPage() {
           <LiveLineChart
             height={240}
             series={[
-              { data: live, color: "#fbbf24", unit: "kW" },
-              { data: irrLive, color: "#fb923c", unit: "W/m²", dashed: true },
+              { data: live, color: "#fbbf24", unit: "kW", name: "发电功率" },
+              { data: irrLive, color: "#fb923c", unit: "W/m²", name: "辐照度", dashed: true },
             ]}
           />
         </div>
@@ -372,7 +585,7 @@ export function PvPowerPage() {
                   </rect>
                 )),
               )}
-              <text x="400" y="234" textAnchor="middle" fill="#64748b" fontSize="10">厂区负荷</text>
+              <text x="400" y="234" textAnchor="middle" fill="#94a3b8" fontSize="10">厂区负荷</text>
               {/* 地面阵列 3×7：支架 + 高光扫掠 */}
               <g transform="translate(40 126) skewX(-12)">
                 {Array.from({ length: 3 }).map((_, r) =>
@@ -387,15 +600,15 @@ export function PvPowerPage() {
                   <animate attributeName="x" values="-26;216" dur="3.6s" repeatCount="indefinite" />
                 </rect>
                 {[30, 104, 166].map((lx) => (
-                  <line key={lx} x1={lx} y1={54} x2={lx} y2={66} stroke="#475569" strokeWidth="2" />
+                  <line key={lx} x1={lx} y1={54} x2={lx} y2={66} stroke="#7d8aa5" strokeWidth="2" />
                 ))}
-                <line x1="0" y1="66" x2="180" y2="66" stroke="#475569" strokeWidth="1.5" opacity="0.6" />
+                <line x1="0" y1="66" x2="180" y2="66" stroke="#7d8aa5" strokeWidth="1.5" opacity="0.6" />
               </g>
               <text x="132" y="208" textAnchor="middle" fill="#7dd3fc" fontSize="10">光伏阵列 68 kWp</text>
               {/* 逆变器（含实时出力负载条） */}
               <rect x="230" y="148" width="54" height="46" rx="6" fill="rgba(19,45,82,0.9)" stroke="#38bdf8" strokeWidth="1.2" />
               <text x="257" y="164" textAnchor="middle" fill="#7dd3fc" fontSize="10">逆变器</text>
-              <rect x="236" y="172" width="42" height="5" rx="2.5" fill="rgba(148,163,184,0.18)" />
+              <rect x="236" y="172" width="42" height="5" rx="2.5" fill="rgba(80,160,255,0.22)" />
               <rect x="236" y="172" width={Math.max(3, 42 * clamp(power / 60, 0, 1))} height="5" rx="2.5" fill="#34d399">
                 <animate attributeName="opacity" values="0.7;1;0.7" dur="2s" repeatCount="indefinite" />
               </rect>
@@ -403,29 +616,29 @@ export function PvPowerPage() {
                 <animate attributeName="opacity" values="0.3;1;0.3" dur="1.5s" repeatCount="indefinite" />
               </circle>
               {/* 电网塔杆 */}
-              <g stroke="#64748b" strokeWidth="2" strokeLinecap="round">
+              <g stroke="#7d8aa5" strokeWidth="2" strokeLinecap="round">
                 <line x1="492" y1="236" x2="506" y2="168" /><line x1="520" y1="236" x2="506" y2="168" />
                 <line x1="492" y1="196" x2="520" y2="196" /><line x1="497" y1="182" x2="515" y2="182" />
               </g>
-              <text x="506" y="248" textAnchor="middle" fill="#64748b" fontSize="10">公共电网</text>
+              <text x="506" y="248" textAnchor="middle" fill="#94a3b8" fontSize="10">公共电网</text>
               {/* 能量流动：阵列 → 逆变器 → 负荷 / 电网（余电经架空线上网） */}
-              {[0, 1].map((i) => (
-                <circle key={`a${i}`} r="3" fill="#fde68a">
-                  <animateMotion dur={`${1.1 + i * 0.35}s`} begin={`${i * 0.45}s`} repeatCount="indefinite" path="M 222 140 C 226 150, 228 154, 232 162" />
-                  <animate attributeName="opacity" values="0;1;0" dur={`${1.1 + i * 0.35}s`} begin={`${i * 0.45}s`} repeatCount="indefinite" />
+              {[0, 1, 2].map((i) => (
+                <circle key={`a${i}`} r="3.2" fill="#fde68a">
+                  <animateMotion dur={`${0.9 + i * 0.22}s`} begin={`${i * 0.3}s`} repeatCount="indefinite" path="M 222 140 C 226 150, 228 154, 232 162" />
+                  <animate attributeName="opacity" values="0;1;0" dur={`${0.9 + i * 0.22}s`} begin={`${i * 0.3}s`} repeatCount="indefinite" />
                 </circle>
               ))}
-              {[0, 1].map((i) => (
-                <circle key={`b${i}`} r="3" fill="#7dd3fc">
-                  <animateMotion dur={`${1.1 + i * 0.4}s`} begin={`${i * 0.5}s`} repeatCount="indefinite" path="M 284 168 C 300 172, 314 172, 328 170" />
-                  <animate attributeName="opacity" values="0;1;0" dur={`${1.1 + i * 0.4}s`} begin={`${i * 0.5}s`} repeatCount="indefinite" />
+              {[0, 1, 2].map((i) => (
+                <circle key={`b${i}`} r="3.2" fill="#7dd3fc">
+                  <animateMotion dur={`${0.9 + i * 0.25}s`} begin={`${i * 0.32}s`} repeatCount="indefinite" path="M 284 168 C 300 172, 314 172, 328 170" />
+                  <animate attributeName="opacity" values="0;1;0" dur={`${0.9 + i * 0.25}s`} begin={`${i * 0.32}s`} repeatCount="indefinite" />
                 </circle>
               ))}
-              <path d="M 284 150 C 330 116, 420 110, 494 166" stroke="#64748b" strokeWidth="1.5" fill="none" opacity="0.7" />
-              {[0, 1].map((i) => (
-                <circle key={`c${i}`} r="3" fill="#c4b5fd">
-                  <animateMotion dur={`${1.6 + i * 0.5}s`} begin={`${0.3 + i * 0.6}s`} repeatCount="indefinite" path="M 284 150 C 330 116, 420 110, 494 166" />
-                  <animate attributeName="opacity" values="0;1;0" dur={`${1.6 + i * 0.5}s`} begin={`${0.3 + i * 0.6}s`} repeatCount="indefinite" />
+              <path d="M 284 150 C 330 116, 420 110, 494 166" stroke="#7d8aa5" strokeWidth="1.5" fill="none" opacity="0.7" />
+              {[0, 1, 2].map((i) => (
+                <circle key={`c${i}`} r="3.2" fill="#c4b5fd">
+                  <animateMotion dur={`${1.2 + i * 0.3}s`} begin={`${0.2 + i * 0.4}s`} repeatCount="indefinite" path="M 284 150 C 330 116, 420 110, 494 166" />
+                  <animate attributeName="opacity" values="0;1;0" dur={`${1.2 + i * 0.3}s`} begin={`${0.2 + i * 0.4}s`} repeatCount="indefinite" />
                 </circle>
               ))}
             </svg>
@@ -451,17 +664,26 @@ export function PvPowerPage() {
           <div key={inv.id} className="ops-panel ops-inv-card">
             <div className="ops-panel-head">
               <h3><span className="material-symbols-outlined">electrical_services</span>{inv.id}</h3>
-              <span className={`ops-state-dot ${inv.state}`} />
+              <span className="ops-inv-state"><span className={`ops-state-dot ${inv.dot}`} />{LEVEL_TEXT[inv.level]}</span>
             </div>
             <div className="ops-inv-metrics">
               <div><em>实时功率</em><strong>{fmt(inv.power, 1)} kW</strong></div>
-              <div><em>转换效率</em><strong>{inv.eff}%</strong></div>
-              <div><em>机内温度</em><strong>{fmt(inv.temp, 1)} ℃</strong></div>
+              <div><em>转换效率</em><strong style={{ color: LEVEL_COLOR[assessLow(inv.eff, 97.5, 96.5)] }}>{fmt(inv.eff, 1)}%</strong></div>
+              <div><em>机内温度</em><strong style={{ color: LEVEL_COLOR[assessHigh(inv.temp, 50, 60)] }}>{fmt(inv.temp, 1)} ℃</strong></div>
               <div><em>今日发电</em><strong>{fmt(inv.kwh, 0)} kWh</strong></div>
             </div>
             <div className="ops-mini-track"><span style={{ width: `${clamp((inv.power / 25) * 100, 4, 100)}%` }} /></div>
           </div>
         ))}
+      </div>
+
+      {/* 动态检测与处置：阈值实时判定，异常一键联动运维 */}
+      <div className="ops-panel">
+        <div className="ops-panel-head">
+          <h3><span className="material-symbols-outlined">troubleshoot</span>动态检测与处置建议</h3>
+          <span>阈值 PR≥80% · 组件温度≤60℃ · 逆变效率≥97.5% · {pvAlerts.length === 0 ? "全部正常" : `${pvAlerts.length} 条待处理`}</span>
+        </div>
+        <DetectStrip alerts={pvAlerts} emptyText="PR、组件温度与逆变器均在阈值内，继续保持巡检节拍" />
       </div>
 
       {/* 节能减排效益 */}
@@ -506,16 +728,67 @@ export function WaterReusePage() {
   }, [t]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const tanks = [
-    { name: "原水调节池", level: 68, volume: "120 m³", color: "#38bdf8" },
-    { name: "中水池", level: 54, volume: "80 m³", color: "#34d399" },
-    { name: "净水箱", level: 76, volume: "60 m³", color: "#7dd3fc" },
-  ];
+    { name: "原水调节池", base: 68, volume: "120 m³", color: "#38bdf8" },
+    // 中水池随回用需求波动大：会偶发跌破 30% 低液位线，演示低液位预警与自动补水
+    { name: "中水池", base: 33, volume: "80 m³", color: "#34d399" },
+    { name: "净水箱", base: 76, volume: "60 m³", color: "#7dd3fc" },
+  ].map((tank, i) => ({
+    ...tank,
+    level: Math.round(clamp(tank.base + Math.sin(t / 3 + i) * 4, 10, 95)),
+  }));
 
   const quality = [
-    { name: "CODcr", value: wave(t, 38, 3, 11), limit: 60, unit: "mg/L", color: "#38bdf8" },
-    { name: "BOD₅", value: wave(t, 6.2, 0.6, 9), limit: 10, unit: "mg/L", color: "#34d399" },
-    { name: "氨氮", value: wave(t, 2.1, 0.3, 13), limit: 5, unit: "mg/L", color: "#a78bfa" },
+    { name: "CODcr", value: wave(t, 38, 3, 11, 0.2, 21), limit: 60, unit: "mg/L", color: "#38bdf8" },
+    { name: "BOD₅", value: wave(t, 6.2, 0.6, 9, 0.2, 22), limit: 10, unit: "mg/L", color: "#34d399" },
+    // 氨氮随进水波动：偶发接近 85% 预警线，演示水质预警的产生与恢复
+    { name: "氨氮", value: wave(t, 3.4, 0.8, 13, 0.25, 23), limit: 5, unit: "mg/L", color: "#a78bfa" },
     { name: "余氯", value: residualCl, limit: 1.0, unit: "mg/L", color: "#fbbf24" },
+  ].map((q) => ({ ...q, level: assessHigh(q.value, q.limit * 0.85, q.limit) }));
+
+  const turbidityLevel = assessHigh(turbidity, 4, 5);
+  const phLevel: DetectLevel = ph < 6.5 || ph > 9.0 ? "alarm" : ph < 6.8 || ph > 8.5 ? "warn" : "ok";
+  const allLevels: DetectLevel[] = [...quality.map((q) => q.level), turbidityLevel, phLevel];
+  const okCount = allLevels.filter((l) => l === "ok").length;
+  const compliance = Math.round((okCount / allLevels.length) * 100);
+
+  // 动态检测：水质超限 / 液位过低 / 回用率偏低
+  const waterAlerts: OpsAlert[] = [];
+  for (const q of quality) {
+    if (q.level === "ok") continue;
+    waterAlerts.push({
+      level: q.level, icon: "science",
+      text: `${q.name} ${fmt(q.value, 2)} ${q.unit}（限值 ${q.limit}）`,
+      detail: q.level === "alarm" ? "已超限值，立即核查加药与膜通量" : "接近限值 85%，加强加密监测",
+      action: q.level === "alarm" ? "启动应急预案并留样复测" : "加密监测频次", to: "/facility-ops",
+    });
+  }
+  if (turbidityLevel !== "ok") {
+    waterAlerts.push({
+      level: turbidityLevel, icon: "opacity", text: `出水浊度 ${fmt(turbidity, 2)} NTU 偏高`,
+      detail: "检查滤池反洗周期与混凝加药", action: "提前反洗并校核加药量", to: "/facility-ops",
+    });
+  }
+  if (phLevel !== "ok") {
+    waterAlerts.push({
+      level: phLevel, icon: "ph", text: `出水 pH ${fmt(ph, 2)} 偏离 6.5~9.0`,
+      detail: "核查加药系统与在线仪表", action: "校准 pH 计并复核加药", to: "/facility-ops",
+    });
+  }
+  for (const tank of tanks) {
+    if (tank.level >= 30) continue;
+    waterAlerts.push({
+      level: tank.level < 20 ? "alarm" : "warn", icon: "water",
+      text: `${tank.name}液位偏低（${tank.level}%）`,
+      detail: "低于 30% 低液位线，已触发自动补水联锁",
+      action: "确认补水阀动作并排查跑冒滴漏", to: "/facility-ops",
+    });
+  }
+
+  const processChain = [
+    { icon: "filter_alt", name: "预处理", value: `取水 ${fmt(rawIntake, 1)} m³/h` },
+    { icon: "waves", name: "MBR 膜池", value: `产水 ${fmt(supply, 1)} m³/h` },
+    { icon: "sanitizer", name: "消毒", value: `余氯 ${fmt(residualCl, 2)} mg/L` },
+    { icon: "recycling", name: "中水回用", value: `${fmt(reuseDaily, 0)} m³/d · ${fmt(reuseRate, 1)}%` },
   ];
 
   const dailyUse = [
@@ -556,8 +829,8 @@ export function WaterReusePage() {
           <LiveLineChart
             height={205}
             series={[
-              { data: flowData, color: "#818cf8", unit: "取水 m³/h" },
-              { data: supData, color: "#38bdf8", unit: "供水 m³/h" },
+              { data: flowData, color: "#818cf8", unit: "取水 m³/h", name: "原水取水" },
+              { data: supData, color: "#38bdf8", unit: "供水 m³/h", name: "净水供水" },
             ]}
           />
         </div>
@@ -569,7 +842,8 @@ export function WaterReusePage() {
           </div>
           <div className="ops-tanks">
             {tanks.map((tank, i) => {
-              const level = Math.round(clamp(tank.level + Math.sin(t / 3 + i) * 4, 10, 95));
+              const level = tank.level;
+              const lowLevel = level < 30;
               return (
                 <div key={tank.name} className="ops-tank">
                   <div className="ops-tank-body">
@@ -579,7 +853,7 @@ export function WaterReusePage() {
                     </div>
                     <strong>{level}%</strong>
                   </div>
-                  <em>{tank.name}</em>
+                  <em>{tank.name}{lowLevel && <span className="ops-tank-warn"> · 低液位</span>}</em>
                   <span>调蓄容积 {tank.volume}</span>
                 </div>
               );
@@ -593,33 +867,38 @@ export function WaterReusePage() {
         <div className="ops-panel">
           <div className="ops-panel-head">
             <h3><span className="material-symbols-outlined">analytics</span>中水水质实时监测</h3>
-            <span className="ops-quality-badge"><span className="material-symbols-outlined">verified</span>综合达标率 100%</span>
+            <span className="ops-quality-badge" style={compliance < 100 ? { color: "#fbbf24", borderColor: "rgba(251,191,36,0.4)" } : undefined}>
+              <span className="material-symbols-outlined">verified</span>综合达标率 {compliance}%
+            </span>
           </div>
           <div className="ops-quality-list">
-            {quality.map((q) => (
-              <div key={q.name} className="ops-quality-row">
-                <em>{q.name}</em>
-                <div className="ops-quality-track">
-                  <span style={{ width: `${clamp((q.value / q.limit) * 100, 0, 100)}%`, background: `linear-gradient(90deg, ${q.color}, ${q.color}88)`, boxShadow: `0 0 8px ${q.color}66` }} />
+            {quality.map((q) => {
+              const qc = q.level === "ok" ? q.color : LEVEL_COLOR[q.level];
+              return (
+                <div key={q.name} className="ops-quality-row">
+                  <em>{q.name}{q.level !== "ok" && <span className={q.level === "alarm" ? "ops-trend-down" : "ops-trend-flat"}> ●</span>}</em>
+                  <div className="ops-quality-track">
+                    <span style={{ width: `${clamp((q.value / q.limit) * 100, 0, 100)}%`, background: `linear-gradient(90deg, ${qc}, ${qc}88)`, boxShadow: `0 0 8px ${qc}66` }} />
+                  </div>
+                  <strong style={{ color: qc }}>{fmt(q.value, 2)}</strong>
+                  <span className="ops-quality-limit">限值 {q.limit} {q.unit}</span>
                 </div>
-                <strong style={{ color: q.color }}>{fmt(q.value, 2)}</strong>
-                <span className="ops-quality-limit">限值 {q.limit} {q.unit}</span>
-              </div>
-            ))}
+              );
+            })}
             <div className="ops-quality-row">
-              <em>浊度</em>
+              <em>浊度{turbidityLevel !== "ok" && <span className="ops-trend-down"> ●</span>}</em>
               <div className="ops-quality-track">
-                <span style={{ width: `${clamp((turbidity / 5) * 100, 0, 100)}%`, background: "linear-gradient(90deg, #fbbf24, #fbbf2488)" }} />
+                <span style={{ width: `${clamp((turbidity / 5) * 100, 0, 100)}%`, background: `linear-gradient(90deg, ${LEVEL_COLOR[turbidityLevel] === "#34d399" ? "#fbbf24" : LEVEL_COLOR[turbidityLevel]}, ${LEVEL_COLOR[turbidityLevel] === "#34d399" ? "#fbbf2488" : LEVEL_COLOR[turbidityLevel] + "88"})` }} />
               </div>
-              <strong style={{ color: "#fbbf24" }}>{fmt(turbidity, 2)}</strong>
+              <strong style={{ color: turbidityLevel === "ok" ? "#fbbf24" : LEVEL_COLOR[turbidityLevel] }}>{fmt(turbidity, 2)}</strong>
               <span className="ops-quality-limit">限值 5 NTU</span>
             </div>
             <div className="ops-quality-row">
-              <em>pH 值</em>
+              <em>pH 值{phLevel !== "ok" && <span className="ops-trend-down"> ●</span>}</em>
               <div className="ops-quality-track">
-                <span style={{ width: `${clamp((ph / 9) * 100, 0, 100)}%`, background: "linear-gradient(90deg, #a78bfa, #a78bfa88)" }} />
+                <span style={{ width: `${clamp((ph / 9) * 100, 0, 100)}%`, background: `linear-gradient(90deg, ${phLevel === "ok" ? "#a78bfa" : LEVEL_COLOR[phLevel]}, ${phLevel === "ok" ? "#a78bfa88" : LEVEL_COLOR[phLevel] + "88"})` }} />
               </div>
-              <strong style={{ color: "#a78bfa" }}>{fmt(ph, 2)}</strong>
+              <strong style={{ color: phLevel === "ok" ? "#a78bfa" : LEVEL_COLOR[phLevel] }}>{fmt(ph, 2)}</strong>
               <span className="ops-quality-limit">范围 6.5 ~ 9.0</span>
             </div>
           </div>
@@ -635,6 +914,32 @@ export function WaterReusePage() {
             供水优先级：冲厕 → 绿化浇灌 → 道路浇洒 → 景观补水 · 缺水时自动切换市政补水
           </div>
         </div>
+      </div>
+
+      {/* 处理工艺流程 + 动态检测与处置 */}
+      <div className="ops-panel">
+        <div className="ops-panel-head">
+          <h3><span className="material-symbols-outlined">account_tree</span>处理工艺流程（实时工况）</h3>
+          <span>预处理 + MBR 膜 + 消毒 · 机组 2 用 1 备</span>
+        </div>
+        <div className="ops-process">
+          {processChain.map((p, i) => (
+            <div key={p.name} className="ops-process-node">
+              <span className="material-symbols-outlined">{p.icon}</span>
+              <strong>{p.name}</strong>
+              <em>{p.value}</em>
+              {i < processChain.length - 1 && <span className="material-symbols-outlined ops-process-arrow">arrow_forward</span>}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="ops-panel">
+        <div className="ops-panel-head">
+          <h3><span className="material-symbols-outlined">troubleshoot</span>动态检测与处置建议</h3>
+          <span>水质限值 GB/T 18920 · 液位低线 30% · {waterAlerts.length === 0 ? "全部正常" : `${waterAlerts.length} 条待处理`}</span>
+        </div>
+        <DetectStrip alerts={waterAlerts} emptyText="水质六项与三池液位均在阈值内，回用系统稳定" />
       </div>
     </div>
   );
@@ -655,13 +960,18 @@ export function FacilityOpsPage() {
   }, [t]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const devices = [
-    { name: "电梯系统", health: wave(t, 94, 1.5, 10), color: "#38bdf8" },
-    { name: "暖通空调", health: wave(t, 89, 2.5, 8), color: "#a78bfa" },
-    { name: "消防泵组", health: wave(t, 97, 1, 14), color: "#f87171" },
-    { name: "照明系统", health: wave(t, 92, 2, 12), color: "#fbbf24" },
-    { name: "给排水泵", health: wave(t, 91, 2, 9), color: "#34d399" },
-    { name: "光伏系统", health: wave(t, 96, 1.2, 11), color: "#fb923c" },
-  ];
+    { name: "电梯系统", base: 94, amp: 1.5, period: 10, color: "#38bdf8", seed: 31, advice: "核查曳引机电流与门机循环次数" },
+    { name: "暖通空调", base: 89, amp: 2.5, period: 8, color: "#a78bfa", seed: 32, advice: "检查冷冻水供回水温差与过滤器压差" },
+    { name: "消防泵组", base: 97, amp: 1, period: 14, color: "#f87171", seed: 33, advice: "手动盘车并测试压力开关动作" },
+    { name: "照明系统", base: 92, amp: 2, period: 12, color: "#fbbf24", seed: 34, advice: "抽查应急照明放电时长" },
+    { name: "给排水泵", base: 91, amp: 2, period: 9, color: "#34d399", seed: 35, advice: "检查水泵振动与机械密封渗漏" },
+    { name: "光伏系统", base: 96, amp: 1.2, period: 11, color: "#fb923c", seed: 36, advice: "对照光伏页组串级检测结论" },
+  ].map((d) => {
+    const health = wave(t, d.base, d.amp, d.period, 0.2, d.seed);
+    return { ...d, health, level: assessLow(health, 90, 85) };
+  });
+  const composite = devices.reduce((s, d) => s + d.health, 0) / devices.length;
+  const compositeLevel = assessLow(composite, 90, 85);
 
   const orders = [
     { status: "待接单", count: 2, color: "#fbbf24" },
@@ -696,8 +1006,17 @@ export function FacilityOpsPage() {
     { label: "零星维修", value: 8, color: "#fb923c" },
   ];
 
-  const alerts = [
-    { level: "warn", icon: "warning", text: "INV-03 逆变器转换效率偏低", detail: "实测 96.2%，低于基线 97.5%，建议排查 MPPT 跟踪", time: "10 分钟前" },
+  const alerts: Array<{ level: DetectLevel | "info" | "ok"; icon: string; text: string; detail: string; time: string }> = [
+    // 由设备健康度实时推导：低于 90 分预警、低于 85 分告警（含处置建议，形成闭环）
+    ...devices
+      .filter((d) => d.level !== "ok")
+      .map((d) => ({
+        level: d.level as DetectLevel,
+        icon: "monitor_heart",
+        text: `${d.name}健康度 ${fmt(d.health, 1)} 分${d.level === "alarm" ? "（告警）" : "（预警）"}`,
+        detail: d.advice,
+        time: "刚刚",
+      })),
     { level: "warn", icon: "speed", text: "MBR 膜组跨膜压差升高", detail: "12.4 kPa，建议执行在线反洗程序", time: "1 小时前" },
     { level: "info", icon: "event_available", text: "电梯系统年度检验临近", detail: "检验证书 09-15 到期，需预约特检机构", time: "今天 08:30" },
     { level: "ok", icon: "check_circle", text: "消防泵组月度巡检完成", detail: "12 项功能测试全部通过，台账已归档", time: "昨天 17:05" },
@@ -718,7 +1037,7 @@ export function FacilityOpsPage() {
           <span className="ops-live-badge"><i />LIVE</span>
         </div>
         <div className="ops-gauges-meta">
-          <span><span className="material-symbols-outlined">speed</span>综合健康度 93.2 分 · 较上周 +0.8</span>
+          <span><span className="material-symbols-outlined">speed</span>综合健康度 <strong style={{ color: LEVEL_COLOR[compositeLevel] }}>{fmt(composite, 1)} 分 · {LEVEL_TEXT[compositeLevel]}</strong></span>
           <span><span className="material-symbols-outlined">model_training</span>预测性维护模型 v2.4</span>
           <span><span className="material-symbols-outlined">sensors</span>在岗测点 486 个 · 完好率 99.4%</span>
         </div>
@@ -745,14 +1064,14 @@ export function FacilityOpsPage() {
                   <circle key={o.status} cx="85" cy="85" r="46" fill="none" stroke={o.color} strokeWidth="16"
                     strokeDasharray={`${dash} ${289 - dash}`} strokeDashoffset={-donutOffset}
                     transform="rotate(-90 85 85)" opacity="0.9">
-                    <animate attributeName="stroke-width" values="14;18;14" dur="3s" repeatCount="indefinite" />
+                    <animate attributeName="stroke-width" values="12;20;12" dur="2s" repeatCount="indefinite" />
                   </circle>
                 );
                 donutOffset += dash;
                 return el;
               })}
               <text x="85" y="80" textAnchor="middle" fill="#e2e8f0" fontSize="22" fontWeight="800">{donutTotal}</text>
-              <text x="85" y="100" textAnchor="middle" fill="#64748b" fontSize="11">工单总数</text>
+              <text x="85" y="100" textAnchor="middle" fill="#94a3b8" fontSize="11">工单总数</text>
             </svg>
             <div className="ops-donut-legend">
               {orders.map((o) => (
@@ -780,8 +1099,8 @@ export function FacilityOpsPage() {
           <LiveLineChart
             height={185}
             series={[
-              { data: co2Series, color: "#a78bfa", unit: "ppm", max: 900 },
-              { data: tempSeries, color: "#fb923c", unit: "℃", dashed: true },
+              { data: co2Series, color: "#a78bfa", unit: "ppm", name: "CO₂浓度", max: 900 },
+              { data: tempSeries, color: "#fb923c", unit: "℃", name: "室内温度", dashed: true },
             ]}
           />
           <div className="ops-scene-caption">
