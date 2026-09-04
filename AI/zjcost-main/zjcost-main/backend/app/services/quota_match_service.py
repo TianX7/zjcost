@@ -23,40 +23,59 @@ from app.models.quota_item import QuotaItem
 
 logger = logging.getLogger(__name__)
 
-# 模块级缓存：缓存全表定额数据，配合 TTL 避免每次匹配都全表扫描
-_quota_cache: dict[str, list[QuotaItem]] = {}
+# ── 匹配用缓存 ────────────────────────────────────────────────
+# 缓存纯数据对象（不绑定 Session），避免 ORM 实例跨请求复用触发
+# DetachedInstanceError（首次可用、后续 500 的根因）。
+@dataclass(frozen=True)
+class _CachedQuota:
+    id: int
+    quota_code: str
+    name: str
+    unit: str
+    chapter: str
+    discipline: str
+
+
+_quota_cache: dict[str, list[_CachedQuota]] = {}
 _quota_cache_ts: float = 0.0
 _quota_cache_ttl: float = 300.0  # 缓存有效期 5 分钟
 _quota_cache_lock = __import__("threading").Lock()
 
 
-def _load_quotas_cached(db: Session) -> list[QuotaItem]:
-    """加载全部定额并缓存，配合 TTL 控制有效期。"""
+def _load_quotas_cached(db: Session) -> list[_CachedQuota]:
+    """加载全部定额列（纯数据）并缓存，配合 TTL 控制有效期。"""
     global _quota_cache_ts
     now = time.time()
     with _quota_cache_lock:
         if _quota_cache and (now - _quota_cache_ts) < _quota_cache_ttl:
             return _quota_cache.get("all", [])
-        # 重新加载
-        quotas = db.query(QuotaItem).all()
+        # 重新加载：只需匹配用到的字段，且不持有 ORM 实例
+        rows = db.query(
+            QuotaItem.id,
+            QuotaItem.quota_code,
+            QuotaItem.name,
+            QuotaItem.unit,
+            QuotaItem.chapter,
+            QuotaItem.discipline,
+        ).all()
         _quota_cache.clear()
-        _quota_cache["all"] = quotas
+        _quota_cache["all"] = [_CachedQuota(*row) for row in rows]
         _quota_cache_ts = now
-        return quotas
+        return _quota_cache["all"]
 
 
 def _prefilter_quotas(
-    quotas: list[QuotaItem],
+    quotas: list[_CachedQuota],
     *,
     discipline: str | None = None,
     unit: str | None = None,
-) -> list[QuotaItem]:
+) -> list[_CachedQuota]:
     """按 discipline / unit 预过滤候选集，缩小相似度计算范围。"""
     candidates = quotas
     if discipline:
         filtered = [
             q for q in candidates
-            if getattr(q, "discipline", None) and discipline in str(getattr(q, "discipline", ""))
+            if q.discipline and discipline in q.discipline
         ]
         if filtered:
             candidates = filtered
@@ -409,7 +428,7 @@ def find_candidates(
     if not quotas:
         quotas = all_quotas
 
-    scored: list[tuple[float, QuotaItem, list[str]]] = []
+    scored: list[tuple[float, _CachedQuota, list[str]]] = []
 
     boq_markers = _extract_spec_markers(context_text)
     boq_structures = _structure_terms(context_text)

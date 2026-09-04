@@ -909,6 +909,11 @@ export const api = {
     request<Binding>(`/boq-items/${boqItemId}/quota-binding:replace`, {
       method: "POST", body: JSON.stringify({ quota_item_id: quotaItemId, coefficient }),
     }),
+  setBindingsCoefficient: (boqItemId: number, coefficient: number) =>
+    request<Binding[]>("/boq-items/" + `${boqItemId}/quota-bindings:set-coefficient`, {
+      method: "POST",
+      body: JSON.stringify({ coefficient }),
+    }),
   batchConfirmBindings: (bindings: Array<{ boq_item_id: number; quota_item_id: number; coefficient?: number }>) =>
     request<Binding[]>("/boq-items/quota-binding:batch-confirm", {
       method: "POST", body: JSON.stringify({ bindings }),

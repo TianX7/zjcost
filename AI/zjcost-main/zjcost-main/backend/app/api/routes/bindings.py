@@ -1,6 +1,7 @@
 import json
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -16,8 +17,15 @@ from app.schemas.quota import (
     BindingWithQuota,
 )
 from app.services.audit_service import write_audit_log
+from app.services.project_calc_service import run_project_calculation
 
 router = APIRouter(tags=["bindings"])
+
+
+class SetBindingsCoefficientRequest(BaseModel):
+    """批量设置调价系数（如荒漠区调价系数 1.15）。"""
+
+    coefficient: float = Field(1.0, ge=0.1, le=10.0, description="调价系数")
 
 
 @router.post(
@@ -463,3 +471,57 @@ def batch_replace_bindings(
 
     db.commit()
     return out
+
+
+@router.post(
+    "/boq-items/{boq_item_id}/quota-bindings:set-coefficient",
+    response_model=list[BindingOut],
+)
+def set_bindings_coefficient(
+    boq_item_id: int,
+    payload: SetBindingsCoefficientRequest,
+    db: Session = Depends(get_db),
+) -> list[BindingOut]:
+    """给某清单项的全部定额绑定批量设置调价系数（荒漠区调价系数），并即时重算该清单项。"""
+    boq = db.query(BoqItem).filter(BoqItem.id == boq_item_id).first()
+    if not boq:
+        raise HTTPException(status_code=404, detail="BOQ item not found")
+
+    rows = (
+        db.query(LineItemQuotaBinding)
+        .filter(LineItemQuotaBinding.boq_item_id == boq_item_id)
+        .all()
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="该清单项尚未绑定定额，无法设置调价系数")
+
+    for row in rows:
+        row.coefficient = payload.coefficient
+    boq.is_dirty = 1
+    db.commit()
+
+    write_audit_log(
+        db=db,
+        project_id=boq.project_id,
+        action="set_bindings_coefficient",
+        resource_type="quota_binding",
+        resource_id=boq_item_id,
+        after_json=json.dumps(
+            {"boq_item_id": boq_item_id, "coefficient": payload.coefficient},
+            ensure_ascii=False,
+        ),
+    )
+
+    # 即时增量重算该项目，刷新该清单项的计价结果与综合单价
+    run_project_calculation(project_id=boq.project_id, db=db, incremental=True)
+    db.refresh(boq)
+
+    return [
+        BindingOut(
+            id=row.id,
+            boq_item_id=row.boq_item_id,
+            quota_item_id=row.quota_item_id,
+            coefficient=row.coefficient,
+        )
+        for row in rows
+    ]

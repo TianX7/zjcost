@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Button, Empty, Select, Spin, Table, Tag, message } from "antd";
+import { Button, Empty, InputNumber, Segmented, Select, Spin, Table, Tag, message } from "antd";
 import type { BindingRef, BoqItem, CalcProvenance, Project } from "../api";
 import { api } from "../api";
 import PageHeader from "../components/PageHeader";
@@ -99,6 +99,31 @@ export default function UnitPriceAnalysis() {
     () => (provenance?.bindings ?? []).reduce((sum, b) => sum + Number(b.direct_cost ?? 0), 0),
     [provenance],
   );
+
+  // ── 荒漠调价系数：按项目所在地套用，综合单价与费用构成即时联动 ──
+  const currentCoeff = useMemo(
+    () => Number(provenance?.bindings?.[0]?.coefficient ?? 1),
+    [provenance],
+  );
+  const [pendingCoeff, setPendingCoeff] = useState<number>(1);
+  const [applyingCoeff, setApplyingCoeff] = useState(false);
+  useEffect(() => {
+    setPendingCoeff(currentCoeff);
+  }, [currentCoeff]);
+
+  const applyCoefficient = async () => {
+    if (!selectedBoqItemId) return;
+    setApplyingCoeff(true);
+    try {
+      await api.setBindingsCoefficient(selectedBoqItemId, Number(pendingCoeff));
+      message.success(`已应用调价系数 ×${Number(pendingCoeff).toFixed(2)}，综合单价已更新`);
+      await load();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "应用调价系数失败");
+    } finally {
+      setApplyingCoeff(false);
+    }
+  };
 
   // 费用构成条目（直接费/管理费/利润/规费/税金）
   const feeParts = useMemo(() => {
@@ -228,6 +253,49 @@ export default function UnitPriceAnalysis() {
               </div>
             </div>
           </div>
+
+            {/* 荒漠调价系数 */}
+            {(provenance?.bindings.length ?? 0) > 0 && (
+              <div className="content-card">
+                <div className="content-card-head">
+                  <h3 className="content-card-title"><span className="material-symbols-outlined">tune</span>荒漠调价系数</h3>
+                  <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                    按项目所在地套用，作用于全部定额绑定，综合单价与费用构成即时联动
+                  </span>
+                </div>
+                <div className="content-card-body">
+                  <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", alignItems: "flex-end", gap: 10 }}>
+                      <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>当前调价系数</span>
+                      <strong style={{ fontSize: 30, color: "#2dd4bf" }}>×{currentCoeff.toFixed(2)}</strong>
+                    </div>
+                    <Segmented
+                      value={pendingCoeff}
+                      onChange={(value) => setPendingCoeff(Number(value))}
+                      options={[
+                        { label: "标准区 ×1.00", value: 1.0 },
+                        { label: "荒漠区 ×1.15", value: 1.15 },
+                      ]}
+                    />
+                    <InputNumber
+                      min={0.1}
+                      max={10}
+                      step={0.05}
+                      value={pendingCoeff}
+                      onChange={(value) => setPendingCoeff(Number(value ?? 1))}
+                      style={{ width: 110 }}
+                      addonBefore="自定义"
+                    />
+                    <Button type="primary" loading={applyingCoeff} onClick={applyCoefficient}>
+                      应用调价系数
+                    </Button>
+                  </div>
+                  <p style={{ margin: "10px 0 0", fontSize: 12, color: "var(--text-secondary)" }}>
+                    荒漠区说明：平均运距 180km、技工日单价高 35%、风沙气候致机械台班利用率下降，叠加荒漠调价系数 ×1.15。
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* 费用构成 */}
             {feeParts.length > 0 && (
