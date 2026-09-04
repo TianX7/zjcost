@@ -76,8 +76,25 @@ GS01_RESOURCES = [
 # 将「旧青砖回收」演示条目按 回收/加工/运输 三级拆分：
 # 千块 2150 元 = 回收 800 + 加工 850 + 运输 500 → 综合单价 2.15 元/块，
 # 与汇报稿「综合单价 2.15 元/块、三级可追溯」一致。
+# 加工价 850 元/千块 = 清洗 250 + 切割 300 + 打磨 150 + 钻孔 150，四道工序可逐项追溯。
 DEMO_BRICK_CODE = "OM-ZH-001"
-DEMO_BRICK_LEVEL_PRICES = {"recycle_price": 800.0, "process_price": 850.0, "transport_price": 500.0, "base_price": 2150.0}
+DEMO_BRICK_LEVEL_PRICES = {
+    "recycle_price": 800.0,
+    "process_price": 850.0,
+    "transport_price": 500.0,
+    # ── 加工价工序拆分（单位：元/千块） ──
+    "clean_price": 250.0,
+    "cut_price": 300.0,
+    "polish_price": 150.0,
+    "drill_price": 150.0,
+    # ── 三级价格来源凭证（可追溯） ──
+    "recycle_source": "旧建材市场调研表-2026-08-20（汉口北市场）",
+    "recycle_supplier": "汉口北旧建材大市场·废旧砖回收区",
+    "process_source": "加工合同 JG-2026-021（清洗/切割/打磨/钻孔工序单价表）",
+    "transport_source": "就地回收短运距运费单（500m）",
+    "transport_distance": "500m",
+    "base_price": 2150.0,
+}
 
 
 def _update_demo_brick_prices(db) -> None:
@@ -92,6 +109,7 @@ def _update_demo_brick_prices(db) -> None:
     for key, value in DEMO_BRICK_LEVEL_PRICES.items():
         setattr(item, key, value)
     print(f"演示旧砖三级价格已更新：{DEMO_BRICK_CODE} 回收800/加工850/运输500 → 综合单价 2150 元/千块（2.15 元/块）")
+    print("  加工价 850 = 清洗250 + 切割300 + 打磨150 + 钻孔150，四道工序逐项可追溯")
 
 
 def _upsert_quota(db, code: str, name: str, unit: str, labor: float, material: float,

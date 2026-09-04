@@ -47,6 +47,29 @@ def download_valuation_report(
     )
 
 
+@router.post("/tender-package")
+def download_tender_package(
+    project_id: int,
+    db: Session = Depends(get_db),
+):
+    """Generate and download a GBQ-style tender package zip (folder2 layout)."""
+    from app.services.gbq_export_service import export_tender_package
+
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    file_bytes = export_tender_package(project_id=project_id, db=db)
+    safe_name = _sanitize_filename(project.name)
+    filename = f"{safe_name}_tender_package_{project_id}.zip"
+
+    return StreamingResponse(
+        io.BytesIO(file_bytes),
+        media_type="application/zip",
+        headers={"Content-Disposition": build_attachment_disposition(filename)},
+    )
+
+
 @router.post("/diff-report")
 def download_diff_report(
     snapshot_a_id: int,

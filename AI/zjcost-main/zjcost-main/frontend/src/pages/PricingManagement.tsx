@@ -198,7 +198,7 @@ export default function PricingManagement() {
     },
   ];
 
-  // ===== 国标清单计价表（GB 50500-2013《建设工程工程量清单计价规范》表式）=====
+  // ===== 国标清单计价表（GB/T 50500-2024《建设工程工程量清单计价标准》表式）=====
   interface GbRow {
     key: string;
     seq: number;
@@ -313,7 +313,7 @@ export default function PricingManagement() {
     const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
     const lines: string[] = [
       "分部分项工程量清单与计价表",
-      "依据《建设工程工程量清单计价规范》GB 50500-2013 编制；项目编码依据 GB 50854-2013",
+      "依据《建设工程工程量清单计价标准》GB/T 50500-2024 编制；项目编码依据 GB/T 50854-2024",
       ["序号", "项目编码", "项目名称", "项目特征描述", "计量单位", "工程量", "综合单价(元)", "合价(元)"].map(esc).join(","),
       ...gbRows.map((r) => [r.seq, r.code, r.name, r.characteristics, r.unit, fmtNum(r.quantity, 3), fmtNum(r.unitPrice), fmtNum(r.amount)].map(esc).join(",")),
       ["", "", "合计（本表）", "", "", "", "", fmtNum(gbTotal)].map(esc).join(","),
@@ -416,7 +416,7 @@ export default function PricingManagement() {
               <Button icon={<DownloadOutlined />} onClick={exportGbSheet}>生成国标清单表</Button>
             </div>
           </div>
-          <div className="gb-sheet-banner">依据 GB 50500-2013《建设工程工程量清单计价规范》与 GB 50854-2013《房屋建筑与装饰工程工程量计算规范》编制</div>
+          <div className="gb-sheet-banner">依据 GB/T 50500-2024《建设工程工程量清单计价标准》与 GB/T 50854-2024《房屋建筑与装饰工程工程量计算标准》编制</div>
           <div className="content-card-body flush">
             {viewMode === "gb" ? (
               <Table

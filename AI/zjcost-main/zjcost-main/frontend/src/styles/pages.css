@@ -28,6 +28,45 @@
 .oml-standards-banner strong { display: block; font-size: 14px; color: #e2e8f0; margin-bottom: 4px; }
 .oml-standards-banner p { margin: 0; font-size: 12px; line-height: 1.7; color: #94a3b8; max-width: 860px; }
 
+/* ===== 三级计价构成演示面板 ===== */
+.oml-demo-card { background: linear-gradient(135deg, rgba(61, 139, 255, 0.10), rgba(77, 212, 255, 0.04)); border: 1px solid rgba(77, 212, 255, 0.24); }
+.oml-demo-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.oml-demo-head h3 { margin: 0 0 4px; font-size: 15px; font-weight: 700; color: var(--text-primary); }
+.oml-demo-head h3 .material-symbols-outlined { font-size: 18px; color: var(--accent); margin-right: 4px; }
+.oml-demo-total { text-align: right; flex-shrink: 0; }
+.oml-demo-total-label { display: block; font-size: 12px; color: var(--text-secondary); letter-spacing: 1px; }
+.oml-demo-total-value { display: block; font-size: 38px; font-weight: 700; color: var(--accent); line-height: 1.15; text-shadow: 0 0 18px rgba(77, 212, 255, 0.4); }
+.oml-demo-total-unit { font-size: 13px; color: var(--text-secondary); }
+.oml-demo-levels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.oml-demo-level { padding: 14px 16px; border-radius: 10px; background: var(--bg-elevated); border: 1px solid var(--border-strong); border-top: 3px solid #34d399; }
+.oml-demo-level-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.oml-demo-level-no { font-size: 10px; color: #0d1f3c; background: var(--accent); border-radius: 4px; padding: 1px 6px; font-weight: 600; }
+.oml-demo-level-head strong { font-size: 15px; color: var(--text-primary); }
+.oml-demo-level-amount { margin-left: auto; font-size: 22px; font-weight: 700; color: var(--text-primary); }
+.oml-demo-level-amount small { font-size: 11px; color: var(--text-secondary); font-weight: 400; }
+.oml-demo-level-src { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+.oml-demo-level-tag { margin-top: 8px; display: inline-block; font-size: 11px; color: var(--accent-2); background: rgba(34, 197, 94, 0.12); border: 1px solid rgba(34, 197, 94, 0.25); border-radius: 4px; padding: 2px 8px; }
+.oml-demo-process { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 6px 0 8px; }
+.oml-demo-process-item { text-align: center; padding: 6px 4px; border-radius: 6px; background: rgba(61, 139, 255, 0.14); border: 1px solid rgba(61, 139, 255, 0.28); }
+.oml-demo-process-label { display: block; font-size: 11px; color: var(--text-secondary); }
+.oml-demo-process-val { display: block; font-size: 15px; font-weight: 600; color: var(--accent); }
+.oml-demo-foot { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 13px; color: var(--text-secondary); border-top: 1px dashed var(--border-strong); padding-top: 12px; }
+.oml-demo-foot .material-symbols-outlined { color: var(--accent-2); font-size: 18px; flex-shrink: 0; }
+.oml-demo-foot b { color: var(--text-primary); }
+/* AI 损耗预测演示指标 */
+.oml-loss-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
+.oml-loss-metric { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 14px 16px; border-radius: 10px; background: var(--bg-elevated); border: 1px solid var(--border-strong); }
+.oml-loss-metric-icon { font-family: "Material Symbols Outlined"; font-size: 22px; }
+.oml-loss-metric-label { font-size: 12px; color: var(--text-secondary); letter-spacing: 1px; }
+.oml-loss-metric-value { font-size: 28px; font-weight: 700; line-height: 1.2; }
+.oml-loss-breakdown { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.oml-loss-factor { display: grid; grid-template-columns: 72px 1fr auto; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; background: rgba(61, 139, 255, 0.08); border: 1px solid var(--border-light); }
+.oml-loss-factor-name { font-size: 12px; color: var(--text-secondary); }
+.oml-loss-factor-detail { font-size: 12px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.oml-loss-factor-adj { font-size: 12px; font-weight: 600; text-align: right; }
+@media (max-width: 900px) { .oml-loss-metrics { grid-template-columns: 1fr; } .oml-loss-breakdown { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .oml-demo-levels { grid-template-columns: 1fr; } }
+
 /* ===== 运营专题页（光伏 / 净水中水 / 运营维护）：动态可视化 ===== */
 @keyframes ops-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
 @keyframes ops-wave { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }

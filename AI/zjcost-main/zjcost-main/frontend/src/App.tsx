@@ -23,6 +23,7 @@ const PricingAudit = lazy(() => import("./pages/PricingAudit"));
 const SystemSettings = lazy(() => import("./pages/SystemSettings"));
 const OldMaterialLibrary = lazy(() => import("./pages/OldMaterialLibrary"));
 const DynamicControl = lazy(() => import("./pages/DynamicControl"));
+const InnovationHub = lazy(() => import("./pages/InnovationHub"));
 
 const NAV_ITEMS = [
   { path: "/dashboard", icon: "query_stats", label: "总控工作台" },
@@ -39,6 +40,7 @@ const NAV_ITEMS = [
   { path: "/unit-price-analysis", icon: "price_change", label: "综合单价分析" },
   { path: "/pricing-audit", icon: "calculate", label: "计价复核与审计" },
   { path: "/dynamic-control", icon: "monitoring", label: "动态管控" },
+  { path: "/innovation-hub", icon: "workspace_premium", label: "创新成果" },
   { path: "/settings", icon: "tune", label: "系统参数配置" },
 ];
 
@@ -54,6 +56,7 @@ const PAGE_TITLES: Record<string, { title: string; hint: string }> = {
   "/facility-ops": { title: "设施运维管理", hint: "设备健康监测、维保工单与分项能耗分析" },
   "/pricing-audit": { title: "计价复核与审计", hint: "核对价格、定额与风险项" },
   "/dynamic-control": { title: "动态管控", hint: "从造价到运维：四源关联、偏差对比、支付校验、风险模拟与后评估" },
+  "/innovation-hub": { title: "创新成果", hint: "五大创新点、工程/经济/可持续三重价值与校企协同人才成效总览" },
   "/data-resources": { title: "定额与价格库", hint: "维护计价基础数据" },
   "/old-materials": { title: "旧材利用定额", hint: "遗址修复材料定额清单：当地回收 / 原材料复现" },
   "/unit-price-analysis": { title: "综合单价分析", hint: "分析综合单价构成与合理性" },
@@ -309,6 +312,7 @@ export default function App() {
                             <Route path="/projects/:id" element={<ProjectDetail />} />
                             <Route path="/pricing-audit" element={<PricingAudit />} />
                             <Route path="/dynamic-control" element={<DynamicControl />} />
+                            <Route path="/innovation-hub" element={<InnovationHub />} />
                             <Route path="/pricing" element={<Navigate to="/pricing-audit" replace />} />
                             <Route path="/audit" element={<Navigate to="/pricing-audit" replace />} />
                             <Route path="/reports" element={<Navigate to="/pricing-audit" replace />} />

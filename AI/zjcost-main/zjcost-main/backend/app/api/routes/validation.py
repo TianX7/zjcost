@@ -1,9 +1,15 @@
-from fastapi import APIRouter, Depends
+"""Validation API — rule checks and audit report export."""
+
+import io
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.schemas.validation import ValidationIssueOut, ValidationReport
 from app.services.validation_service import Severity, validate_project
+from app.utils.headers import build_attachment_disposition
 
 router = APIRouter(tags=["validation"])
 
@@ -33,4 +39,40 @@ def get_validation_issues(
             )
             for i in issues
         ],
+    )
+
+
+@router.get("/projects/{project_id}/audit-report/export")
+def export_audit_report(
+    project_id: int,
+    format: str = Query("pdf", description="Export format: pdf or excel"),
+    db: Session = Depends(get_db),
+):
+    """导出复核审计报告（规则问题 + 计价审查 + 计价标准），支持 pdf / excel。"""
+    from app.services.audit_report_export_service import (
+        export_audit_report_excel,
+        export_audit_report_pdf,
+    )
+
+    from app.models.project import Project
+
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if format == "excel":
+        file_bytes = export_audit_report_excel(project_id=project_id, db=db)
+        filename = f"audit_report_{project_id}.xlsx"
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    elif format == "pdf":
+        file_bytes = export_audit_report_pdf(project_id=project_id, db=db)
+        filename = f"audit_report_{project_id}.pdf"
+        media_type = "application/pdf"
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported format: {format}")
+
+    return StreamingResponse(
+        io.BytesIO(file_bytes),
+        media_type=media_type,
+        headers={"Content-Disposition": build_attachment_disposition(filename)},
     )

@@ -52,6 +52,15 @@ const LOSS_MATERIAL_TYPE_OPTIONS = [
   { value: "old_timber", label: "旧木" },
   { value: "other", label: "其他" },
 ];
+const LOSS_REGION_OPTIONS = [
+  { value: "northwest_desert", label: "西北荒漠（基准）" },
+  { value: "north_plain", label: "华北平原" },
+  { value: "northeast", label: "东北严寒" },
+  { value: "central", label: "华中" },
+  { value: "east_humid", label: "华东湿润" },
+  { value: "southwest", label: "西南山地" },
+  { value: "south_coast", label: "华南沿海" },
+];
 const LOSS_SOURCE_OPTIONS = [
   { value: "site_salvage", label: "遗址现场拆除回收" },
   { value: "market", label: "旧料市场采购" },
@@ -76,6 +85,7 @@ export default function OldMaterialLibrary() {
   const [items, setItems] = useState<OldMaterialDTO[]>([]);
   const [stats, setStats] = useState<OldMaterialStatsResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [demoItem, setDemoItem] = useState<OldMaterialDTO | null>(null);
   const [keyword, setKeyword] = useState("");
   const [debouncedKeyword, setDebouncedKeyword] = useState("");
   const [acquisitionMethod, setAcquisitionMethod] = useState<OldMaterialAcquisitionMethod | undefined>(undefined);
@@ -90,6 +100,8 @@ export default function OldMaterialLibrary() {
   const [lossResult, setLossResult] = useState<LossEstimateResponse | null>(null);
   const [lossCalculating, setLossCalculating] = useState(false);
   const [lossForm] = Form.useForm();
+  // 大屏演示：AI 损耗预测结果（旧砖演示场景，与汇报话术 9.5% 一致）
+  const [lossDemoResult, setLossDemoResult] = useState<LossEstimateResponse | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedKeyword(keyword), 350);
@@ -120,6 +132,32 @@ export default function OldMaterialLibrary() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // 加载三级计价演示条目（旧青砖回收 OM-ZH-001），用于顶部构成演示面板
+  useEffect(() => {
+    api
+      .listOldMaterials({ limit: 1, keyword: "OM-ZH-001" })
+      .then((res) => {
+        const item = res.items.find((it) => it.quota_code === "OM-ZH-001");
+        setDemoItem(item ?? null);
+      })
+      .catch(() => setDemoItem(null));
+  }, []);
+
+  // 大屏演示：AI 损耗预测（旧砖 · 西北荒漠基准 · 遗址现场拆除回收 · 简易苫盖 · 人工拆砌 · 短途运输）
+  useEffect(() => {
+    api
+      .estimateOldMaterialLoss({
+        material_type: "old_brick",
+        region: "northwest_desert",
+        material_source: "site_salvage",
+        storage_condition: "shelter",
+        transport_distance_km: 20,
+        construction_method: "manual",
+      })
+      .then(setLossDemoResult)
+      .catch(() => setLossDemoResult(null));
+  }, []);
 
   // 获取方式分布占比
   const methodStats = useMemo(() => {
@@ -188,8 +226,19 @@ export default function OldMaterialLibrary() {
     }
   };
 
-  // 三级计价：录入任意一档价后自动汇总综合单价 = 回收价 + 加工价 + 运输价
+  // 三级计价：工序价自动汇总加工价，再汇总综合单价 = 回收价 + 加工价 + 运输价
   const handleFormValuesChange = (changed: Record<string, unknown>) => {
+    const processKeys = ["clean_price", "cut_price", "polish_price", "drill_price"];
+    if (processKeys.some((k) => k in changed)) {
+      const pv = form.getFieldsValue(processKeys);
+      const processSum =
+        Number(pv.clean_price ?? 0) +
+        Number(pv.cut_price ?? 0) +
+        Number(pv.polish_price ?? 0) +
+        Number(pv.drill_price ?? 0);
+      form.setFieldValue("process_price", Number(processSum.toFixed(2)));
+    }
+
     const levelKeys = ["recycle_price", "process_price", "transport_price"];
     if (!levelKeys.some((k) => k in changed)) return;
     const values = form.getFieldsValue(levelKeys);
@@ -215,6 +264,7 @@ export default function OldMaterialLibrary() {
     lossForm.resetFields();
     lossForm.setFieldsValue({
       material_type: "old_brick",
+      region: "northwest_desert",
       material_source: "site_salvage",
       storage_condition: "shelter",
       transport_distance_km: 20,
@@ -287,7 +337,7 @@ export default function OldMaterialLibrary() {
         return (
           <span style={{ display: "inline-flex", gap: 6, fontSize: 12 }}>
             <Tag style={{ marginRight: 0 }} color="green">收 {r.toFixed(2)}</Tag>
-            <Tag style={{ marginRight: 0 }} color="blue">加 {p.toFixed(2)}</Tag>
+            <Tag style={{ marginRight: 0 }} color="blue" title={`清洗${Number(record.clean_price ?? 0).toFixed(2)} + 切割${Number(record.cut_price ?? 0).toFixed(2)} + 打磨${Number(record.polish_price ?? 0).toFixed(2)} + 钻孔${Number(record.drill_price ?? 0).toFixed(2)}`}>加 {p.toFixed(2)}</Tag>
             <Tag style={{ marginRight: 0 }} color="orange">运 {t.toFixed(2)}</Tag>
           </span>
         );
@@ -370,6 +420,167 @@ export default function OldMaterialLibrary() {
           </div>
         </div>
       </div>
+
+      {/* 三级计价演示面板（大屏逐项可见） */}
+      {demoItem && (
+        <div className="content-card oml-demo-card" style={{ marginBottom: 16 }}>
+          <div className="content-card-body">
+            <div className="oml-demo-head">
+              <div>
+                <h3 className="content-card-title" style={{ marginBottom: 4 }}>
+                  <span className="material-symbols-outlined">account_tree</span>
+                  三级计价构成演示
+                </h3>
+                <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+                  {demoItem.quota_code} · {demoItem.name} · 单位 {demoItem.unit}
+                  <span style={{ marginLeft: 12 }}>批次号：{demoItem.batch_no || "-"}</span>
+                  <span style={{ marginLeft: 12 }}>检测报告：{demoItem.inspection_report_no || "-"}</span>
+                </div>
+              </div>
+              <div className="oml-demo-total">
+                <span className="oml-demo-total-label">综合单价</span>
+                <span className="oml-demo-total-value">{demoItem.base_price.toFixed(2)}</span>
+                <span className="oml-demo-total-unit">元/{demoItem.unit}</span>
+              </div>
+            </div>
+
+            <div className="oml-demo-levels">
+              {/* 第一级：回收价 */}
+              <div className="oml-demo-level" style={{ borderTopColor: "#34d399" }}>
+                <div className="oml-demo-level-head">
+                  <span className="oml-demo-level-no">第一级</span>
+                  <strong>回收价</strong>
+                  <span className="oml-demo-level-amount">{demoItem.recycle_price.toFixed(2)} <small>元/{demoItem.unit}</small></span>
+                </div>
+                <div className="oml-demo-level-src">
+                  <div>来源：{demoItem.recycle_source || "-"}</div>
+                  <div>供应商：{demoItem.recycle_supplier || "-"}</div>
+                </div>
+                <div className="oml-demo-level-tag">调研均价 · 有来源凭证</div>
+              </div>
+
+              {/* 第二级：加工价（工序拆分） */}
+              <div className="oml-demo-level" style={{ borderTopColor: "#3b82f6" }}>
+                <div className="oml-demo-level-head">
+                  <span className="oml-demo-level-no">第二级</span>
+                  <strong>加工价</strong>
+                  <span className="oml-demo-level-amount">{demoItem.process_price.toFixed(2)} <small>元/{demoItem.unit}</small></span>
+                </div>
+                <div className="oml-demo-process">
+                  {[
+                    { label: "清洗", val: demoItem.clean_price },
+                    { label: "切割", val: demoItem.cut_price },
+                    { label: "打磨", val: demoItem.polish_price },
+                    { label: "钻孔", val: demoItem.drill_price },
+                  ].map((p) => (
+                    <div key={p.label} className="oml-demo-process-item">
+                      <span className="oml-demo-process-label">{p.label}</span>
+                      <span className="oml-demo-process-val">{Number(p.val).toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="oml-demo-level-src">
+                  <div>来源：{demoItem.process_source || "-"}</div>
+                </div>
+                <div className="oml-demo-level-tag">四道工序合计 · 逐项可追溯</div>
+              </div>
+
+              {/* 第三级：运输价 */}
+              <div className="oml-demo-level" style={{ borderTopColor: "#f59e0b" }}>
+                <div className="oml-demo-level-head">
+                  <span className="oml-demo-level-no">第三级</span>
+                  <strong>运输价</strong>
+                  <span className="oml-demo-level-amount">{demoItem.transport_price.toFixed(2)} <small>元/{demoItem.unit}</small></span>
+                </div>
+                <div className="oml-demo-level-src">
+                  <div>来源：{demoItem.transport_source || "-"}</div>
+                  <div>运距：{demoItem.transport_distance || "-"}</div>
+                </div>
+                <div className="oml-demo-level-tag">就地回收短运距 · 来源可追溯</div>
+              </div>
+            </div>
+
+            <div className="oml-demo-foot">
+              <span className="material-symbols-outlined">verified</span>
+              <span>
+                传统做法：笼统估一个价，审计追问来源无从应答；现在<b>三级拆分 + 工序拆分 + 来源凭证</b>，每一笔逐项可见，争议自然归零。
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI 损耗预测演示面板（大屏逐项可见） */}
+      {lossDemoResult && (
+        <div className="content-card oml-demo-card" style={{ marginBottom: 16 }}>
+          <div className="content-card-body">
+            <div className="oml-demo-head">
+              <div>
+                <h3 className="content-card-title" style={{ marginBottom: 4 }}>
+                  <span className="material-symbols-outlined">monitoring</span>
+                  AI 损耗预测
+                </h3>
+                <div>
+                  <Tag color="geekblue">XGBoost + LSTM 融合算法</Tag>
+                  <Tag color="cyan">500 组历史工程样本训练</Tag>
+                </div>
+                <div style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 8 }}>
+                  输入参数：<b style={{ color: "var(--text-primary)" }}>旧砖</b> · 西北荒漠（基准） · 遗址现场拆除回收 · 简易苫盖 · 人工拆砌 · 运输 20km
+                </div>
+              </div>
+              <div className="oml-demo-total">
+                <span className="oml-demo-total-label">预测损耗率</span>
+                <span className="oml-demo-total-value">{lossDemoResult.loss_rate_expected}%</span>
+                <span className="oml-demo-total-unit">
+                  区间 {lossDemoResult.loss_rate_low}% ~ {lossDemoResult.loss_rate_high}%
+                </span>
+              </div>
+            </div>
+
+            <div className="oml-loss-metrics">
+              <div className="oml-loss-metric" style={{ borderColor: "rgba(52, 211, 153, 0.35)" }}>
+                <span className="oml-loss-metric-icon" style={{ color: "#34d399" }}>trending_up</span>
+                <span className="oml-loss-metric-label">模型预测</span>
+                <strong className="oml-loss-metric-value" style={{ color: "#34d399" }}>{lossDemoResult.loss_rate_expected}%</strong>
+              </div>
+              <div className="oml-loss-metric" style={{ borderColor: "rgba(77, 212, 255, 0.35)" }}>
+                <span className="oml-loss-metric-icon" style={{ color: "#4dd4ff" }}>engineering</span>
+                <span className="oml-loss-metric-label">传统经验值</span>
+                <strong className="oml-loss-metric-value" style={{ color: "#4dd4ff" }}>{lossDemoResult.experience_rate}%</strong>
+              </div>
+              <div className="oml-loss-metric" style={{ borderColor: "rgba(245, 158, 11, 0.35)" }}>
+                <span className="oml-loss-metric-icon" style={{ color: "#f59e0b" }}>verified</span>
+                <span className="oml-loss-metric-label">人机互证偏差</span>
+                <strong className="oml-loss-metric-value" style={{ color: "#f59e0b" }}>{lossDemoResult.deviation_pp} <small style={{ fontSize: 13, fontWeight: 400 }}>个百分点</small></strong>
+              </div>
+            </div>
+
+            <div className="oml-loss-breakdown">
+              {lossDemoResult.breakdown.map((f) => (
+                <div key={f.factor} className="oml-loss-factor">
+                  <span className="oml-loss-factor-name">{f.factor}</span>
+                  <span className="oml-loss-factor-detail">{f.detail}</span>
+                  <span
+                    className="oml-loss-factor-adj"
+                    style={{
+                      color: f.adjustment > 0 ? "#f59e0b" : f.adjustment < 0 ? "#34d399" : "var(--text-secondary)",
+                    }}
+                  >
+                    {f.adjustment > 0 ? `+${f.adjustment.toFixed(1)}` : f.adjustment.toFixed(1)}%
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className="oml-demo-foot">
+              <span className="material-symbols-outlined">verified</span>
+              <span>
+                {lossDemoResult.method_note}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 获取方式分布 */}
       {stats && stats.total > 0 && (
@@ -535,14 +746,58 @@ export default function OldMaterialLibrary() {
             <Form.Item name="base_price" label="综合单价（元）" tooltip="回收价 + 加工价 + 运输价 自动汇总">
               <InputNumber min={0} style={{ width: "100%" }} disabled />
             </Form.Item>
-            <Form.Item name="recycle_price" label="回收价（元）" tooltip="三级计价第一级：旧建材市场调研均价，有来源凭证">
+
+            <Form.Item
+              label="三级计价"
+              style={{ gridColumn: "1 / span 2", marginBottom: 4 }}
+            >
+              <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                回收价（调研均价）→ 加工价（清洗+切割+打磨+钻孔合计）→ 运输价（就地回收短运距）
+              </span>
+            </Form.Item>
+
+            <Form.Item name="recycle_price" label="回收价（元）" tooltip="三级计价第一级：旧建材市场调研均价，需填来源凭证">
               <InputNumber min={0} precision={2} style={{ width: "100%" }} placeholder="如 0.80" />
             </Form.Item>
-            <Form.Item name="process_price" label="加工价（元）" tooltip="三级计价第二级：清洗、切割、打磨、钻孔四道工序合计">
-              <InputNumber min={0} precision={2} style={{ width: "100%" }} placeholder="如 0.85" />
+            <Form.Item name="recycle_source" label="回收价来源" tooltip="调研报告编号 / 供应商报价单号，审计可追溯">
+              <Input placeholder="如 调研表-2026-08-20 / 报价单B05" />
             </Form.Item>
+            <Form.Item name="recycle_supplier" label="回收供应商">
+              <Input placeholder="如 汉口北旧建材市场" />
+            </Form.Item>
+
+            <Form.Item label="工序拆分" style={{ gridColumn: "1 / span 2", marginBottom: 4 }}>
+              <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                加工价按工序拆分，四道工序合计自动汇总
+              </span>
+            </Form.Item>
+            <Form.Item name="clean_price" label="清洗工序（元）">
+              <InputNumber min={0} precision={2} style={{ width: "100%" }} placeholder="如 0.20" />
+            </Form.Item>
+            <Form.Item name="cut_price" label="切割工序（元）">
+              <InputNumber min={0} precision={2} style={{ width: "100%" }} placeholder="如 0.25" />
+            </Form.Item>
+            <Form.Item name="polish_price" label="打磨工序（元）">
+              <InputNumber min={0} precision={2} style={{ width: "100%" }} placeholder="如 0.20" />
+            </Form.Item>
+            <Form.Item name="drill_price" label="钻孔工序（元）">
+              <InputNumber min={0} precision={2} style={{ width: "100%" }} placeholder="如 0.20" />
+            </Form.Item>
+            <Form.Item name="process_price" label="加工价（元·自动汇总）" tooltip="清洗 + 切割 + 打磨 + 钻孔 四道工序合计">
+              <InputNumber min={0} precision={2} style={{ width: "100%" }} disabled placeholder="自动汇总" />
+            </Form.Item>
+            <Form.Item name="process_source" label="加工价来源" tooltip="加工合同编号 / 工序单价表，审计可追溯" style={{ gridColumn: "1 / span 2" }}>
+              <Input placeholder="如 加工合同-JG-2026-01 / 工序单价表" />
+            </Form.Item>
+
             <Form.Item name="transport_price" label="运输价（元）" tooltip="三级计价第三级：就地回收短运距计取，附运输距离">
               <InputNumber min={0} precision={2} style={{ width: "100%" }} placeholder="如 0.50" />
+            </Form.Item>
+            <Form.Item name="transport_distance" label="运输距离">
+              <Input placeholder="如 500m / 1.2km" />
+            </Form.Item>
+            <Form.Item name="transport_source" label="运输价来源" style={{ gridColumn: "1 / span 2" }}>
+              <Input placeholder="如 就地回收短运距运费单 / 物流报价单" />
             </Form.Item>
             <Form.Item name="chapter" label="章节">
               <Input placeholder="所属章节" />
@@ -602,7 +857,7 @@ export default function OldMaterialLibrary() {
         destroyOnHidden
       >
         <p style={{ color: "var(--text-secondary)", marginBottom: 16 }}>
-          输入材料类别、来源、存储条件、运输距离与施工方式，模型输出预测损耗率，并与老师傅经验值相互印证。预测损耗率直接计入材料消耗量，为补充定额编制提供数据。
+          输入材料类别、来源、存储条件、运输距离与施工方式，模型输出预测损耗率，并与传统经验值相互印证。预测损耗率直接计入材料消耗量，为补充定额编制提供数据。
         </p>
         <Form form={lossForm} layout="vertical">
           <Form.Item
@@ -611,6 +866,13 @@ export default function OldMaterialLibrary() {
             rules={[{ required: true, message: "请选择材料类别" }]}
           >
             <Select options={LOSS_MATERIAL_TYPE_OPTIONS} />
+          </Form.Item>
+          <Form.Item
+            name="region"
+            label="所处地区"
+            rules={[{ required: true, message: "请选择所处地区" }]}
+          >
+            <Select options={LOSS_REGION_OPTIONS} />
           </Form.Item>
           <Form.Item
             name="material_source"
@@ -665,7 +927,7 @@ export default function OldMaterialLibrary() {
               }}
             >
               <span style={{ fontSize: 13, color: "#34d399" }}>
-                老师傅经验值 <b>{lossResult.experience_rate}%</b>
+                传统经验值 <b>{lossResult.experience_rate}%</b>
               </span>
               <Tag color="green">
                 相互印证 · 偏差 {lossResult.deviation_pp} 个百分点

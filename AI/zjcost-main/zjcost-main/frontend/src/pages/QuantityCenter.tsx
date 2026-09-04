@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Alert, Button, Empty, Select, Space, Spin, Table, Tag, Typography } from "antd";
 import { DownloadOutlined, ReloadOutlined } from "@ant-design/icons";
@@ -6,29 +6,29 @@ import PageHeader from "../components/PageHeader";
 import { api, type CalcSummary, type LineCalcResult, type Project } from "../api";
 
 /**
- * 《房屋建筑与装饰工程工程量计算规范》GB 50854-2013 附录标准分项类目。
+ * 《房屋建筑与装饰工程工程量计算标准》GB/T 50854-2024 附录标准分项类目。
  * prefix 映射清单项目编码前 6 位（01 + 两位附录序号 + 两位章序号）。
  */
 const GB50854_CATEGORIES = [
-  { key: "earthwork", name: "土石方工程", codeRange: "010101-010103", standard: "GB 50854-2013 附录A", icon: "landscape", prefixes: ["010101", "010102", "010103"] },
-  { key: "pile", name: "桩基工程", codeRange: "010301-010302", standard: "GB 50854-2013 附录C", icon: "foundation", prefixes: ["010301", "010302", "0102"] },
-  { key: "foundation", name: "基础工程", codeRange: "010501-010503（基础部分）", standard: "GB 50854-2013 附录E 基础", icon: "square_foot", prefixes: ["010502", "010503"] },
-  { key: "masonry", name: "砌筑工程", codeRange: "010401-010404", standard: "GB 50854-2013 附录D", icon: "view_module", prefixes: ["010401", "010402", "010403", "010404"] },
-  { key: "rc", name: "混凝土及钢筋混凝土工程", codeRange: "010501-010515", standard: "GB 50854-2013 附录E", icon: "apartment", prefixes: ["010501", "010504", "010505", "010506", "010507", "010508", "010509", "010515"] },
-  { key: "door-window", name: "门窗工程", codeRange: "010801-010805", standard: "GB 50854-2013 附录H", icon: "door_sliding", prefixes: ["010801", "010802", "010803", "010804", "010805", "010806"] },
-  { key: "roof", name: "屋面及防水工程", codeRange: "010901-010902", standard: "GB 50854-2013 附录J", icon: "roofing", prefixes: ["010901", "010902", "010903", "010904", "010905"] },
-  { key: "finishing", name: "装饰装修工程", codeRange: "011101-011507", standard: "GB 50854-2013 附录K-N", icon: "format_paint", prefixes: ["011101", "011102", "011103", "011104", "011105", "011106", "011107", "011108", "011109", "011110", "0112", "0113", "0114", "0115"] },
+  { key: "earthwork", name: "土石方工程", codeRange: "010101-010103", standard: "GB/T 50854-2024 附录A", icon: "landscape", prefixes: ["010101", "010102", "010103"] },
+  { key: "pile", name: "桩基工程", codeRange: "010301-010302", standard: "GB/T 50854-2024 附录C", icon: "foundation", prefixes: ["010301", "010302", "0102"] },
+  { key: "foundation", name: "基础工程", codeRange: "010501-010503（基础部分）", standard: "GB/T 50854-2024 附录E 基础", icon: "square_foot", prefixes: ["010502", "010503"] },
+  { key: "masonry", name: "砌筑工程", codeRange: "010401-010404", standard: "GB/T 50854-2024 附录D", icon: "view_module", prefixes: ["010401", "010402", "010403", "010404"] },
+  { key: "rc", name: "混凝土及钢筋混凝土工程", codeRange: "010501-010515", standard: "GB/T 50854-2024 附录E", icon: "apartment", prefixes: ["010501", "010504", "010505", "010506", "010507", "010508", "010509", "010515"] },
+  { key: "door-window", name: "门窗工程", codeRange: "010801-010805", standard: "GB/T 50854-2024 附录H", icon: "door_sliding", prefixes: ["010801", "010802", "010803", "010804", "010805", "010806"] },
+  { key: "roof", name: "屋面及防水工程", codeRange: "010901-010902", standard: "GB/T 50854-2024 附录J", icon: "roofing", prefixes: ["010901", "010902", "010903", "010904", "010905"] },
+  { key: "finishing", name: "装饰装修工程", codeRange: "011101-011507", standard: "GB/T 50854-2024 附录K-N", icon: "format_paint", prefixes: ["011101", "011102", "011103", "011104", "011105", "011106", "011107", "011108", "011109", "011110", "0112", "0113", "0114", "0115"] },
 ] as const;
 
 /**
- * 《通用安装工程工程量计算规范》GB 50856-2013 附录标准分项类目（安装专业）。
+ * 《通用安装工程工程量计算标准》GB/T 50856-2024 附录标准分项类目（安装专业）。
  * 编码前缀：03 + 两位附录序号 + 两位章序号。
  */
 const GB50856_CATEGORIES = [
-  { key: "plumbing", name: "给排水工程", codeRange: "031001-031010", standard: "GB 50856-2013 附录K 给排水、采暖、燃气", icon: "water_drop", prefixes: ["0310"] },
-  { key: "electrical", name: "电气工程", codeRange: "030401-030414", standard: "GB 50856-2013 附录D 电气设备安装", icon: "bolt", prefixes: ["0304"] },
-  { key: "hvac", name: "通风空调（暖通）工程", codeRange: "030701-030706", standard: "GB 50856-2013 附录G 通风空调", icon: "hvac", prefixes: ["0307"] },
-  { key: "fire", name: "消防工程", codeRange: "030901-030904", standard: "GB 50856-2013 附录J 消防", icon: "local_fire_department", prefixes: ["0309"] },
+  { key: "plumbing", name: "给排水工程", codeRange: "031001-031010", standard: "GB/T 50856-2024 附录K 给排水、采暖、燃气", icon: "water_drop", prefixes: ["0310"] },
+  { key: "electrical", name: "电气工程", codeRange: "030401-030414", standard: "GB/T 50856-2024 附录D 电气设备安装", icon: "bolt", prefixes: ["0304"] },
+  { key: "hvac", name: "通风空调（暖通）工程", codeRange: "030701-030706", standard: "GB/T 50856-2024 附录G 通风空调", icon: "hvac", prefixes: ["0307"] },
+  { key: "fire", name: "消防工程", codeRange: "030901-030904", standard: "GB/T 50856-2024 附录J 消防", icon: "local_fire_department", prefixes: ["0309"] },
 ] as const;
 
 const ALL_CATEGORIES = [...GB50854_CATEGORIES, ...GB50856_CATEGORIES] as (typeof GB50854_CATEGORIES[number] | typeof GB50856_CATEGORIES[number])[];
@@ -140,7 +140,7 @@ export default function QuantityCenter() {
       <PageHeader
         icon="square_foot"
         title="算量中心"
-        subtitle="工程量数据按《房屋建筑与装饰工程工程量计算规范》GB 50854-2013 与《通用安装工程工程量计算规范》GB 50856-2013（给排水、电气、暖通、消防等安装专业）标准分项归集。"
+        subtitle="工程量数据按《房屋建筑与装饰工程工程量计算标准》GB/T 50854-2024 与《通用安装工程工程量计算标准》GB/T 50856-2024（给排水、电气、暖通、消防等安装专业）标准分项归集。"
       />
 
       <div className="qc-toolbar">

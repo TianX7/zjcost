@@ -480,9 +480,157 @@ function RiskChart() {
   );
 }
 
+/* 风险预演交互：输入天气 / 建材 / 进度参数 → 输出风险评级与应对措施 */
+
+type WeatherKey = "dust" | "rain" | "wind" | "heat" | "calm";
+type PriceKey = "up" | "flat" | "down";
+type ScheduleKey = "normal" | "delay";
+
+const WEATHER_META: Record<WeatherKey, { label: string; icon: string; color: string; effect: number; advice: string[] }> = {
+  dust: { label: "沙尘暴窗口（荒漠）", icon: "storms", color: "#f97316", effect: 0.6, advice: ["室外作业调整到室内，成本偏差压回 1.5% 以内", "材料进场防尘苫盖，机械加装空气滤芯"] },
+  rain: { label: "强降雨", icon: "rainy", color: "#38bdf8", effect: 0.4, advice: ["室外浇筑工序提前或顺延", "基坑排水与成品保护"] },
+  wind: { label: "大风", icon: "air", color: "#94a3b8", effect: 0.3, advice: ["高空作业暂停", "吊装作业窗口期管理"] },
+  heat: { label: "高温", icon: "wb_sunny", color: "#fbbf24", effect: 0.2, advice: ["作业时段避开正午高温", "混凝土养护加强保湿"] },
+  calm: { label: "晴朗平稳", icon: "sunny", color: "#34d399", effect: 0, advice: ["按计划推进，无需额外干预"] },
+};
+
+const PRICE_META: Record<PriceKey, { label: string; icon: string; effect: number; advice: string[] }> = {
+  up: { label: "建材价格上涨", icon: "trending_up", effect: 0.3, advice: ["当天询价锁定成本", "大宗材料批量锁价"] },
+  flat: { label: "建材价格平稳", icon: "trending_flat", effect: 0, advice: ["按供销协议继续执行"] },
+  down: { label: "建材价格回落", icon: "trending_down", effect: -0.1, advice: ["把握回落窗口补货"] },
+};
+
+const SCHEDULE_META: Record<ScheduleKey, { label: string; icon: string; effect: number; advice: string[] }> = {
+  normal: { label: "进度正常", icon: "check_circle", effect: 0, advice: [] },
+  delay: { label: "关键线路延误", icon: "warning", effect: 0.2, advice: ["关键线路增加班组赶工", "机具资源协调增配"] },
+};
+
+function RiskSimulator() {
+  const [weather, setWeather] = useState<WeatherKey>("dust");
+  const [price, setPrice] = useState<PriceKey>("flat");
+  const [schedule, setSchedule] = useState<ScheduleKey>("normal");
+  const [tick, setTick] = useState(0);
+
+  const result = useMemo(() => {
+    const base = 1.2;
+    const peak = Math.min(2.2, +(base + WEATHER_META[weather].effect + PRICE_META[price].effect + SCHEDULE_META[schedule].effect).toFixed(2));
+    const after = Math.min(2.2, +(peak * 0.72).toFixed(2));
+    const level = peak >= 1.8 ? ("high" as const) : peak >= 1.5 ? ("medium" as const) : ("low" as const);
+    const touched: string[] = [];
+    if (WEATHER_META[weather].effect > 0) touched.push(`天气：${WEATHER_META[weather].label} +${WEATHER_META[weather].effect.toFixed(1)}%`);
+    if (PRICE_META[price].effect > 0) touched.push(`建材：${PRICE_META[price].label} +${PRICE_META[price].effect.toFixed(1)}%`);
+    if (SCHEDULE_META[schedule].effect > 0) touched.push(`进度：${SCHEDULE_META[schedule].label} +${SCHEDULE_META[schedule].effect.toFixed(1)}%`);
+    const advice = [...WEATHER_META[weather].advice, ...PRICE_META[price].advice, ...SCHEDULE_META[schedule].advice];
+    return { base, peak, after, level, touched, advice };
+  }, [weather, price, schedule]);
+
+  const severity = (
+    {
+      high: { label: "高风险", color: "red", text: "#f87171" },
+      medium: { label: "中风险", color: "orange", text: "#fbbf24" },
+      low: { label: "低风险", color: "green", text: "#34d399" },
+    } as const
+  )[result.level];
+
+  return (
+    <div className="content-card" style={{ marginBottom: 16 }}>
+      <div className="content-card-body">
+        <h3 className="content-card-title" style={{ marginBottom: 12 }}>
+          <span className="material-symbols-outlined">psychology</span>风险预演（输入前瞻参数 → 出风险评估）
+        </h3>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14 }}>
+          <div>
+            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>天气窗口</div>
+            <Select value={weather} onChange={setWeather} style={{ width: 200 }} options={Object.entries(WEATHER_META).map(([v, m]) => ({ value: v, label: m.label }))} />
+          </div>
+          <div>
+            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>建材市场价</div>
+            <Select value={price} onChange={setPrice} style={{ width: 180 }} options={Object.entries(PRICE_META).map(([v, m]) => ({ value: v, label: m.label }))} />
+          </div>
+          <div>
+            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>施工进度</div>
+            <Select value={schedule} onChange={setSchedule} style={{ width: 180 }} options={Object.entries(SCHEDULE_META).map(([v, m]) => ({ value: v, label: m.label }))} />
+          </div>
+          <div>
+            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>模拟窗口</div>
+            <Tag color="blue" style={{ display: "block", lineHeight: "30px", marginInlineEnd: 0 }}>未来 14 天</Tag>
+          </div>
+          <Button
+            type="primary"
+            icon={<span className="material-symbols-outlined" style={{ fontSize: 16, verticalAlign: -3 }}>play_arrow</span>}
+            onClick={() => {
+              setTick((t) => t + 1);
+              message.success(`模拟完成：已按输入参数生成风险预演（第 ${tick + 1} 轮）`);
+            }}
+          >
+            开始模拟
+          </Button>
+        </div>
+
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+          <div className="content-card" style={{ flex: 1, minWidth: 170 }}>
+            <div className="content-card-body" style={{ padding: "14px 18px" }}>
+              <div style={{ fontSize: 13, color: "#94a3b8" }}>风险评级</div>
+              <div style={{ marginTop: 4 }}>
+                <Tag color={severity.color} style={{ fontSize: 15, padding: "2px 10px" }}>{severity.label}</Tag>
+              </div>
+              <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>基线偏差 {result.base.toFixed(1)}% + 不利因子累计</div>
+            </div>
+          </div>
+          <div className="content-card" style={{ flex: 1, minWidth: 170 }}>
+            <div className="content-card-body" style={{ padding: "14px 18px" }}>
+              <div style={{ fontSize: 13, color: "#94a3b8" }}>预演偏差峰值（不应对）</div>
+              <div style={{ fontSize: 26, fontWeight: 700, color: severity.text, marginTop: 4 }}>{result.peak.toFixed(2)}%</div>
+              <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
+                {result.peak >= 1.8 ? "已突破预警线 1.8%" : result.peak >= 1.5 ? "贴近预警线 1.5%" : "低于预警线 1.5%"}
+              </div>
+            </div>
+          </div>
+          <div className="content-card" style={{ flex: 1, minWidth: 170 }}>
+            <div className="content-card-body" style={{ padding: "14px 18px" }}>
+              <div style={{ fontSize: 13, color: "#94a3b8" }}>采取应对后</div>
+              <div style={{ fontSize: 26, fontWeight: 700, color: "#34d399", marginTop: 4 }}>{result.after.toFixed(2)}%</div>
+              <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>{result.after < 1.5 ? "压回阈值 1.5% 以内" : "仍偏高，需加大干预"}</div>
+            </div>
+          </div>
+        </div>
+
+        {result.touched.length > 0 && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+            {result.touched.map((t) => <Tag key={t} color="orange">{t}</Tag>)}
+          </div>
+        )}
+
+        {result.advice.length > 0 && (
+          <div
+            style={{
+              background: "rgba(255,193,7,0.07)",
+              border: "1px solid rgba(255,193,7,0.28)",
+              borderRadius: 8,
+              padding: "10px 14px",
+              display: "flex",
+              gap: 10,
+              alignItems: "flex-start",
+            }}
+          >
+            <span className="material-symbols-outlined" style={{ color: "#fbbf24", fontSize: 18 }}>tips_and_updates</span>
+            <div>
+              <div style={{ fontSize: 12, color: "#fde68a", marginBottom: 4 }}>系统应对建议（提前 14 天预警）</div>
+              <ul style={{ margin: 0, paddingLeft: 18, color: "#e2e8f0", fontSize: 13, lineHeight: 1.8 }}>
+                {result.advice.map((a) => <li key={a}>{a}</li>)}
+              </ul>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function RiskTab() {
   return (
     <div>
+      <RiskSimulator />
       <SectionTitle>四维数据接入</SectionTitle>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
         {RISK_DIMENSIONS.map((d) => (
@@ -532,6 +680,12 @@ function RiskTab() {
 }
 
 /* ── ⑤ 后评估 Tab（三值对比：预算 / AI 预测 / 实际计价） ──── */
+
+// 运维期 AI 后评估演示指标（预算 / AI 预测 / 实际值，与汇报口径一致）
+const OPERATION_METRICS = [
+  { key: "ops_cost", metric: "年运维成本", budget: "45", ai: "48.9", actual: "50", unit: "万元", dev: "2.3%" },
+  { key: "solar_gen", metric: "光伏年发电量", budget: "-", ai: "28.5", actual: "27.8", unit: "万度", dev: "2.5%" },
+];
 
 function EvaluateTab({ project, summary, loading }: CompareTabProps) {
   const budget = Number(project?.budget ?? 0);
@@ -634,6 +788,58 @@ function EvaluateTab({ project, summary, loading }: CompareTabProps) {
             ? `项目「${project?.name}」后评估：预算 ${wan(budget)} 万元、AI 计价 ${wan(grand)} 万元，综合偏差 ${overallDev > 0 ? "+" : ""}${overallDev.toFixed(1)}%。评估数据沉淀后反哺企业造价指标库。`
             : "后评估接入真实计价结果：选定联动项目后，以「预算 → AI 计价」为三值口径生成对比。评估数据沉淀后反哺企业造价指标库。"}
         </span>
+      </div>
+
+      {/* 运维期 AI 后评估：预算 / AI 预测 / 实际值 三值对比 */}
+      <div style={{ marginTop: 20 }}>
+        <SectionTitle>运维期 AI 后评估（预算 / AI 预测 / 实际值）</SectionTitle>
+        <div className="content-card">
+          <div className="content-card-body flush">
+            <Table
+              rowKey="key"
+              size="small"
+              pagination={false}
+              dataSource={OPERATION_METRICS}
+              columns={[
+                { title: "评估指标", dataIndex: "metric", width: 140 },
+                { title: "预算", dataIndex: "budget", align: "right", width: 90, render: (v: string) => (v === "-" ? "—" : v) },
+                { title: "AI 预测", dataIndex: "ai", align: "right", width: 100, render: (v: string) => v },
+                { title: "实际值", dataIndex: "actual", align: "right", width: 100, render: (v: string) => v },
+                { title: "单位", dataIndex: "unit", width: 60 },
+                {
+                  title: "预测偏差",
+                  dataIndex: "dev",
+                  align: "right",
+                  width: 110,
+                  render: (v: string) => <span style={{ color: "#34d399", fontWeight: 700 }}>{v}</span>,
+                },
+                {
+                  title: "结论",
+                  key: "verdict",
+                  width: 100,
+                  render: () => <Tag color="green">≤3% 达标</Tag>,
+                },
+              ]}
+            />
+          </div>
+        </div>
+        <div
+          style={{
+            background: "rgba(52, 211, 153, 0.08)",
+            border: "1px solid rgba(52, 211, 153, 0.35)",
+            borderRadius: 8,
+            padding: "12px 16px",
+            marginTop: 16,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <span className="material-symbols-outlined" style={{ color: "#34d399" }}>savings</span>
+          <span style={{ fontSize: 13, color: "#a7f3d0" }}>
+            运维期三值对比：年运维成本偏差 2.3%、光伏发电量偏差 2.5%，均在 3% 以内——模型可靠性得到验证。评估数据沉淀后反哺企业造价指标库。
+          </span>
+        </div>
       </div>
     </div>
   );

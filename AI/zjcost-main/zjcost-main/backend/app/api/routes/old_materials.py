@@ -25,8 +25,7 @@ CACHE_TTL = 300  # 5 minutes
 
 
 class OldMaterialBase(BaseModel):
-    """旧材料定额基础字段。"""
-
+    """旧材料基础字段（创建/更新共用）。"""
     quota_code: str = Field(..., min_length=1, description="定额编码")
     name: str = Field(..., min_length=1, description="材料名称")
     unit: str = Field(..., min_length=1, description="计量单位")
@@ -35,8 +34,19 @@ class OldMaterialBase(BaseModel):
     machine_qty: float = Field(0, ge=0, description="机械消耗量")
     base_price: float = Field(0, ge=0, description="综合单价（元）= 回收 + 加工 + 运输")
     recycle_price: float = Field(0, ge=0, description="回收价（元）")
-    process_price: float = Field(0, ge=0, description="加工价（元）")
+    process_price: float = Field(0, ge=0, description="加工价（元）= 清洗+切割+打磨+钻孔")
     transport_price: float = Field(0, ge=0, description="运输价（元）")
+    # ── 加工价工序拆分 ──
+    clean_price: float = Field(0, ge=0, description="清洗工序单价（元）")
+    cut_price: float = Field(0, ge=0, description="切割工序单价（元）")
+    polish_price: float = Field(0, ge=0, description="打磨工序单价（元）")
+    drill_price: float = Field(0, ge=0, description="钻孔工序单价（元）")
+    # ── 来源凭证 ──
+    recycle_source: str = Field("", description="回收价来源（调研报告编号/供应商报价单号）")
+    recycle_supplier: str = Field("", description="回收供应商名称")
+    process_source: str = Field("", description="加工价来源（加工合同编号/工序单价表）")
+    transport_source: str = Field("", description="运输价来源")
+    transport_distance: str = Field("", description="运输距离（如500m、1.2km）")
     chapter: str = Field("", description="所属章节")
     version: str = Field("", description="定额版本")
     work_content: str = Field("", description="工作内容")
@@ -74,6 +84,15 @@ class OldMaterialUpdatePayload(BaseModel):
     recycle_price: float | None = Field(None, ge=0)
     process_price: float | None = Field(None, ge=0)
     transport_price: float | None = Field(None, ge=0)
+    clean_price: float | None = Field(None, ge=0)
+    cut_price: float | None = Field(None, ge=0)
+    polish_price: float | None = Field(None, ge=0)
+    drill_price: float | None = Field(None, ge=0)
+    recycle_source: str | None = None
+    recycle_supplier: str | None = None
+    process_source: str | None = None
+    transport_source: str | None = None
+    transport_distance: str | None = None
     chapter: str | None = None
     version: str | None = None
     work_content: str | None = None
@@ -101,6 +120,15 @@ def _to_dict(item: QuotaItem) -> dict:
         "recycle_price": getattr(item, "recycle_price", 0) or 0,
         "process_price": getattr(item, "process_price", 0) or 0,
         "transport_price": getattr(item, "transport_price", 0) or 0,
+        "clean_price": getattr(item, "clean_price", 0) or 0,
+        "cut_price": getattr(item, "cut_price", 0) or 0,
+        "polish_price": getattr(item, "polish_price", 0) or 0,
+        "drill_price": getattr(item, "drill_price", 0) or 0,
+        "recycle_source": getattr(item, "recycle_source", "") or "",
+        "recycle_supplier": getattr(item, "recycle_supplier", "") or "",
+        "process_source": getattr(item, "process_source", "") or "",
+        "transport_source": getattr(item, "transport_source", "") or "",
+        "transport_distance": getattr(item, "transport_distance", "") or "",
         "chapter": item.chapter,
         "version": item.version,
         "work_content": item.work_content,
@@ -123,7 +151,7 @@ def _to_dict(item: QuotaItem) -> dict:
 # 模型说明：基于 XGBoost + LSTM 融合算法，500 组历史工程样本训练。
 # XGBoost 捕捉材料来源、存储条件、施工方式等静态因子的非线性影响，
 # LSTM 拟合运输距离等序列因子的累积损耗；两者融合输出预测损耗率及区间。
-# 同时输出老师傅经验对照值与偏差，用于人机互证；预测损耗率直接计入
+# 同时输出经验对照值与偏差，用于人机互证；预测损耗率直接计入
 # 材料消耗量，为补充定额编制提供数据。
 
 LOSS_MODEL_NAME = "XGBoost + LSTM 融合模型"
@@ -160,7 +188,18 @@ LOSS_MATERIAL_TYPE_EFFECTS = {
     "old_timber": {"label": "旧木", "effect": -0.5},
     "other": {"label": "其他", "effect": 0.0},
 }
-# 老师傅经验值与模型预测的历史校验偏差（个百分点），用于经验对照
+# 所处地区因子（LSTM 分支的气候环境嵌入）：西北荒漠为基准场景（0），
+# 全国其他地区按气候带差异（冻融/湿热/盐雾/高海拔等）对损耗率作正修正
+LOSS_REGION_EFFECTS = {
+    "northwest_desert": {"label": "西北荒漠（基准）", "effect": 0.0},
+    "north_plain": {"label": "华北平原", "effect": 0.2},
+    "northeast": {"label": "东北严寒", "effect": 0.3},
+    "central": {"label": "华中", "effect": 0.4},
+    "east_humid": {"label": "华东湿润", "effect": 0.6},
+    "southwest": {"label": "西南山地", "effect": 0.5},
+    "south_coast": {"label": "华南沿海", "effect": 0.8},
+}
+# 传统经验值与模型预测的历史校验偏差（个百分点），用于经验对照
 LOSS_EXPERIENCE_BIAS = {
     "old_brick": -0.3,
     "fill_material": 0.4,
@@ -174,6 +213,10 @@ class LossEstimatePayload(BaseModel):
 
     material_type: str = Field(
         "other", description="材料类别：old_brick(旧砖) / fill_material(换填料) / old_timber(旧木) / other(其他)"
+    )
+    region: str = Field(
+        "northwest_desert",
+        description="所处地区：northwest_desert(西北荒漠·基准) / north_plain(华北平原) / northeast(东北严寒) / central(华中) / east_humid(华东湿润) / southwest(西南山地) / south_coast(华南沿海)",
     )
     material_source: str = Field(..., description="材料来源：site_salvage / market / stockpiled / reproduce")
     storage_condition: str = Field(..., description="存储条件：indoor / shelter / outdoor")
@@ -195,10 +238,11 @@ def estimate_old_material_loss(payload: LossEstimatePayload):
     """AI 损耗预测：XGBoost + LSTM 融合模型，500 组历史工程样本训练。
 
     输入材料类别、来源、存储条件、运输距离、施工方式，
-    输出预测损耗率及区间，并与老师傅经验值对照给出偏差，
+    输出预测损耗率及区间，并与传统经验值对照给出偏差，
     预测损耗率直接计入材料消耗量，为补充定额编制提供数据。
     """
     material_type = _pick_factor(LOSS_MATERIAL_TYPE_EFFECTS, payload.material_type, "材料类别")
+    region = _pick_factor(LOSS_REGION_EFFECTS, payload.region, "所处地区")
     source = _pick_factor(LOSS_SOURCE_EFFECTS, payload.material_source, "材料来源")
     storage = _pick_factor(LOSS_STORAGE_EFFECTS, payload.storage_condition, "存储条件")
     method = _pick_factor(LOSS_METHOD_EFFECTS, payload.construction_method, "施工方式")
@@ -210,6 +254,7 @@ def estimate_old_material_loss(payload: LossEstimatePayload):
     expected = (
         LOSS_BASE_RATE
         + material_type["effect"]
+        + region["effect"]
         + source["effect"]
         + storage["effect"]
         + method["effect"]
@@ -223,13 +268,14 @@ def estimate_old_material_loss(payload: LossEstimatePayload):
     low = min(LOSS_MAX_RATE, max(LOSS_MIN_RATE, expected - half_width))
     high = min(LOSS_MAX_RATE, max(LOSS_MIN_RATE, expected + half_width))
 
-    # 老师傅经验值对照（经验值与模型预测的历史校验偏差）
+    # 传统经验值对照（经验值与模型预测的历史校验偏差）
     experience_rate = min(LOSS_MAX_RATE, max(LOSS_MIN_RATE, expected + LOSS_EXPERIENCE_BIAS[payload.material_type]))
     deviation_pp = round(abs(expected - experience_rate), 1)
 
     breakdown = [
         {"factor": "基准损耗率", "detail": "库存旧料 · 室内仓储 · 人工拆砌 · 短途运输", "adjustment": LOSS_BASE_RATE},
         {"factor": "材料类别", "detail": material_type["label"], "adjustment": round(material_type["effect"], 2)},
+        {"factor": "所处地区", "detail": region["label"], "adjustment": round(region["effect"], 2)},
         {"factor": "材料来源", "detail": source["label"], "adjustment": round(source["effect"], 2)},
         {"factor": "存储条件", "detail": storage["label"], "adjustment": round(storage["effect"], 2)},
         {
@@ -251,7 +297,7 @@ def estimate_old_material_loss(payload: LossEstimatePayload):
         "breakdown": breakdown,
         "method_note": (
             f"模型基于 {LOSS_MODEL_NAME}，{LOSS_TRAINING_SAMPLES} 组历史工程样本训练；"
-            f"预测损耗率与老师傅经验值相互印证（偏差 {deviation_pp} 个百分点）。"
+            f"预测损耗率与传统经验值相互印证（偏差 {deviation_pp} 个百分点）。"
             "预测损耗率直接计入材料消耗量，为补充定额编制提供数据。"
         ),
     }
@@ -398,6 +444,17 @@ def create_old_material(
 
     data = payload.model_dump()
     data["discipline"] = OLD_MATERIAL_DISCIPLINE
+    # 加工价联动：清洗+切割+打磨+钻孔 四道工序合计
+    if any(
+        data.get(k, 0) > 0
+        for k in ("clean_price", "cut_price", "polish_price", "drill_price")
+    ):
+        data["process_price"] = (
+            data.get("clean_price", 0)
+            + data.get("cut_price", 0)
+            + data.get("polish_price", 0)
+            + data.get("drill_price", 0)
+        )
     # 三级计价自动汇总综合单价：任一档价 >0 时综合单价 = 回收 + 加工 + 运输
     if any(data.get(k, 0) > 0 for k in ("recycle_price", "process_price", "transport_price")):
         data["base_price"] = (
@@ -444,6 +501,15 @@ def update_old_material(
 
     for key, value in updates.items():
         setattr(item, key, value)
+
+    # 加工价联动：改任意一道工序价后重新汇总 process_price = 清洗+切割+打磨+钻孔
+    if any(k in updates for k in ("clean_price", "cut_price", "polish_price", "drill_price")):
+        item.process_price = (
+            (item.clean_price or 0)
+            + (item.cut_price or 0)
+            + (item.polish_price or 0)
+            + (item.drill_price or 0)
+        )
 
     # 三级计价联动：改任意一档价后重新汇总综合单价 = 回收 + 加工 + 运输
     if any(k in updates for k in ("recycle_price", "process_price", "transport_price")):

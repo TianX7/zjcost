@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, Empty, Input, Progress, Select, Table, Tabs, Tag, Tooltip, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
-import type { QuotaAcquisitionMethod, QuotaItemDTO, QuotaStatsResponse } from "../api";
+import type { QuotaAcquisitionMethod, QuotaItemDTO, QuotaResourceDetail, QuotaStatsResponse } from "../api";
 import { api } from "../api";
 
 // 专业配色
@@ -45,6 +45,250 @@ function fmtNum(value: number | undefined | null, digits = 2) {
 
 // 列表一次最多加载条数（超出后提示细化筛选，避免静默截断误导）
 const QUOTA_LIST_LIMIT = 200;
+
+// 人材机类别配色
+const RESOURCE_CATEGORY_COLORS: Record<string, string> = {
+  人工: "#38bdf8",
+  材料: "#34d399",
+  机械: "#facc15",
+};
+
+// 定额展开详情面板：基础消耗 + 可溯字段（工作内容/适用范围/来源说明/检测报告）+ 人材机明细
+function QuotaDetailPanel({ record }: { record: QuotaItemDTO }) {
+  const [resources, setResources] = useState<QuotaResourceDetail[] | null>(null);
+
+  useEffect(() => {
+    if (Number(record.has_resource_details) === 1) {
+      setResources(null);
+      api
+        .getQuotaItemResources(record.id)
+        .then((res) => setResources(res.resources))
+        .catch(() => setResources([]));
+    } else {
+      setResources([]);
+    }
+  }, [record.id, record.has_resource_details]);
+
+  const hasTrace = Boolean(
+    record.work_content || record.applicable_scope || record.origin_note || record.inspection_report_no || record.version,
+  );
+
+  return (
+    <div className="quota-detail-panel">
+      <div className="quota-detail-row">
+        <div className="quota-detail-item">
+          <span className="material-symbols-outlined">engineering</span>
+          <div>
+            <span className="quota-detail-label">人工消耗</span>
+            <strong>{fmtNum(record.labor_qty)}</strong>
+          </div>
+        </div>
+        <div className="quota-detail-item">
+          <span className="material-symbols-outlined">inventory</span>
+          <div>
+            <span className="quota-detail-label">材料消耗</span>
+            <strong>{fmtNum(record.material_qty)}</strong>
+          </div>
+        </div>
+        <div className="quota-detail-item">
+          <span className="material-symbols-outlined">precision_manufacturing</span>
+          <div>
+            <span className="quota-detail-label">机械消耗</span>
+            <strong>{fmtNum(record.machine_qty)}</strong>
+          </div>
+        </div>
+        <div className="quota-detail-item">
+          <span className="material-symbols-outlined">payments</span>
+          <div>
+            <span className="quota-detail-label">基价</span>
+            <strong>{record.base_price == null ? "-" : `¥${record.base_price.toFixed(2)}`}</strong>
+          </div>
+        </div>
+      </div>
+
+      {/* 可溯字段：工作内容 / 适用范围 / 来源说明 / 检测报告 / 版本（补充定额逐项展示） */}
+      {hasTrace && (
+        <div className="quota-detail-row" style={{ marginTop: 8, flexWrap: "wrap", gap: 12 }}>
+          {record.work_content && (
+            <div className="quota-detail-item" style={{ flexBasis: "100%" }}>
+              <span className="material-symbols-outlined">construction</span>
+              <div>
+                <span className="quota-detail-label">工作内容</span>
+                <strong>{record.work_content}</strong>
+              </div>
+            </div>
+          )}
+          {record.applicable_scope && (
+            <div className="quota-detail-item" style={{ flexBasis: "100%" }}>
+              <span className="material-symbols-outlined">my_location</span>
+              <div>
+                <span className="quota-detail-label">适用范围</span>
+                <strong>{record.applicable_scope}</strong>
+              </div>
+            </div>
+          )}
+          {record.origin_note && (
+            <div className="quota-detail-item" style={{ flexBasis: "100%" }}>
+              <span className="material-symbols-outlined">description</span>
+              <div>
+                <span className="quota-detail-label">来源说明</span>
+                <strong>{record.origin_note}</strong>
+              </div>
+            </div>
+          )}
+          {record.inspection_report_no && (
+            <div className="quota-detail-item">
+              <span className="material-symbols-outlined">fact_check</span>
+              <div>
+                <span className="quota-detail-label">检测报告</span>
+                <strong>{record.inspection_report_no}</strong>
+              </div>
+            </div>
+          )}
+          {record.version && (
+            <div className="quota-detail-item">
+              <span className="material-symbols-outlined">history</span>
+              <div>
+                <span className="quota-detail-label">版本</span>
+                <strong>{record.version}</strong>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 旧材料扩展信息（仅当专业为 "旧材料" 时展示）*/}
+      {record.discipline === "旧材料" && (
+        <div className="quota-detail-row" style={{ marginTop: 8, flexWrap: "wrap", gap: 12 }}>
+          <div className="quota-detail-item">
+            <span className="material-symbols-outlined">recycling</span>
+            <div>
+              <span className="quota-detail-label">获取方式</span>
+              <strong>{acquisitionMethodTag(record.acquisition_method) ?? "—"}</strong>
+            </div>
+          </div>
+          <div className="quota-detail-item">
+            <span className="material-symbols-outlined">location_on</span>
+            <div>
+              <span className="quota-detail-label">关联遗址</span>
+              <strong>{record.heritage_site || "—"}</strong>
+            </div>
+          </div>
+          <div className="quota-detail-item">
+            <span className="material-symbols-outlined">workspace_premium</span>
+            <div>
+              <span className="quota-detail-label">文物等级</span>
+              <strong>{record.relic_level || "—"}</strong>
+            </div>
+          </div>
+          <div className="quota-detail-item">
+            <span className="material-symbols-outlined">construction</span>
+            <div>
+              <span className="quota-detail-label">修复部位</span>
+              <strong>{record.repair_part || "—"}</strong>
+            </div>
+          </div>
+          <div className="quota-detail-item">
+            <span className="material-symbols-outlined">grade</span>
+            <div>
+              <span className="quota-detail-label">成色</span>
+              <strong>{record.condition_grade || "—"}</strong>
+            </div>
+          </div>
+          <div className="quota-detail-item">
+            <span className="material-symbols-outlined">qr_code_2</span>
+            <div>
+              <span className="quota-detail-label">批次号</span>
+              <strong>{record.batch_no || "—"}</strong>
+            </div>
+          </div>
+          <div className="quota-detail-item">
+            <span className="material-symbols-outlined">fact_check</span>
+            <div>
+              <span className="quota-detail-label">检测报告</span>
+              <strong>{record.inspection_report_no || "—"}</strong>
+            </div>
+          </div>
+          {record.origin_note && (
+            <div className="quota-detail-item" style={{ flexBasis: "100%" }}>
+              <span className="material-symbols-outlined">description</span>
+              <div>
+                <span className="quota-detail-label">来源说明</span>
+                <strong>{record.origin_note}</strong>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 人材机明细（补充定额逐项可溯） */}
+      {Number(record.has_resource_details) === 1 && (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
+            <span className="material-symbols-outlined" style={{ fontSize: 14 }}>format_list_bulleted</span>
+            人材机明细
+            {resources === null && <span style={{ color: "var(--text-muted)" }}>加载中…</span>}
+          </div>
+          <Table
+            rowKey="id"
+            size="small"
+            pagination={false}
+            loading={resources === null}
+            dataSource={resources ?? []}
+            columns={[
+              {
+                title: "类别",
+                dataIndex: "category",
+                width: 70,
+                render: (value: string) => <Tag color={RESOURCE_CATEGORY_COLORS[value] ?? "default"}>{value}</Tag>,
+              },
+              { title: "资源编码", dataIndex: "resource_code", width: 130 },
+              {
+                title: "名称",
+                dataIndex: "resource_name",
+                render: (value: string, r: QuotaResourceDetail) => (
+                  <span>
+                    {value}
+                    {Number(r.is_main_material) === 1 && <Tag color="orange" style={{ marginLeft: 6 }}>主材</Tag>}
+                  </span>
+                ),
+              },
+              { title: "规格型号", dataIndex: "spec", ellipsis: true },
+              { title: "单位", dataIndex: "unit", width: 60 },
+              {
+                title: "消耗量",
+                dataIndex: "quantity",
+                width: 90,
+                align: "right",
+                render: (value: number) => Number(value).toFixed(2),
+              },
+              {
+                title: "单价",
+                dataIndex: "unit_price",
+                width: 100,
+                align: "right",
+                render: (value: number) => `¥${Number(value).toFixed(2)}`,
+              },
+              {
+                title: "合计",
+                width: 100,
+                align: "right",
+                render: (_: unknown, r: QuotaResourceDetail) => `¥${(Number(r.quantity) * Number(r.unit_price)).toFixed(2)}`,
+              },
+            ]}
+          />
+        </div>
+      )}
+
+      <div className="quota-detail-meta">
+        <Tag color={disciplineColor(record.discipline)}>{record.discipline}</Tag>
+        <Tag>{record.chapter}</Tag>
+        <span>单位：{record.unit}</span>
+        <span>编码：{record.quota_code}</span>
+      </div>
+    </div>
+  );
+}
 
 export default function QuotaLibrary() {
   const [items, setItems] = useState<QuotaItemDTO[]>([]);
@@ -430,109 +674,7 @@ export default function QuotaLibrary() {
                         onClick: () => setSelectedRowId(selectedRowId === record.id ? null : record.id),
                       })}
                       expandable={{
-                        expandedRowRender: (record) => (
-                          <div className="quota-detail-panel">
-                            <div className="quota-detail-row">
-                              <div className="quota-detail-item">
-                                <span className="material-symbols-outlined">engineering</span>
-                                <div>
-                                  <span className="quota-detail-label">人工消耗</span>
-                                  <strong>{fmtNum(record.labor_qty)}</strong>
-                                </div>
-                              </div>
-                              <div className="quota-detail-item">
-                                <span className="material-symbols-outlined">inventory</span>
-                                <div>
-                                  <span className="quota-detail-label">材料消耗</span>
-                                  <strong>{fmtNum(record.material_qty)}</strong>
-                                </div>
-                              </div>
-                              <div className="quota-detail-item">
-                                <span className="material-symbols-outlined">precision_manufacturing</span>
-                                <div>
-                                  <span className="quota-detail-label">机械消耗</span>
-                                  <strong>{fmtNum(record.machine_qty)}</strong>
-                                </div>
-                              </div>
-                              <div className="quota-detail-item">
-                                <span className="material-symbols-outlined">payments</span>
-                                <div>
-                                  <span className="quota-detail-label">基价</span>
-                                  <strong>{record.base_price == null ? "-" : `¥${record.base_price.toFixed(2)}`}</strong>
-                                </div>
-                              </div>
-                            </div>
-                            {/* 旧材料扩展信息（仅当专业为 "旧材料" 时展示）*/}
-                            {record.discipline === "旧材料" && (
-                              <div className="quota-detail-row" style={{ marginTop: 8, flexWrap: "wrap", gap: 12 }}>
-                                <div className="quota-detail-item">
-                                  <span className="material-symbols-outlined">recycling</span>
-                                  <div>
-                                    <span className="quota-detail-label">获取方式</span>
-                                    <strong>{acquisitionMethodTag(record.acquisition_method) ?? "—"}</strong>
-                                  </div>
-                                </div>
-                                <div className="quota-detail-item">
-                                  <span className="material-symbols-outlined">location_on</span>
-                                  <div>
-                                    <span className="quota-detail-label">关联遗址</span>
-                                    <strong>{record.heritage_site || "—"}</strong>
-                                  </div>
-                                </div>
-                                <div className="quota-detail-item">
-                                  <span className="material-symbols-outlined">workspace_premium</span>
-                                  <div>
-                                    <span className="quota-detail-label">文物等级</span>
-                                    <strong>{record.relic_level || "—"}</strong>
-                                  </div>
-                                </div>
-                                <div className="quota-detail-item">
-                                  <span className="material-symbols-outlined">construction</span>
-                                  <div>
-                                    <span className="quota-detail-label">修复部位</span>
-                                    <strong>{record.repair_part || "—"}</strong>
-                                  </div>
-                                </div>
-                                <div className="quota-detail-item">
-                                  <span className="material-symbols-outlined">grade</span>
-                                  <div>
-                                    <span className="quota-detail-label">成色</span>
-                                    <strong>{record.condition_grade || "—"}</strong>
-                                  </div>
-                                </div>
-                                <div className="quota-detail-item">
-                                  <span className="material-symbols-outlined">qr_code_2</span>
-                                  <div>
-                                    <span className="quota-detail-label">批次号</span>
-                                    <strong>{record.batch_no || "—"}</strong>
-                                  </div>
-                                </div>
-                                <div className="quota-detail-item">
-                                  <span className="material-symbols-outlined">fact_check</span>
-                                  <div>
-                                    <span className="quota-detail-label">检测报告</span>
-                                    <strong>{record.inspection_report_no || "—"}</strong>
-                                  </div>
-                                </div>
-                                {record.origin_note && (
-                                  <div className="quota-detail-item" style={{ flexBasis: "100%" }}>
-                                    <span className="material-symbols-outlined">description</span>
-                                    <div>
-                                      <span className="quota-detail-label">来源说明</span>
-                                      <strong>{record.origin_note}</strong>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                            <div className="quota-detail-meta">
-                              <Tag color={disciplineColor(record.discipline)}>{record.discipline}</Tag>
-                              <Tag>{record.chapter}</Tag>
-                              <span>单位：{record.unit}</span>
-                              <span>编码：{record.quota_code}</span>
-                            </div>
-                          </div>
-                        ),
+                        expandedRowRender: (record) => <QuotaDetailPanel record={record} />,
                         rowExpandable: () => true,
                       }}
                       locale={{

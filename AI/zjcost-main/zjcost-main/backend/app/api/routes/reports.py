@@ -246,10 +246,10 @@ def export_report(
             headers={"Content-Disposition": build_attachment_disposition(filename)},
         )
     elif format == "pdf":
-        from app.services.report_export_service import export_valuation_pdf
-        file_bytes = export_valuation_pdf(project_id=project_id, db=db)
+        from app.services.gbq_pdf_service import export_tender_package_pdf
+        file_bytes = export_tender_package_pdf(project_id=project_id, db=db)
         safe_name = _sanitize_filename(project.name)
-        filename = f"valuation_report_{safe_name}_{project_id}.pdf"
+        filename = f"tender_package_{safe_name}_{project_id}.pdf"
         return StreamingResponse(
             io.BytesIO(file_bytes),
             media_type="application/pdf",

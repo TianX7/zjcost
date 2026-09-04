@@ -119,8 +119,8 @@ export const SAMPLE_VALUATION_OVERVIEW: ValuationOverview = {
   standard: {
     project_id: SAMPLE_PROJECT_ID,
     standard_code: "GB/T50500-2024",
-    standard_name: "建设工程工程量清单计价规范",
-    effective_date: "2024-07-01",
+    standard_name: "建设工程工程量清单计价标准",
+    effective_date: "2025-09-01",
     locked: true,
     locked_at: "2025-03-05T10:00:00Z",
   },

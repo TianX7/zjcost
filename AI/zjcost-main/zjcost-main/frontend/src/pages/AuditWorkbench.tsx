@@ -1,8 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Button, Empty, Table, Tag, message } from "antd";
+import { Alert, Button, Empty, Space, Table, Tag, message } from "antd";
+import { FileExcelOutlined, FilePdfOutlined } from "@ant-design/icons";
 import type { Project, ValidationReport } from "../api";
 import { api } from "../api";
 import { createSampleProject } from "../sampleProject";
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function AuditWorkbench() {
   const [, setProjects] = useState<Project[]>([]);
@@ -10,6 +20,7 @@ export default function AuditWorkbench() {
   const [validation, setValidation] = useState<ValidationReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [creatingSample, setCreatingTour] = useState(false);
+  const [exporting, setExporting] = useState<"pdf" | "excel" | null>(null);
 
   // 从校验报告中提取计价类问题（替代原 BatchReviewResponse 死代码）
   const pricingIssues = useMemo(() => {
@@ -68,6 +79,27 @@ export default function AuditWorkbench() {
     }
   };
 
+  const handleExport = useCallback(
+    async (format: "pdf" | "excel") => {
+      if (!projectId) {
+        message.warning("请先创建或选择项目");
+        return;
+      }
+      setExporting(format);
+      try {
+        const blob = await api.exportAuditReport(projectId, format);
+        const ext = format === "excel" ? "xlsx" : "pdf";
+        downloadBlob(blob, `复核审计报告_${projectId}.${ext}`);
+        message.success(`已导出${format === "excel" ? " Excel" : " PDF"} 审计报告`);
+      } catch (err) {
+        message.error(err instanceof Error ? err.message : "导出审计报告失败");
+      } finally {
+        setExporting(null);
+      }
+    },
+    [projectId],
+  );
+
   return (
     <div className="page-container">
       {!projectId && (
@@ -77,6 +109,19 @@ export default function AuditWorkbench() {
               <Button type="primary" loading={creatingSample} onClick={startSample}>创建示例项目</Button>
             </Empty>
           </div>
+        </div>
+      )}
+
+      {projectId && (
+        <div className="filter-bar" style={{ justifyContent: "flex-end" }}>
+          <Space>
+            <Button icon={<FilePdfOutlined />} loading={exporting === "pdf"} onClick={() => void handleExport("pdf")}>
+              下载审计报告（PDF）
+            </Button>
+            <Button icon={<FileExcelOutlined />} loading={exporting === "excel"} onClick={() => void handleExport("excel")}>
+              下载审计报告（Excel）
+            </Button>
+          </Space>
         </div>
       )}
 

@@ -30,10 +30,32 @@ from app.services.pricing_engine import _r2
 
 router = APIRouter(tags=["valuation-management"])
 
-
-_DEFAULT_STANDARD_CODE = "GB/T50500-2024"
+# ─────────────────────────────────────────────────────────────────────────────
+# 计价标准常量（现行最新版本，符合 2025-09-01 实施要求）
+# 旧版（已废止）：GB 50500-2013 / GB 50854-2013
+# 现行最新版本：GB/T 50500-2024 / GB/T 50854-2024（2025-09-01 实施）
+# ─────────────────────────────────────────────────────────────────────────────
+_DEFAULT_STANDARD_CODE = "GB/T 50500-2024"
 _DEFAULT_STANDARD_NAME = "建设工程工程量清单计价标准"
 _DEFAULT_EFFECTIVE_DATE = "2025-09-01"
+
+# 标准更替对照表：旧版（已废止）→ 现行最新版本
+STANDARD_TRANSITIONS = [
+    {
+        "old_code": "GB 50500-2013",
+        "old_name": "建设工程工程量清单计价规范",
+        "new_code": "GB/T 50500-2024",
+        "new_name": "建设工程工程量清单计价标准",
+        "effective_date": "2025-09-01",
+    },
+    {
+        "old_code": "GB 50854-2013",
+        "old_name": "房屋建筑与装饰工程工程量计算规范",
+        "new_code": "GB/T 50854-2024",
+        "new_name": "房屋建筑与装饰工程工程量计算标准",
+        "effective_date": "2025-09-01",
+    },
+]
 
 
 def _must_get_project(project_id: int, db: Session) -> Project:
@@ -85,6 +107,16 @@ def get_valuation_config(project_id: int, db: Session = Depends(get_db)) -> Valu
     _must_get_project(project_id, db)
     config = _get_or_create_config(project_id, db)
     return _to_standard_out(config)
+
+
+@router.get(
+    "/projects/{project_id}/valuation-management/standard-transitions",
+    response_model=list[dict],
+)
+def get_standard_transitions(project_id: int, db: Session = Depends(get_db)) -> list[dict]:
+    """返回旧版→现行标准的更替对照表，便于前端展示标准演进关系。"""
+    _must_get_project(project_id, db)
+    return STANDARD_TRANSITIONS
 
 
 @router.put(

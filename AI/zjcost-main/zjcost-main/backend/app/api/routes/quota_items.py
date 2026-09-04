@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.cache import _cache as cache
 from app.db.session import get_db
 from app.models.quota_item import QuotaItem
+from app.models.quota_resource_detail import QuotaResourceDetail
 from app.services.quota_import_service import VALID_DISCIPLINES
 from app.services.quota_match_service import clear_quota_match_cache
 
@@ -95,6 +96,11 @@ def _quota_item_to_dict(it: QuotaItem) -> dict:
         "material_qty": it.material_qty,
         "machine_qty": it.machine_qty,
         "base_price": it.base_price,
+        # 补充定额可溯字段（工作内容 / 适用范围 / 版本 / 是否有明细）
+        "work_content": getattr(it, "work_content", "") or "",
+        "applicable_scope": getattr(it, "applicable_scope", "") or "",
+        "version": getattr(it, "version", "") or "",
+        "has_resource_details": getattr(it, "has_resource_details", 0) or 0,
         # 旧材料扩展字段（普通定额为空）
         "acquisition_method": getattr(it, "acquisition_method", "") or "",
         "origin_note": getattr(it, "origin_note", "") or "",
@@ -239,3 +245,36 @@ def create_quota_item(
     db.refresh(item)
     cache.invalidate("quota:")
     return {"ok": True, "action": action, "item": _quota_item_to_dict(item)}
+
+
+@router.get("/quota-items/{item_id}/resources")
+def list_quota_item_resources(item_id: int, db: Session = Depends(get_db)):
+    """返回定额的人材机明细（补充定额逐项可溯：分类 / 编码 / 名称 / 规格 / 单位 / 消耗量 / 单价 / 是否主材）。"""
+    item = db.query(QuotaItem).filter(QuotaItem.id == item_id).first()
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"定额不存在：id={item_id}")
+    rows = (
+        db.query(QuotaResourceDetail)
+        .filter(QuotaResourceDetail.quota_item_id == item.id)
+        .order_by(QuotaResourceDetail.category, QuotaResourceDetail.id)
+        .all()
+    )
+    return {
+        "quota_item_id": item.id,
+        "quota_code": item.quota_code,
+        "name": item.name,
+        "resources": [
+            {
+                "id": r.id,
+                "category": r.category,
+                "resource_code": r.resource_code,
+                "resource_name": r.resource_name,
+                "spec": r.spec,
+                "unit": r.unit,
+                "quantity": r.quantity,
+                "unit_price": r.unit_price,
+                "is_main_material": r.is_main_material,
+            }
+            for r in rows
+        ],
+    }

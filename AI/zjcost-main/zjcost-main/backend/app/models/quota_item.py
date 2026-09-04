@@ -31,8 +31,19 @@ class QuotaItem(Base):
     has_resource_details: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 1=有明细
     # ── 循环材料三级计价（回收价 / 加工价 / 运输价） ──
     recycle_price: Mapped[float] = mapped_column(Float, nullable=False, default=0)  # 回收价（元/单位）
-    process_price: Mapped[float] = mapped_column(Float, nullable=False, default=0)  # 加工价（元/单位）
+    process_price: Mapped[float] = mapped_column(Float, nullable=False, default=0)  # 加工价（元/单位）= 清洗+切割+打磨+钻孔
     transport_price: Mapped[float] = mapped_column(Float, nullable=False, default=0)  # 运输价（元/单位）
+    # ── 加工价工序拆分（清洗 / 切割 / 打磨 / 钻孔） ──
+    clean_price: Mapped[float] = mapped_column(Float, nullable=False, default=0)   # 清洗工序（元/单位）
+    cut_price: Mapped[float] = mapped_column(Float, nullable=False, default=0)     # 切割工序（元/单位）
+    polish_price: Mapped[float] = mapped_column(Float, nullable=False, default=0)  # 打磨工序（元/单位）
+    drill_price: Mapped[float] = mapped_column(Float, nullable=False, default=0)   # 钻孔工序（元/单位）
+    # ── 三级价格来源凭证（可追溯） ──
+    recycle_source: Mapped[str] = mapped_column(String(255), nullable=False, default="")  # 回收价来源（如调研报告编号、供应商报价单号）
+    recycle_supplier: Mapped[str] = mapped_column(String(100), nullable=False, default="")  # 回收供应商
+    process_source: Mapped[str] = mapped_column(String(255), nullable=False, default="")  # 加工价来源（如加工合同编号、工序单价表）
+    transport_source: Mapped[str] = mapped_column(String(255), nullable=False, default="")  # 运输价来源
+    transport_distance: Mapped[str] = mapped_column(String(50), nullable=False, default="")  # 运输距离（如"500m"、"1.2km"）
     # ── 旧材料（遗址修复材料）扩展字段 ──
     # 获取方式：recycle=当地回收旧材料 / reproduce=原材料复现 / 空字符串=普通定额
     acquisition_method: Mapped[str] = mapped_column(

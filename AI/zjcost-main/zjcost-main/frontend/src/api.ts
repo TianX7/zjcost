@@ -525,6 +525,11 @@ export interface QuotaItemDTO {
   material_qty: number;
   machine_qty: number;
   base_price?: number;
+  // 补充定额可溯字段（工作内容 / 适用范围 / 版本 / 是否有明细）
+  work_content?: string;
+  applicable_scope?: string;
+  version?: string;
+  has_resource_details?: number;
   // 旧材料（遗址修复材料）扩展字段
   acquisition_method?: string; // "" | "recycle" | "reproduce"
   origin_note?: string;
@@ -534,6 +539,18 @@ export interface QuotaItemDTO {
   condition_grade?: string;
   batch_no?: string;
   inspection_report_no?: string;
+}
+
+export interface QuotaResourceDetail {
+  id: number;
+  category: string; // 人工 | 材料 | 机械
+  resource_code: string;
+  resource_name: string;
+  spec: string;
+  unit: string;
+  quantity: number;
+  unit_price: number;
+  is_main_material: number; // 1=主材
 }
 
 export type QuotaAcquisitionMethod = "" | "recycle" | "reproduce";
@@ -583,6 +600,15 @@ export interface OldMaterialDTO {
   recycle_price: number;
   process_price: number;
   transport_price: number;
+  clean_price: number;
+  cut_price: number;
+  polish_price: number;
+  drill_price: number;
+  recycle_source: string;
+  recycle_supplier: string;
+  process_source: string;
+  transport_source: string;
+  transport_distance: string;
   chapter: string;
   version: string;
   work_content: string;
@@ -615,6 +641,15 @@ export interface OldMaterialCreatePayload {
   recycle_price?: number;
   process_price?: number;
   transport_price?: number;
+  clean_price?: number;
+  cut_price?: number;
+  polish_price?: number;
+  drill_price?: number;
+  recycle_source?: string;
+  recycle_supplier?: string;
+  process_source?: string;
+  transport_source?: string;
+  transport_distance?: string;
   chapter?: string;
   version?: string;
   work_content?: string;
@@ -639,6 +674,15 @@ export interface OldMaterialUpdatePayload {
   recycle_price?: number;
   process_price?: number;
   transport_price?: number;
+  clean_price?: number;
+  cut_price?: number;
+  polish_price?: number;
+  drill_price?: number;
+  recycle_source?: string;
+  recycle_supplier?: string;
+  process_source?: string;
+  transport_source?: string;
+  transport_distance?: string;
   chapter?: string;
   version?: string;
   work_content?: string;
@@ -670,6 +714,7 @@ export interface OldMaterialStatsResponse {
 
 export interface LossEstimatePayload {
   material_type: string;
+  region: string;
   material_source: string;
   storage_condition: string;
   transport_distance_km: number;
@@ -1173,6 +1218,14 @@ export const api = {
 
   getQuotaStats: () => request<QuotaStatsResponse>("/quota-items/stats"),
 
+  getQuotaItemResources: (itemId: number) =>
+    request<{
+      quota_item_id: number;
+      quota_code: string;
+      name: string;
+      resources: QuotaResourceDetail[];
+    }>(`/quota-items/${itemId}/resources`),
+
   createQuotaItem: (payload: QuotaItemCreatePayload) =>
     request<QuotaItemCreateResponse>("/quota-items", {
       method: "POST",
@@ -1237,6 +1290,19 @@ export const api = {
   exportReport: (pid: number, format: "pdf" | "excel" = "pdf") => {
     const url = `${API_BASE}/projects/${pid}/report/export?format=${format}`;
     return fetchBlob(url, { headers: authHeaders() });
+  },
+
+  exportAuditReport: (pid: number, format: "pdf" | "excel" = "pdf") => {
+    const url = `${API_BASE}/projects/${pid}/audit-report/export?format=${format}`;
+    return fetchBlob(url, { headers: authHeaders() });
+  },
+
+  exportTenderPackage: (pid: number) => {
+    const url = `${API_BASE}/exports/tender-package?project_id=${pid}`;
+    return fetchBlob(url, {
+      method: "POST",
+      headers: authHeaders(),
+    });
   },
 
   // 图纸识别

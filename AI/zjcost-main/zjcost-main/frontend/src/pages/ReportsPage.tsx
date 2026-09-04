@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, Empty, Input, Progress, Select, Space, Table, Tag, message } from "antd";
-import { FileExcelOutlined, FilePdfOutlined } from "@ant-design/icons";
+import { FileExcelOutlined, FilePdfOutlined, FileZipOutlined } from "@ant-design/icons";
 import type { Project, ReportData } from "../api";
 import { api } from "../api";
 
@@ -53,7 +53,7 @@ export default function ReportsPage() {
 
   const bindingRateNumber = Number.parseFloat(String(report?.statistics.binding_rate ?? "0")) || 0;
 
-  const [exporting, setExporting] = useState<"pdf" | "excel" | null>(null);
+  const [exporting, setExporting] = useState<"pdf" | "excel" | "package" | null>(null);
 
   const handleExport = useCallback(
     async (format: "pdf" | "excel") => {
@@ -66,7 +66,8 @@ export default function ReportsPage() {
         const blob = await api.exportReport(projectId, format);
         const ext = format === "excel" ? "xlsx" : "pdf";
         const name = report?.project?.name ?? `project-${projectId}`;
-        downloadBlob(blob, `valuation_report_${name}_${projectId}.${ext}`);
+        const prefix = format === "excel" ? "valuation_report" : "tender_package";
+        downloadBlob(blob, `${prefix}_${name}_${projectId}.${ext}`);
         message.success(`已导出${format === "excel" ? " Excel" : " PDF"} 成果报表`);
       } catch (err) {
         message.error(err instanceof Error ? err.message : "导出报表失败");
@@ -76,6 +77,24 @@ export default function ReportsPage() {
     },
     [projectId, report],
   );
+
+  const handleExportPackage = useCallback(async () => {
+    if (!projectId) {
+      message.warning("请先选择项目");
+      return;
+    }
+    setExporting("package");
+    try {
+      const blob = await api.exportTenderPackage(projectId);
+      const name = report?.project?.name ?? `project-${projectId}`;
+      downloadBlob(blob, `tender_package_${name}_${projectId}.zip`);
+      message.success("已导出招标工程量清单包（国标 4.x 版式 zip）");
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "导出清单包失败");
+    } finally {
+      setExporting(null);
+    }
+  }, [projectId, report]);
 
   return (
     <div className="page-container">
@@ -137,6 +156,9 @@ export default function ReportsPage() {
             </Button>
             <Button size="small" icon={<FileExcelOutlined />} loading={exporting === "excel"} disabled={!projectId} onClick={() => void handleExport("excel")}>
               导出 Excel
+            </Button>
+            <Button size="small" icon={<FileZipOutlined />} loading={exporting === "package"} disabled={!projectId} onClick={() => void handleExportPackage()}>
+              导出清单包
             </Button>
           </Space>
         </div>

@@ -65,8 +65,8 @@ const PROJECT_TYPE_OPTIONS = [
 ];
 
 const STANDARD_OPTIONS = [
-  { value: "GB50500", label: "GB50500-2013 建设工程工程量清单计价规范" },
-  { value: "GB50500-2018", label: "GB50500-2018 建设工程工程量清单计价规范" },
+  { value: "GB/T50500-2024", label: "GB/T 50500-2024 建设工程工程量清单计价标准（2025-09-01 实施）" },
+  { value: "GB50500", label: "GB 50500-2013 建设工程工程量清单计价规范（已废止）" },
   { value: "其他", label: "其他" },
 ];
 
@@ -432,7 +432,7 @@ export default function ProjectList() {
         <Form
           form={form}
           layout="vertical"
-          initialValues={{ region: "全国", project_type: "建筑工程", status: "draft", standard_type: "GB50500" }}
+          initialValues={{ region: "全国", project_type: "建筑工程", status: "draft", standard_type: "GB/T50500-2024" }}
           style={{ marginTop: 8 }}
           preserve={false}
         >
@@ -483,9 +483,9 @@ export default function ProjectList() {
           </Row>
           <Row gutter={12}>
             <Col span={12}>
-              <Form.Item name="standard_type" label="计价规范">
+              <Form.Item name="standard_type" label="计价标准">
                 <Select
-                  placeholder="计价规范"
+                  placeholder="计价标准"
                   options={STANDARD_OPTIONS}
                   showSearch
                   optionFilterProp="label"
