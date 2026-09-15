@@ -278,3 +278,32 @@ def list_quota_item_resources(item_id: int, db: Session = Depends(get_db)):
             for r in rows
         ],
     }
+
+
+@router.delete("/quota-items/{item_id}")
+def delete_quota_item(item_id: int, db: Session = Depends(get_db)):
+    """删除定额条目及其人材机明细。
+
+    注意：若该定额已被清单项绑定（boq_bindings），删除后会解除绑定，
+    相关清单项回到"待套价"状态，需重新套价。
+    """
+    item = db.query(QuotaItem).filter(QuotaItem.id == item_id).first()
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"定额不存在：id={item_id}")
+
+    quota_code = item.quota_code
+    discipline = item.discipline
+    name = item.name
+
+    # 手动删除关联人材机明细（外键无级联）
+    db.query(QuotaResourceDetail).filter(QuotaResourceDetail.quota_item_id == item.id).delete()
+    db.delete(item)
+    db.commit()
+
+    cache.invalidate("quota:")
+    clear_quota_match_cache()
+    return {
+        "ok": True,
+        "deleted": {"id": item_id, "quota_code": quota_code, "discipline": discipline, "name": name},
+        "message": f"已删除定额：{discipline} {quota_code} {name}",
+    }

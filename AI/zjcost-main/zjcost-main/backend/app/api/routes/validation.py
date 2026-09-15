@@ -8,6 +8,11 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.schemas.validation import ValidationIssueOut, ValidationReport
+from app.services.audit_report_export_service import (
+    export_audit_report_excel,
+    export_audit_report_html,
+    export_audit_report_pdf,
+)
 from app.services.validation_service import Severity, validate_project
 from app.utils.headers import build_attachment_disposition
 
@@ -45,15 +50,10 @@ def get_validation_issues(
 @router.get("/projects/{project_id}/audit-report/export")
 def export_audit_report(
     project_id: int,
-    format: str = Query("pdf", description="Export format: pdf or excel"),
+    format: str = Query("pdf", description="Export format: pdf / excel / html"),
     db: Session = Depends(get_db),
 ):
     """导出复核审计报告（规则问题 + 计价审查 + 计价标准），支持 pdf / excel。"""
-    from app.services.audit_report_export_service import (
-        export_audit_report_excel,
-        export_audit_report_pdf,
-    )
-
     from app.models.project import Project
 
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -68,6 +68,10 @@ def export_audit_report(
         file_bytes = export_audit_report_pdf(project_id=project_id, db=db)
         filename = f"audit_report_{project_id}.pdf"
         media_type = "application/pdf"
+    elif format == "html":
+        file_bytes = export_audit_report_html(project_id=project_id, db=db)
+        filename = f"audit_report_{project_id}.html"
+        media_type = "text/html; charset=utf-8"
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported format: {format}")
 

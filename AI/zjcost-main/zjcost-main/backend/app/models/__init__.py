@@ -23,9 +23,11 @@ from app.models.quota_item import QuotaItem
 from app.models.quota_resource_detail import QuotaResourceDetail
 from app.models.quota_resource_material_mapping import QuotaResourceMaterialMapping
 from app.models.rule_package import RulePackage
+from app.models.risk_simulation import RiskSimulation
 from app.models.snapshot import Snapshot
 from app.models.system_setting import SystemSetting
 from app.models.user import User
+from app.models.walk_review import WalkReview
 
 __all__ = [
     "HandlerMemory",
@@ -37,6 +39,8 @@ __all__ = [
     "Project",
     "ProjectMember",
     "RulePackage",
+    "RiskSimulation",
+    "WalkReview",
     "BoqItem",
     "BoqStandardCode",
     "QuotaItem",

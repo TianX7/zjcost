@@ -16,6 +16,8 @@ class RulePackage(Base):
     profit_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.05)
     regulatory_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.03)
     tax_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.09)
+    # 规费取费基数："labor"（人工费）/ "direct"（人材机直接费）；北京现行口径为 labor
+    regulatory_base: Mapped[str] = mapped_column(String(20), nullable=False, default="direct")
     rounding_rule: Mapped[str] = mapped_column(String(50), nullable=False, default="ROUND_HALF_UP")
     version: Mapped[str] = mapped_column(String(50), nullable=False, default="1.0")
     # 补充审计字段（section 3），nullable=True 保持向后兼容

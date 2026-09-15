@@ -18,7 +18,7 @@ from seed_gs_quotas import (
     DEMO_BRICK_CODE,
     DEMO_BRICK_LEVEL_PRICES,
     DISCIPLINE,
-    GS01_RESOURCES,
+    GS_RESOURCES,
     METHOD_NOTE,
     SECTIONS,
     VERSION,
@@ -37,7 +37,7 @@ def sync(con: sqlite3.Connection) -> int:
     """幂等同步：GS-01~GS-05 补充定额（含 GS-01 人材机明细）+ 演示旧砖三级价格。"""
     _ensure_schema(con)
     for code, name, unit, labor, material, machine, price, work, scope, report in SECTIONS:
-        has_detail = 1 if code == "GS-01" else 0
+        has_detail = 1 if code in GS_RESOURCES else 0
         row = con.execute(
             "SELECT id FROM quota_items WHERE discipline=? AND quota_code=?",
             (DISCIPLINE, code),
@@ -64,11 +64,11 @@ def sync(con: sqlite3.Connection) -> int:
             )
             qid = cur.lastrowid
 
-        if code == "GS-01":
+        if code in GS_RESOURCES:
             con.execute(
                 "DELETE FROM quota_resource_details WHERE quota_item_id=?", (qid,)
             )
-            for category, rcode, rname, spec, runit, qty, uprice, main in GS01_RESOURCES:
+            for category, rcode, rname, spec, runit, qty, uprice, main in GS_RESOURCES[code]:
                 con.execute(
                     "INSERT INTO quota_resource_details (quota_item_id, category, "
                     "resource_code, resource_name, spec, unit, quantity, unit_price, "

@@ -159,6 +159,55 @@ cad_view_exe = EXE(
     entitlements_file=None,
 )
 
+# 独立图纸解析 worker：dxf_analysis_worker.exe（windowed，无控制台窗口），
+# 供上传识别流程以隐藏控制台方式在独立进程执行 ezdxf/matplotlib 解析，
+# 避免 multiprocessing spawn 在无控制台环境下每次上传弹出 python 黑窗。
+dxf_worker_analysis = Analysis(
+    [str(BACKEND / "tools" / "drawing_analysis_worker.py")],
+    pathex=[str(BACKEND)],
+    binaries=[],
+    datas=datas,
+    hiddenimports=["app.services.dxf_analysis_service", "app.utils.datetime",
+                   "app.utils.headers"] + ezdxf_imports + passlib_imports,
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[
+        "pytest",
+        "tkinter",
+        "matplotlib",
+        "passlib.tests",
+        "ezdxf.addons.browser",
+        "PyQt5",
+        "PySide6",
+        "ifcopenshell",
+        "shapely",
+    ],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False,
+)
+dxf_worker_pyz = PYZ(dxf_worker_analysis.pure, dxf_worker_analysis.zipped_data, cipher=block_cipher)
+
+dxf_worker_exe = EXE(
+    dxf_worker_pyz,
+    dxf_worker_analysis.scripts,
+    [],
+    exclude_binaries=True,
+    name="dxf_analysis_worker",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    console=False,
+    disable_windowed_traceback=True,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)
+
 coll = COLLECT(
     exe,
     a.binaries,
@@ -168,6 +217,10 @@ coll = COLLECT(
     cad_view_analysis.binaries,
     cad_view_analysis.zipfiles,
     cad_view_analysis.datas,
+    dxf_worker_exe,
+    dxf_worker_analysis.binaries,
+    dxf_worker_analysis.zipfiles,
+    dxf_worker_analysis.datas,
     strip=False,
     upx=True,
     upx_exclude=[],

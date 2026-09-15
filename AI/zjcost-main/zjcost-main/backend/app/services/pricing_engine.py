@@ -28,15 +28,18 @@ class FeeConfig:
     """Configurable fee rates – mirrors a "rule package" row."""
     management_rate: float = 0.0   # 管理费率 (on direct cost)
     profit_rate: float = 0.0       # 利润率 (on direct cost)
-    regulatory_rate: float = 0.0   # 规费费率 (on direct cost)
+    regulatory_rate: float = 0.0   # 规费费率
     tax_rate: float = 0.09         # 增值税率 (on pre‑tax total)
+    # 规费取费基数："labor" = 人工费（北京现行口径，京建发〔2019〕333号房建 19.76%），"direct" = 人材机直接费
+    regulatory_base: str = "direct"
 
 
 DEFAULT_FEE_CONFIG = FeeConfig(
-    management_rate=0.08,
-    profit_rate=0.05,
-    regulatory_rate=0.03,
+    management_rate=0.12,
+    profit_rate=0.07,
+    regulatory_rate=0.1976,
     tax_rate=0.09,
+    regulatory_base="labor",
 )
 
 
@@ -111,7 +114,10 @@ def calculate_line_item(
 
     management_fee = _r2(direct_cost * fee_config.management_rate)
     profit = _r2(direct_cost * fee_config.profit_rate)
-    regulatory_fee = _r2(direct_cost * fee_config.regulatory_rate)
+    if fee_config.regulatory_base == "labor":
+        regulatory_fee = _r2(labor_cost * fee_config.regulatory_rate)
+    else:
+        regulatory_fee = _r2(direct_cost * fee_config.regulatory_rate)
 
     pre_tax_total = _r2(direct_cost + management_fee + profit + regulatory_fee)
     tax = _r2(pre_tax_total * fee_config.tax_rate)
@@ -209,7 +215,10 @@ def calculate_line_item_detailed(
 
     management_fee = _r2(direct_cost * fee_config.management_rate)
     profit = _r2(direct_cost * fee_config.profit_rate)
-    regulatory_fee = _r2(direct_cost * fee_config.regulatory_rate)
+    if fee_config.regulatory_base == "labor":
+        regulatory_fee = _r2(labor_cost * fee_config.regulatory_rate)
+    else:
+        regulatory_fee = _r2(direct_cost * fee_config.regulatory_rate)
 
     pre_tax_total = _r2(direct_cost + management_fee + profit + regulatory_fee)
     tax = _r2(pre_tax_total * fee_config.tax_rate)

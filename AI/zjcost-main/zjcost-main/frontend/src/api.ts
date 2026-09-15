@@ -71,7 +71,7 @@ export interface BoqItemCreate {
   description_en?: string; rate?: number; remark?: string;
 }
 export interface BoqItemUpdate {
-  name?: string; characteristics?: string; unit?: string; quantity?: number;
+  code?: string; name?: string; characteristics?: string; unit?: string; quantity?: number;
   division?: string; sort_order?: number; item_ref?: string; trade_section?: string;
   description_en?: string; rate?: number; remark?: string;
 }
@@ -193,6 +193,7 @@ export interface RulePackage {
 export interface RulePackageCreate {
   name: string; region?: string; management_rate?: number;
   profit_rate?: number; regulatory_rate?: number; tax_rate?: number;
+  rounding_rule?: string; version?: string;
 }
 
 export interface MaterialPrice {
@@ -429,7 +430,8 @@ export interface SystemCheckResponse {
 
 export interface TaskStatusOut {
   task_id: string; task_type: string; status: string; progress: number;
-  message: string; error: string | null; created_at: string; completed_at: string | null;
+  message: string; error: string | null; created_at: string;
+  completed_at: string | null; cancelled?: boolean;
 }
 
 export interface TaskListResponse {
@@ -473,6 +475,15 @@ export interface IfcTaskStatus {
   created_at: string | null;
   updated_at: string | null;
   timeout_seconds: number;
+}
+
+export interface WalkReviewRecord {
+  id: number;
+  scene_title: string;
+  element_count: number;
+  result: "passed" | "needs_fix";
+  note: string;
+  created_at: string;
 }
 
 export interface PriceSourceInfo {
@@ -582,6 +593,19 @@ export interface QuotaItemCreateResponse {
   ok: boolean;
   action: "created" | "updated";
   item: QuotaItemDTO;
+}
+
+export interface RiskSimulationRecord {
+  id: number;
+  weather: string;
+  price: string;
+  schedule: string;
+  peak: number;
+  after: number;
+  level: string; // high | medium | low
+  touched: string[];
+  advice: string[];
+  created_at: string;
 }
 
 // ─── 旧材料（遗址修复材料）独立模块类型 ───────────────────────────
@@ -708,6 +732,15 @@ export interface OldMaterialStatsResponse {
   by_acquisition_method: Array<{ acquisition_method: string; count: number }>;
   by_heritage_site: Array<{ heritage_site: string; count: number }>;
   by_relic_level: Array<{ relic_level: string; count: number }>;
+}
+
+export interface OldMaterialImportResult {
+  ok: boolean;
+  imported: number;
+  skipped: number;
+  created: number;
+  updated: number;
+  items: OldMaterialDTO[];
 }
 
 // ─── 旧材 AI 损耗预测（XGBoost + LSTM 融合模型） ─────────────────
@@ -1007,6 +1040,10 @@ export const api = {
   listRulePackages: () => request<RulePackage[]>("/rule-packages"),
   createRulePackage: (data: RulePackageCreate) =>
     request<RulePackage>("/rule-packages", { method: "POST", body: JSON.stringify(data) }),
+  updateRulePackage: (rpId: number, data: RulePackageCreate) =>
+    request<RulePackage>(`/rule-packages/${rpId}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteRulePackage: (rpId: number) =>
+    request<{ ok: boolean; bound_projects_released: number; message: string }>(`/rule-packages/${rpId}`, { method: "DELETE" }),
   bindRulePackage: (pid: number, rpId: number) =>
     request<Project>(`/projects/${pid}/rule-package:bind`, {
       method: "POST", body: JSON.stringify({ rule_package_id: rpId }),
@@ -1099,6 +1136,10 @@ export const api = {
     return request<TaskListResponse>(`/tasks${qs}`);
   },
   getTaskStatus: (taskId: string) => request<TaskStatusOut>(`/tasks/${encodeURIComponent(taskId)}`),
+  cancelTask: (taskId: string) =>
+    request<TaskStatusOut>(`/tasks/${encodeURIComponent(taskId)}/cancel`, { method: "POST" }),
+  deleteTask: (taskId: string) =>
+    request<TaskStatusOut>(`/tasks/${encodeURIComponent(taskId)}`, { method: "DELETE" }),
 
   //  Auto Valuate (match + bind + calc)
   autoValuate: (pid: number) =>
@@ -1232,6 +1273,33 @@ export const api = {
       body: JSON.stringify(payload),
       headers: { "Content-Type": "application/json" },
     }),
+  deleteQuotaItem: (itemId: number) =>
+    request<{ ok: boolean; deleted: { id: number; quota_code: string; discipline: string; name: string }; message: string }>(
+      `/quota-items/${itemId}`,
+      { method: "DELETE" },
+    ),
+
+  // ─── 动态管控-风险模拟（历史留痕） ────────────────────────────
+
+  listSimulations: (limit = 20) =>
+    request<{ total: number; items: RiskSimulationRecord[] }>(`/control/simulations?limit=${limit}`),
+  createSimulation: (payload: {
+    weather: string;
+    price: string;
+    schedule: string;
+    peak: number;
+    after: number;
+    level: string;
+    touched: string[];
+    advice: string[];
+  }) =>
+    request<{ ok: boolean; item: RiskSimulationRecord }>("/control/simulations", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: { "Content-Type": "application/json" },
+    }),
+  deleteSimulation: (id: number) =>
+    request<{ ok: boolean; message: string }>(`/control/simulations/${id}`, { method: "DELETE" }),
 
   // ─── 旧材料（遗址修复材料）独立模块 APIs ──────────────────────────
 
@@ -1277,6 +1345,29 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
+  exportOldMaterials: (params: {
+    keyword?: string;
+    acquisition_method?: OldMaterialAcquisitionMethod;
+    heritage_site?: string;
+  }) => {
+    const qs = new URLSearchParams();
+    if (params.keyword) qs.set("keyword", params.keyword);
+    if (params.acquisition_method) qs.set("acquisition_method", params.acquisition_method);
+    if (params.heritage_site) qs.set("heritage_site", params.heritage_site);
+    const url = `${API_BASE}/old-materials/export${qs.toString() ? `?${qs.toString()}` : ""}`;
+    return fetchBlob(url, {
+      method: "POST",
+      headers: authHeaders(),
+    });
+  },
+
+  // 导入旧材料定额 Excel，按 (discipline='旧材料', quota_code) upsert
+  importOldMaterials: (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return upload<OldMaterialImportResult>("/old-materials/import", fd);
+  },
+
   // ─── Report APIs ──────────────────────────────────────────────
 
   getReport: (pid: number, opts?: { division?: string; search?: string }) => {
@@ -1287,12 +1378,12 @@ export const api = {
     return request<ReportData>(`/projects/${pid}/report${q ? `?${q}` : ""}`);
   },
 
-  exportReport: (pid: number, format: "pdf" | "excel" = "pdf") => {
+  exportReport: (pid: number, format: "pdf" | "excel" | "html" = "pdf") => {
     const url = `${API_BASE}/projects/${pid}/report/export?format=${format}`;
     return fetchBlob(url, { headers: authHeaders() });
   },
 
-  exportAuditReport: (pid: number, format: "pdf" | "excel" = "pdf") => {
+  exportAuditReport: (pid: number, format: "pdf" | "excel" | "html" = "pdf") => {
     const url = `${API_BASE}/projects/${pid}/audit-report/export?format=${format}`;
     return fetchBlob(url, { headers: authHeaders() });
   },
@@ -1468,6 +1559,18 @@ export const api = {
       { method: "POST" },
     );
   },
+  // 页面关闭时立即发送停止请求（keepalive fetch 带 header），不等异步返回
+  stopCadEmbedKeepalive: (taskId: string) => {
+    try {
+      window.fetch(`${API_BASE}/drawing-recognition/${taskId}/embed-cad/stop`, {
+        method: "POST",
+        keepalive: true,
+        headers: authHeaders(),
+      } as RequestInit);
+    } catch {
+      // 页面已销毁，fetch 无法发出，由后端兜底清理
+    }
+  },
   // 嵌入状态：启动失败或运行中途退出时前端据此自动回退内置渲染
   cadEmbedStatus: (taskId: string) => {
     return request<{ state: string; message?: string }>(
@@ -1502,6 +1605,19 @@ export const api = {
       { method: "POST", body: JSON.stringify({ project_id: projectId }) },
     );
   },
+
+  // ─── Walk Reviews（模型漫游复核留痕）──────────────────────────────
+
+  listWalkReviews: (limit = 20) =>
+    request<{ total: number; items: WalkReviewRecord[] }>(`/walk-reviews?limit=${limit}`),
+  createWalkReview: (data: {
+    scene_title: string; element_count: number; result: "passed" | "needs_fix"; note: string;
+  }) =>
+    request<{ ok: boolean; item: WalkReviewRecord }>("/walk-reviews", {
+      method: "POST", body: JSON.stringify(data),
+    }),
+  deleteWalkReview: (reviewId: number) =>
+    request<{ ok: boolean; message: string }>(`/walk-reviews/${reviewId}`, { method: "DELETE" }),
 
   // ─── Price Fetch ────────────────────────────────────────────────
 

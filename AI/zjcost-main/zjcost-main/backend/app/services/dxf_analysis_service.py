@@ -2947,32 +2947,79 @@ def _default_material(rule: ComponentRule, spec: str) -> str:
     return ""
 
 
+def _clean_and_retry_read(
+    cleaner,
+    note: str,
+    tmp_path: str,
+    cleanup_diagnostics: list[str],
+) -> bool:
+    """执行一次清理；若确有删除则记录并返回 True。"""
+    removed = cleaner(tmp_path)
+    if removed:
+        cleanup_diagnostics.append(f"已清理 {removed} 处{note}。")
+    return removed > 0
+
+
 def _read_dxf_document(ezdxf: Any, tmp_path: str) -> tuple[Any, list[str]]:
     cleanup_diagnostics: list[str] = []
     if _normalize_dxf_text(tmp_path):
         cleanup_diagnostics.append("已标准化转换器生成的 DXF 文本。")
+
+    def _clean_by_message(msg: str) -> bool:
+        if "Invalid handle 0" in msg:
+            return _clean_and_retry_read(
+                _remove_zero_handle_pairs, "转换器生成的非法 DXF 句柄", tmp_path, cleanup_diagnostics
+            )
+        if "Invalid group code" in msg:
+            return _clean_and_retry_read(
+                _remove_invalid_group_codes, "非法 DXF group code", tmp_path, cleanup_diagnostics
+            )
+        if "Invalid binary data" in msg:
+            return _clean_and_retry_read(
+                _strip_binary_sections, "非法二进制（PROXY/图块）数据段", tmp_path, cleanup_diagnostics
+            )
+        return False
+
+    # 1) 标准读取，失败则视错误类型清理一次后重试
     try:
         return ezdxf.readfile(tmp_path), cleanup_diagnostics
     except Exception as exc:
-        if "Invalid handle 0" in str(exc):
-            removed = _remove_zero_handle_pairs(tmp_path)
-            if removed:
-                cleanup_diagnostics.append(f"已清理 {removed} 个转换器生成的非法 DXF 句柄。")
-                try:
-                    return ezdxf.readfile(tmp_path), cleanup_diagnostics
-                except Exception:
-                    pass
+        read_msg = str(exc)
+    if _clean_by_message(read_msg):
+        try:
+            return ezdxf.readfile(tmp_path), cleanup_diagnostics
+        except Exception:
+            pass
 
-        from ezdxf import recover  # type: ignore
-        doc, auditor = recover.readfile(tmp_path)
-        diagnostics = [*cleanup_diagnostics, f"DXF 标准读取失败，已启用恢复模式：{exc}"]
-        fixed_count = len(getattr(auditor, "fixes", []) or [])
-        error_count = len(getattr(auditor, "errors", []) or [])
-        if fixed_count:
-            diagnostics.append(f"恢复模式已修复 {fixed_count} 个 DXF 结构问题。")
-        if error_count:
-            diagnostics.append(f"恢复模式仍发现 {error_count} 个 DXF 结构问题，预览和识别结果可能不完整。")
-        return doc, diagnostics
+    # 2) 恢复模式读取：清理与重试最多迭代 3 轮，容忍"清一处、下一处浮现"
+    from ezdxf import recover  # type: ignore
+    last_recover_msg = read_msg
+    for _ in range(3):
+        try:
+            doc, auditor = recover.readfile(tmp_path)
+            diagnostics = [*cleanup_diagnostics, f"DXF 标准读取失败，已启用恢复模式：{read_msg}"]
+            fixed_count = len(getattr(auditor, "fixes", []) or [])
+            error_count = len(getattr(auditor, "errors", []) or [])
+            if fixed_count:
+                diagnostics.append(f"恢复模式已修复 {fixed_count} 个 DXF 结构问题。")
+            if error_count:
+                diagnostics.append(f"恢复模式仍发现 {error_count} 个 DXF 结构问题，预览和识别结果可能不完整。")
+            return doc, diagnostics
+        except Exception as recover_exc:
+            recover_msg = str(recover_exc)
+            last_recover_msg = recover_msg
+            if not _clean_by_message(recover_msg):
+                break
+
+    # 3) 最终兜底：synced 容错 loader（recover.explore 不会因非法组码抛出，
+    #    而是跳过非法行继续加载，最适用于损坏的建筑图 DXF）
+    doc, auditor = recover.explore(tmp_path)
+    diagnostics = [*cleanup_diagnostics, "标准和恢复模式均无法完整解析，已启用最大容错模式加载，部分图形数据可能缺失。"]
+    error_count = len(getattr(auditor, "errors", []) or [])
+    if error_count:
+        diagnostics.append(f"最大容错模式仍发现 {error_count} 个 DXF 结构问题。")
+    _ = last_recover_msg
+    return doc, diagnostics
 
 
 def _safe_entity_list(msp: Any) -> tuple[list[Any], list[str]]:
@@ -3000,9 +3047,46 @@ def _safe_entity_list(msp: Any) -> tuple[list[Any], list[str]]:
     return entities, skipped
 
 
+def _remove_invalid_group_codes(tmp_path: str) -> int:
+    """移除"组码位"上非数字的行（如 TXTSTY_ANONYMOUS、空行、乱码行），
+    并让后续行重新对齐到 DXF 的"组码+值"配对（等价 ezdxf synced loader 语义）。
+
+    DXF 是"组码行、值行"交替结构，值本身允许为空字符串，因此只有当出现在
+    "组码位"的行不是有效整数时才跳过该行（只跳 1 行以便下一行重新成为组码位），
+    绝不能退回全局删除，否则会把合法空值行错当成非法组码并破坏所有配对。
+
+    真正的二进制 DXF 不做任何文本处理。
+    """
+    raw_bytes = Path(tmp_path).read_bytes()
+    if raw_bytes.startswith(_BINARY_DXF_SIGNATURE):
+        return 0
+    line_ending = b"\r\n" if b"\r\n" in raw_bytes else b"\n"
+    lines = raw_bytes.split(line_ending)
+    cleaned: list[bytes] = []
+    removed = 0
+    i = 0
+    n = len(lines)
+    while i < n:
+        code_str = lines[i].strip().decode("ascii", errors="ignore")
+        if code_str.lstrip("-").isdigit():
+            cleaned.append(lines[i])
+            if i + 1 < n:
+                cleaned.append(lines[i + 1])
+            i += 2
+        else:
+            removed += 1
+            i += 1
+    if removed:
+        Path(tmp_path).write_bytes(line_ending.join(cleaned) + line_ending)
+    return removed
+
+
 def _remove_zero_handle_pairs(tmp_path: str) -> int:
     path = Path(tmp_path)
-    raw = path.read_text(encoding="utf-8", errors="ignore")
+    raw_bytes = path.read_bytes()
+    if raw_bytes.startswith(_BINARY_DXF_SIGNATURE):
+        return 0
+    raw = raw_bytes.decode("utf-8", errors="ignore")
     line_ending = "\r\n" if "\r\n" in raw else "\n"
     lines = raw.splitlines()
     cleaned: list[str] = []
@@ -3022,6 +3106,53 @@ def _remove_zero_handle_pairs(tmp_path: str) -> int:
 
 
 _BINARY_DXF_SIGNATURE = b"AutoCAD Binary DXF\r\n\x1a\x00"
+
+_BINARY_DATA_CODES = {310, 311, 312, 313, 314, 315, 316, 317, 318, 319, 1004}
+
+
+def _strip_binary_sections(tmp_path: str) -> int:
+    """从文本 DXF 中移除值不是合法十六进制的二进制标签对（组码 310-319/1004）。
+
+    这类段用于嵌入 PROXY 图形、图片、OLE 等数据；当 CAD 导出或转换工具把值写坏
+    （混入空格、非 hex 字符或原始二进制字节）时，ezdxf 的 tagger/recover 会在加载
+    时抛出 "Invalid binary data near line: N"（见 ezdxf lldxf/tagger.py）。
+
+    注意：真正的二进制 DXF（带 "AutoCAD Binary DXF..." 签名）内部是二进制编码，
+    绝不能按文本方式处理，此处直接跳过返回 0。
+    """
+    path = Path(tmp_path)
+    raw_bytes = path.read_bytes()
+    if raw_bytes.startswith(_BINARY_DXF_SIGNATURE):
+        return 0
+    from binascii import unhexlify
+
+    line_ending = b"\r\n" if b"\r\n" in raw_bytes else b"\n"
+    lines = raw_bytes.split(line_ending)
+    cleaned: list[bytes] = []
+    removed = 0
+    i = 0
+    while i < len(lines):
+        code_str = lines[i].strip().decode("ascii", errors="ignore")
+        code = int(code_str) if code_str.lstrip("-").isdigit() else None
+        if code in _BINARY_DATA_CODES and i + 1 < len(lines):
+            value_bytes = lines[i + 1].strip()
+            valid = False
+            try:
+                value_hex = value_bytes.decode("ascii", errors="strict")
+                if len(value_hex) % 2 == 0:
+                    unhexlify(value_hex)
+                    valid = True
+            except Exception:
+                valid = False
+            if not valid:
+                removed += 1
+                i += 2
+                continue
+        cleaned.append(lines[i])
+        i += 1
+    if removed:
+        path.write_bytes(line_ending.join(cleaned) + line_ending)
+    return removed
 
 
 def _normalize_dxf_text(tmp_path: str) -> bool:

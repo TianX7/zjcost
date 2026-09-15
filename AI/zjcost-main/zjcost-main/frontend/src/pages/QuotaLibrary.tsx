@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, Empty, Input, Progress, Select, Table, Tabs, Tag, Tooltip, message } from "antd";
+import { Button, Empty, Form, Input, InputNumber, Modal, Popconfirm, Progress, Select, Space, Table, Tabs, Tag, Tooltip, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
-import type { QuotaAcquisitionMethod, QuotaItemDTO, QuotaResourceDetail, QuotaStatsResponse } from "../api";
+import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import type { QuotaAcquisitionMethod, QuotaItemCreatePayload, QuotaItemDTO, QuotaResourceDetail, QuotaStatsResponse } from "../api";
 import { api } from "../api";
 
 // 专业配色
@@ -302,6 +302,12 @@ export default function QuotaLibrary() {
   const [restoring, setRestoring] = useState(false);
   const [activeTab, setActiveTab] = useState("library");
   const [selectedRowId, setSelectedRowId] = useState<number | null>(null);
+  const [expandedKeys, setExpandedKeys] = useState<number[]>([]);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState<QuotaItemDTO | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [form] = Form.useForm<QuotaItemCreatePayload>();
+  const modalMethod = Form.useWatch("acquisition_method", form);
 
   // 搜索防抖
   useEffect(() => {
@@ -402,6 +408,67 @@ export default function QuotaLibrary() {
     return ranges.map((r) => ({ ...r, percent: Math.round((r.count / max) * 100) }));
   }, [items]);
 
+  const openCreate = () => {
+    setEditing(null);
+    form.resetFields();
+    form.setFieldsValue({ discipline: "土建", acquisition_method: "" });
+    setModalOpen(true);
+  };
+
+  const openEdit = (record: QuotaItemDTO) => {
+    setEditing(record);
+    form.setFieldsValue({
+      quota_code: record.quota_code,
+      discipline: record.discipline,
+      name: record.name,
+      unit: record.unit,
+      chapter: record.chapter,
+      labor_qty: Number(record.labor_qty ?? 0),
+      material_qty: Number(record.material_qty ?? 0),
+      machine_qty: Number(record.machine_qty ?? 0),
+      base_price: Number(record.base_price ?? 0),
+      work_content: record.work_content ?? "",
+      applicable_scope: record.applicable_scope ?? "",
+      version: record.version ?? "",
+      acquisition_method: (record.acquisition_method ?? "") as QuotaAcquisitionMethod,
+      origin_note: record.origin_note ?? "",
+      heritage_site: record.heritage_site ?? "",
+      relic_level: record.relic_level ?? "",
+      repair_part: record.repair_part ?? "",
+      condition_grade: record.condition_grade ?? "",
+      batch_no: record.batch_no ?? "",
+      inspection_report_no: record.inspection_report_no ?? "",
+    });
+    setModalOpen(true);
+  };
+
+  const handleSave = async () => {
+    try {
+      const values = await form.validateFields();
+      setSaving(true);
+      await api.createQuotaItem(values);
+      message.success(editing ? "定额已更新" : "定额已新增");
+      setModalOpen(false);
+      await load();
+    } catch (err) {
+      if (err instanceof Error) message.error(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (record: QuotaItemDTO) => {
+    try {
+      const res = await api.deleteQuotaItem(record.id);
+      message.success(res.message || "定额已删除");
+      setSelectedRowId(null);
+      setExpandedKeys((keys) => keys.filter((k) => k !== record.id));
+      await load();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "删除失败");
+    }
+  };
+
   const restoreReference = async () => {
     setRestoring(true);
     try {
@@ -474,6 +541,29 @@ export default function QuotaLibrary() {
       render: (value: number | undefined) => value == null || value <= 0
         ? <span style={{ color: "#f87171" }}>缺基价</span>
         : `¥${value.toFixed(2)}`,
+    },
+    {
+      title: "操作",
+      key: "actions",
+      width: 150,
+      fixed: "right",
+      render: (_, record) => (
+        <Space size={4} onClick={(event) => event.stopPropagation()}>
+          <Tooltip title="编辑定额">
+            <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)}>编辑</Button>
+          </Tooltip>
+          <Popconfirm
+            title="删除定额"
+            description="将同时删除其人材机明细；已绑定的清单项会回到待套价状态。确认删除？"
+            okText="删除"
+            cancelText="取消"
+            okButtonProps={{ danger: true }}
+            onConfirm={() => handleDelete(record)}
+          >
+            <Button size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      ),
     },
   ];
 
@@ -648,6 +738,7 @@ export default function QuotaLibrary() {
                     ]}
                   />
                   <Button icon={<ReloadOutlined />} loading={loading} onClick={load}>刷新</Button>
+                  <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增定额</Button>
                   {qualityStats.missingPrice > 0 && (
                     <Tooltip title="这些条目缺少基价，自动套价时无法计价，需补充维护">
                       <Tag color="red">缺基价 {qualityStats.missingPrice} 条</Tag>
@@ -667,15 +758,25 @@ export default function QuotaLibrary() {
                       columns={columns}
                       dataSource={items}
                       loading={loading}
-                      scroll={{ x: 980 }}
+                      scroll={{ x: 1150 }}
                       pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `共 ${total} 条${items.length >= QUOTA_LIST_LIMIT ? `（仅加载前 ${QUOTA_LIST_LIMIT} 条）` : ""}` }}
                       rowClassName={(record) => record.id === selectedRowId ? "quota-row-selected" : ""}
                       onRow={(record) => ({
-                        onClick: () => setSelectedRowId(selectedRowId === record.id ? null : record.id),
+                        onClick: (event) => {
+                          if ((event.target as HTMLElement).closest(".ant-table-row-expand-icon")) return;
+                          setSelectedRowId(selectedRowId === record.id ? null : record.id);
+                          setExpandedKeys((keys) =>
+                            keys.includes(record.id)
+                              ? keys.filter((k) => k !== record.id)
+                              : [...keys, record.id]
+                          );
+                        },
                       })}
                       expandable={{
                         expandedRowRender: (record) => <QuotaDetailPanel record={record} />,
                         rowExpandable: () => true,
+                        expandedRowKeys: expandedKeys,
+                        onExpandedRowsChange: (rows) => setExpandedKeys(rows as number[]),
                       }}
                       locale={{
                         emptyText: (
@@ -956,6 +1057,85 @@ export default function QuotaLibrary() {
           },
         ]}
       />
+
+      {/* 新增 / 编辑定额 Modal */}
+      <Modal
+        title={editing ? `编辑定额 · ${editing.quota_code}` : "新增定额"}
+        open={modalOpen}
+        onCancel={() => setModalOpen(false)}
+        onOk={handleSave}
+        okText={editing ? "保存" : "新增"}
+        confirmLoading={saving}
+        width={680}
+        destroyOnClose
+      >
+        <Form form={form} layout="vertical" initialValues={{ discipline: "土建", acquisition_method: "", labor_qty: 0, material_qty: 0, machine_qty: 0, base_price: 0 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+            <Form.Item name="quota_code" label="定额编码" rules={[{ required: true, message: "请输入定额编码" }]}>
+              <Input placeholder="如 GS1-1" disabled={!!editing} />
+            </Form.Item>
+            <Form.Item name="discipline" label="专业" rules={[{ required: true, message: "请选择专业" }]}>
+              <Select
+                options={(stats?.disciplines ?? []).map((item) => ({ value: item.discipline, label: `${item.discipline} (${item.count})` }))}
+                placeholder="选择专业"
+              />
+            </Form.Item>
+            <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入定额名称" }]}>
+              <Input placeholder="如 干混抹灰砂浆 M20" />
+            </Form.Item>
+            <Form.Item name="unit" label="单位" rules={[{ required: true, message: "请输入计量单位" }]}>
+              <Input placeholder="如 m³ / 10m³" />
+            </Form.Item>
+            <Form.Item name="chapter" label="章节/分部">
+              <Input placeholder="如 建筑装饰工程" />
+            </Form.Item>
+            <Form.Item name="version" label="版本">
+              <Input placeholder="如 2018通用版" />
+            </Form.Item>
+            <Form.Item name="labor_qty" label="人工消耗">
+              <InputNumber min={0} style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item name="material_qty" label="材料消耗">
+              <InputNumber min={0} style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item name="machine_qty" label="机械消耗">
+              <InputNumber min={0} style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item name="base_price" label="基价（元）">
+              <InputNumber min={0} style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item name="acquisition_method" label="旧材料获取方式">
+              <Select
+                allowClear
+                placeholder="仅旧材料使用（可选）"
+                options={[
+                  { value: "recycle", label: "当地回收" },
+                  { value: "reproduce", label: "原材料复现" },
+                ]}
+              />
+            </Form.Item>
+          </div>
+          {modalMethod && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+              <Form.Item name="heritage_site" label="关联遗址/文物"><Input /></Form.Item>
+              <Form.Item name="relic_level" label="文物等级"><Input placeholder="如 国家级" /></Form.Item>
+              <Form.Item name="repair_part" label="修复部位"><Input placeholder="如 屋面" /></Form.Item>
+              <Form.Item name="condition_grade" label="成色/成新率"><Input placeholder="如 8成新" /></Form.Item>
+              <Form.Item name="batch_no" label="批次号"><Input /></Form.Item>
+              <Form.Item name="inspection_report_no" label="检测报告编号"><Input /></Form.Item>
+            </div>
+          )}
+          <Form.Item name="work_content" label="工作内容">
+            <Input.TextArea rows={2} placeholder="施工工作内容说明" />
+          </Form.Item>
+          <Form.Item name="applicable_scope" label="适用范围">
+            <Input.TextArea rows={2} placeholder="适用条件与范围" />
+          </Form.Item>
+          <Form.Item name="origin_note" label="来源说明">
+            <Input.TextArea rows={2} placeholder="回收地点或复现依据" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 }

@@ -32,6 +32,43 @@ def list_rule_packages(db: Session = Depends(get_db)) -> list[RulePackageOut]:
     return [_to_out(r) for r in rows]
 
 
+@router.put("/rule-packages/{rule_package_id}", response_model=RulePackageOut)
+def update_rule_package(
+    rule_package_id: int,
+    payload: RulePackageCreate,
+    db: Session = Depends(get_db),
+) -> RulePackageOut:
+    rp = db.query(RulePackage).filter(RulePackage.id == rule_package_id).first()
+    if not rp:
+        raise HTTPException(status_code=404, detail=f"规则包不存在：id={rule_package_id}")
+    for key, value in model_to_dict(payload).items():
+        setattr(rp, key, value)
+    db.commit()
+    db.refresh(rp)
+    return _to_out(rp)
+
+
+@router.delete("/rule-packages/{rule_package_id}")
+def delete_rule_package(rule_package_id: int, db: Session = Depends(get_db)):
+    """删除规则包；已绑定该包的项目将解绑（回到默认费率），需注意影响。"""
+    rp = db.query(RulePackage).filter(RulePackage.id == rule_package_id).first()
+    if not rp:
+        raise HTTPException(status_code=404, detail=f"规则包不存在：id={rule_package_id}")
+    bound = db.query(Project).filter(Project.rule_package_id == rule_package_id).count()
+    # 解绑引用该规则包的项目
+    db.query(Project).filter(Project.rule_package_id == rule_package_id).update(
+        {Project.rule_package_id: None},
+        synchronize_session=False,
+    )
+    db.delete(rp)
+    db.commit()
+    return {
+        "ok": True,
+        "bound_projects_released": bound,
+        "message": f"已删除规则包「{rp.name}」，{bound} 个项目解绑回默认费率",
+    }
+
+
 @router.post("/projects/{project_id}/rule-package:bind", response_model=ProjectOut)
 def bind_rule_package(
     project_id: int,
@@ -77,6 +114,7 @@ def _to_out(rp: RulePackage) -> RulePackageOut:
         profit_rate=rp.profit_rate,
         regulatory_rate=rp.regulatory_rate,
         tax_rate=rp.tax_rate,
+        regulatory_base=getattr(rp, "regulatory_base", "direct"),
         rounding_rule=rp.rounding_rule,
         version=rp.version,
     )

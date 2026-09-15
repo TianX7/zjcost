@@ -15,9 +15,7 @@ const DrawingRecognition = lazy(() => import("./pages/DrawingRecognition"));
 const IfcParser = lazy(() => import("./pages/IfcParser"));
 const WalkVerify = lazy(() => import("./WalkVerify"));
 const QuantityCenter = lazy(() => import("./pages/QuantityCenter"));
-const PvPowerPage = lazy(() => import("./pages/FacilityOpsPages").then((m) => ({ default: m.PvPowerPage })));
-const WaterReusePage = lazy(() => import("./pages/FacilityOpsPages").then((m) => ({ default: m.WaterReusePage })));
-const FacilityOpsPage = lazy(() => import("./pages/FacilityOpsPages").then((m) => ({ default: m.FacilityOpsPage })));
+const MergedOpsPage = lazy(() => import("./pages/FacilityOpsPages").then((m) => ({ default: m.MergedOpsPage })));
 const DataResources = lazy(() => import("./pages/DataResources"));
 const PricingAudit = lazy(() => import("./pages/PricingAudit"));
 const SystemSettings = lazy(() => import("./pages/SystemSettings"));
@@ -31,9 +29,7 @@ const NAV_ITEMS = [
   { path: "/quantity-center", icon: "square_foot", label: "清单算量中心" },
   { path: "/drawings", icon: "draw", label: "图纸智能识别" },
   { path: "/ifc-parser", icon: "view_in_ar", label: "BIM 模型算量" },
-  { path: "/pv-power", icon: "solar_power", label: "光伏发电监测" },
-  { path: "/water-reuse", icon: "water_drop", label: "净水与中水回用" },
-  { path: "/facility-ops", icon: "build_circle", label: "设施运维管理" },
+  { path: "/facility-ops", icon: "monitoring", label: "光伏 · 中水 · 运维" },
   { path: "/ifc-walk-tour", icon: "directions_walk", label: "数字孪生漫游" },
   { path: "/data-resources", icon: "database", label: "定额与价格库" },
   { path: "/old-materials", icon: "recycling", label: "旧材利用定额" },
@@ -53,7 +49,7 @@ const PAGE_TITLES: Record<string, { title: string; hint: string }> = {
   "/ifc-parser": { title: "BIM 模型算量", hint: "解析BIM模型提取工程量并自动套价" },
   "/pv-power": { title: "光伏发电监测", hint: "屋面光伏系统发电功率、收益与碳减排实时测算" },
   "/water-reuse": { title: "净水与中水回用", hint: "净水处理与中水回用双系统运行监测" },
-  "/facility-ops": { title: "设施运维管理", hint: "设备健康监测、维保工单与分项能耗分析" },
+  "/facility-ops": { title: "光伏 · 中水 · 运维", hint: "运营期三大专题合并视图：发电监测 / 水处理回用 / 设施运维" },
   "/pricing-audit": { title: "计价复核与审计", hint: "核对价格、定额与风险项" },
   "/dynamic-control": { title: "动态管控", hint: "从造价到运维：四源关联、偏差对比、支付校验、风险模拟与后评估" },
   "/innovation-hub": { title: "创新成果", hint: "五大创新点、工程/经济/可持续三重价值与校企协同人才成效总览" },
@@ -327,9 +323,9 @@ export default function App() {
                             <Route path="/drawings" element={<DrawingRecognition />} />
                             <Route path="/drawings/:projectId" element={<DrawingRecognition />} />
                             <Route path="/ifc-parser" element={<IfcParser />} />
-                            <Route path="/pv-power" element={<PvPowerPage />} />
-                            <Route path="/water-reuse" element={<WaterReusePage />} />
-                            <Route path="/facility-ops" element={<FacilityOpsPage />} />
+                            <Route path="/facility-ops" element={<MergedOpsPage />} />
+                            <Route path="/pv-power" element={<Navigate to="/facility-ops?tab=pv" replace />} />
+                            <Route path="/water-reuse" element={<Navigate to="/facility-ops?tab=water" replace />} />
                             <Route path="/tasks" element={<Navigate to="/settings" replace />} />
                             <Route path="/rules" element={<Navigate to="/settings" replace />} />
                             <Route path="/settings" element={<SystemSettings />} />

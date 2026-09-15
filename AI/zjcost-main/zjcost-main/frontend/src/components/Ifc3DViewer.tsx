@@ -8332,6 +8332,12 @@ export default function Ifc3DViewer({
 
   const showcaseActiveRef = useRef(false);
 
+  // 施工模拟动画结束后是否已开启自动环绕展示（构建完成后自动放大旋转）
+  const buildCompleteRef = useRef(false);
+
+  // 构建完成后的自动放大推进：保存目标取景距离（距模型中心），动画完成时相机平滑推进到位
+  const buildAutoZoomRef = useRef<{ zoomTo: number } | null>(null);
+
   const showcaseControlRef = useRef<{ toggle: () => void; exit: () => void }>({ toggle: () => {}, exit: () => {} });
 
   const setNearbyIssueRef = useRef<(issue: WalkIssuePoint | null) => void>(() => {});
@@ -8629,6 +8635,11 @@ export default function Ifc3DViewer({
     setNearbyElement(null);
 
     setSelectedElement(null);
+
+    // 场景重建（切换模型/视图）时复位"构建完成自动环绕"标记，
+    // 避免旧场景遗留的 autoRotate 状态或标记影响到新场景
+    buildCompleteRef.current = false;
+    buildAutoZoomRef.current = null;
 
 
 
@@ -9570,9 +9581,20 @@ export default function Ifc3DViewer({
       let lastLabel = "";
       const buildStartAt = performance.now();
       setBuildStageLabel("施工准备");
+      // 构建开始即自动放大：在逐构件生长动画进行的同时，相机就已开始平滑向
+      // 模型推进（放大），体现"从无到有、越建越近"的施工过程；无需等构建完成
+      let zoomScheduled = false;
       const buildTick = () => {
         const now = performance.now();
         const elapsed = now - buildStartAt;
+        if (!zoomScheduled) {
+          zoomScheduled = true;
+          if (bounds && !bounds.isEmpty()) {
+            const dist = camera.position.distanceTo(controls.target);
+            const zoomTo = Math.max(dist * 0.7, radius * 1.0);
+            buildAutoZoomRef.current = { zoomTo };
+          }
+        }
         let finishedStages = 0;
         buckets.forEach((bucket, si) => {
           const stageT = Math.min(Math.max((elapsed - si * STAGE_MS) / STAGE_MS, 0), 1);
@@ -9610,6 +9632,17 @@ export default function Ifc3DViewer({
         needsRender = true;
         if (finishedStages >= stageNames.length && fades.length === 0) {
           window.setTimeout(() => setBuildStageLabel(null), 1000);
+          // 模型构建完成后自动放大展示并缓慢环绕旋转（autoRotate），
+          // 方便汇报/演示时无需手动操作即可多角度查看成型模型；
+          // 用户拖拽/滚轮交互时停下，交互结束后再恢复环绕。
+          if (!isWalkMode) {
+            controls.autoRotate = true;
+            controls.autoRotateSpeed = 1.6;
+            controls.enableDamping = true;
+          }
+          buildCompleteRef.current = true;
+          return;
+          buildCompleteRef.current = true;
           return;
         }
         buildAnimFrame = window.requestAnimationFrame(buildTick);
@@ -12012,11 +12045,17 @@ export default function Ifc3DViewer({
     const onOrbitStart = () => {
       if (isWalkMode) return;
       applyPixelRatio(dragMinPixelRatio * adaptiveScale);
+      // 用户开始拖拽/缩放时暂停自动环绕，避免与手动操作打架
+      controls.autoRotate = false;
+      // 用户主动交互时取消未完成的自动放大推进，把镜头完全交还给用户
+      buildAutoZoomRef.current = null;
       needsRender = true;
     };
     const onOrbitEnd = () => {
       if (isWalkMode) return;
       applyPixelRatio(pixelRatio * adaptiveScale);
+      // 构建完成且用户结束交互后恢复自动环绕展示
+      if (buildCompleteRef.current) controls.autoRotate = true;
       needsRender = true;
     };
     controls.addEventListener("start", onOrbitStart);
@@ -12775,6 +12814,25 @@ export default function Ifc3DViewer({
 
         }
 
+      }
+
+      // 构建完成自动放大：相机沿目标方向平滑推进到设定距离（非 walk 模式 & 非环绕上帝视角）
+      const buildZoom = !isWalkMode && !showcaseActiveRef.current ? buildAutoZoomRef.current : null;
+      if (buildZoom) {
+        const lookTarget = controls.target;
+        const offset = camera.position.clone().sub(lookTarget);
+        const dist = offset.length();
+        if (dist > buildZoom.zoomTo + 0.01) {
+          const step = Math.min(1, deltaSeconds * 2.2);
+          const nextDist = dist + (buildZoom.zoomTo - dist) * step;
+          offset.normalize().multiplyScalar(nextDist);
+          camera.position.copy(lookTarget).add(offset);
+          // 完成推进后清除放大状态，后续交由 autoRotate 环绕展示
+          if (nextDist - buildZoom.zoomTo <= 0.01) buildAutoZoomRef.current = null;
+          needsRender = true;
+        } else {
+          buildAutoZoomRef.current = null;
+        }
       }
 
       const changed = isWalkMode ? false : controls.update();

@@ -35,6 +35,7 @@ class BoqItemCreate(BaseModel):
 
 
 class BoqItemUpdate(BaseModel):
+    code: str | None = None
     name: str | None = None
     characteristics: str | None = None
     unit: str | None = None

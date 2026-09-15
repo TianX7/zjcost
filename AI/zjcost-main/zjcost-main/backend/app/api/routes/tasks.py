@@ -31,6 +31,7 @@ class TaskStatusOut(BaseModel):
     error: Optional[str] = None
     created_at: str
     completed_at: Optional[str] = None
+    cancelled: bool = False
 
 
 class TaskListResponse(BaseModel):
@@ -52,6 +53,7 @@ def get_task_status(task_id: str) -> TaskStatusOut:
         error=task.error,
         created_at=task.created_at,
         completed_at=task.completed_at,
+        cancelled=task.cancelled,
     )
 
 
@@ -69,9 +71,43 @@ def list_tasks(task_type: Optional[str] = None) -> TaskListResponse:
             error=t.error,
             created_at=t.created_at,
             completed_at=t.completed_at,
+            cancelled=t.cancelled,
         )
         for t in tasks[:20]
     ])
+
+
+class TaskActionOut(BaseModel):
+    task_id: str
+    status: str
+    cancelled: bool = False
+    message: str = ""
+
+
+@router.post("/{task_id}/cancel", response_model=TaskActionOut)
+def cancel_task(task_id: str) -> TaskActionOut:
+    """请求取消一个运行中/排队中的后台任务。"""
+    task = task_manager.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    if task.status.value not in ("pending", "running"):
+        return TaskActionOut(task_id=task_id, status=task.status.value, message="任务已结束，无需取消")
+    accepted = task_manager.request_cancel(task_id)
+    return TaskActionOut(
+        task_id=task_id,
+        status=task.status.value,
+        cancelled=accepted,
+        message="已请求取消任务" if accepted else "任务已结束，无法取消",
+    )
+
+
+@router.delete("/{task_id}", response_model=TaskActionOut)
+def delete_task(task_id: str) -> TaskActionOut:
+    """从任务列表中移除一条历史任务记录。"""
+    removed = task_manager.remove_task(task_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    return TaskActionOut(task_id=task_id, status="removed", message="任务记录已移除")
 
 
 # ── Async batch valuate ──
@@ -120,6 +156,9 @@ def start_batch_valuate(
 
                 matched = 0
                 for idx, boq in enumerate(unbound):
+                    if task_manager.is_cancelled(task_id):
+                        task_manager.fail_task(task_id, "用户已取消任务")
+                        return
                     task_manager.update_progress(
                         task_id,
                         (idx + 1) / len(unbound),

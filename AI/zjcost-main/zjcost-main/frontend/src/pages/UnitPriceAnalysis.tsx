@@ -4,6 +4,7 @@ import { Button, Empty, InputNumber, Segmented, Select, Spin, Table, Tag, messag
 import type { BindingRef, BoqItem, CalcProvenance, Project } from "../api";
 import { api } from "../api";
 import PageHeader from "../components/PageHeader";
+import { DownloadOutlined } from "@ant-design/icons";
 
 function asFiniteNumber(value: string | undefined) {
   const parsed = Number(value);
@@ -101,6 +102,54 @@ export default function UnitPriceAnalysis() {
   );
 
   // ── 荒漠调价系数：按项目所在地套用，综合单价与费用构成即时联动 ──
+  const exportReport = () => {
+    if (!provenance) return;
+    const bd = provenance.calc_breakdown;
+    const rows: string[] = [];
+    const push = (cells: Array<string | number>) => rows.push(cells.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","));
+
+    push(["清单综合单价分析报告"]);
+    push([]);
+    push(["清单编码", "清单名称", "单位", "工程量", "综合单价(元)", "合价(元)"]);
+    push([provenance.boq_code ?? "", provenance.boq_name ?? "", provenance.boq_unit ?? "", provenance.boq_quantity ?? "", num2(provenance.unit_price), num2(provenance.calc_total)]);
+    push([]);
+    push(["人工价(元)", "材料价(元)", "机械价(元)", "调价系数", "", ""]);
+    push([
+      num2(provenance.price_snapshot?.labor_price),
+      num2(provenance.price_snapshot?.material_price),
+      num2(provenance.price_snapshot?.machine_price),
+      num2(currentCoeff),
+      "", "",
+    ]);
+    push([]);
+    push(["费用构成", "金额(元)", "含税合计(元): " + num2(bd?.total), "", "", ""]);
+    if (bd) {
+      push(["直接费", num2(bd.direct_cost), "", "", "", ""]);
+      push(["管理费", num2(bd.management_fee), "", "", "", ""]);
+      push(["利润", num2(bd.profit), "", "", "", ""]);
+      push(["规费", num2(bd.regulatory_fee), "", "", "", ""]);
+      push(["税金", num2(bd.tax), "", "", "", ""]);
+    }
+    push([]);
+    push(["定额编码", "定额名称", "定额单位", "人工", "材料", "机械", "系数", "直接费(元)"]);
+    (provenance.bindings ?? []).forEach((b: BindingRef) => {
+      push([b.quota.quota_code, b.quota.quota_name, b.quota.unit, num2(b.quota.labor_qty), num2(b.quota.material_qty), num2(b.quota.machine_qty), num2(b.coefficient), b.direct_cost == null ? "" : num2(b.direct_cost)]);
+    });
+    if (bd) push(["合计", "", "", "", "", "", "", num2(bindingsTotal)]);
+    push([]);
+    push(["计算说明"]);
+    push([provenance.explanation ?? ""]);
+
+    const blob = new Blob(["\uFEFF" + rows.join("\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `单价分析_${provenance.boq_code ?? "清单"}_${provenance.boq_name ?? ""}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    message.success("单价分析报告已导出");
+  };
+
   const currentCoeff = useMemo(
     () => Number(provenance?.bindings?.[0]?.coefficient ?? 1),
     [provenance],
@@ -161,7 +210,10 @@ export default function UnitPriceAnalysis() {
         title="综合单价分析"
         subtitle="查看清单综合单价来源、定额组成和建议。"
         actions={
-          <Button onClick={() => navigate(selectedProjectId ? `/projects/${selectedProjectId}` : "/projects")}>返回项目</Button>
+          <>
+            <Button icon={<DownloadOutlined />} disabled={!provenance} onClick={exportReport}>导出报告</Button>
+            <Button onClick={() => navigate(selectedProjectId ? `/projects/${selectedProjectId}` : "/projects")}>返回项目</Button>
+          </>
         }
       />
 
@@ -191,6 +243,7 @@ export default function UnitPriceAnalysis() {
           optionFilterProp="label"
         />
         <Button onClick={load} loading={loading} disabled={!selectedBoqItemId}>刷新分析</Button>
+        <Button icon={<DownloadOutlined />} disabled={!provenance} onClick={exportReport}>导出报告</Button>
       </div>
 
       {!selectedBoqItemId ? (

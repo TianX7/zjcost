@@ -1,4 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Tag } from "antd";
 import PageHeader from "../components/PageHeader";
 
@@ -16,6 +18,7 @@ interface Innovation {
   sub: string;
   points: string[];
   chips: { label: string; color: string }[];
+  routes: { to: string; label: string; desc: string }[];
 }
 
 const INNOVATIONS: Innovation[] = [
@@ -30,6 +33,10 @@ const INNOVATIONS: Innovation[] = [
       { label: "估算偏差 22% → ≤1.5%", color: "#38bdf8" },
       { label: "文保措施费显性化", color: "#2dd4bf" },
     ],
+    routes: [
+      { to: "/facility-ops?tab=pv", label: "光伏监测大屏", desc: "光伏发电实时监测与发电率阈值预警" },
+      { to: "/projects", label: "项目台账", desc: "查看光伏项目清单与三模块计价结果" },
+    ],
   },
   {
     no: "02",
@@ -41,6 +48,11 @@ const INNOVATIONS: Innovation[] = [
     chips: [
       { label: "组价效率提升 60%", color: "#a78bfa" },
       { label: "运距 180km · 技工日单价高 35%", color: "#f97316" },
+    ],
+    routes: [
+      { to: "/projects", label: "项目工作台", desc: "AI 自动套价、荒漠调价系数自动套用" },
+      { to: "/unit-price-analysis", label: "综合单价分析", desc: "定额组成、费用构成逐项可溯源" },
+      { to: "/pricing-audit", label: "复核审计", desc: "AI 复核留痕、审计流水全记录" },
     ],
   },
   {
@@ -54,6 +66,10 @@ const INNOVATIONS: Innovation[] = [
       { label: "旧砖 2.15 元/块", color: "#fbbf24" },
       { label: "损耗偏差 ≤0.5pp", color: "#34d399" },
       { label: "审计争议 0 项", color: "#2dd4bf" },
+    ],
+    routes: [
+      { to: "/old-materials", label: "旧材料定额库", desc: "回收+加工+运输三级计价可追溯" },
+      { to: "/data-resources", label: "基础数据维护", desc: "人工/材料/机械价格与定额维护" },
     ],
   },
   {
@@ -69,6 +85,10 @@ const INNOVATIONS: Innovation[] = [
       { label: "变更响应 1.5 天", color: "#38bdf8" },
       { label: "支付审核准确率 99.2%", color: "#34d399" },
     ],
+    routes: [
+      { to: "/dynamic-control", label: "动态管控大屏", desc: "月度对比、支付审核、风险模拟（存痕）" },
+      { to: "/quantity-center", label: "算量中心", desc: "工程量按国标分类归集与编码纠偏" },
+    ],
   },
   {
     no: "05",
@@ -77,9 +97,13 @@ const INNOVATIONS: Innovation[] = [
     title: "荒漠特殊工艺补充定额与模板资产库",
     sub: "七项 AI 辅助技术能力链沉淀于筑衡",
     points: ["五项补充定额按 GS 编码入库", "编制方法可追溯：实测 · 测定 · 论证 · 类比 · 组合", "光伏三模块清单＋中水专项清单模板"],
-    chips: [
+chips: [
       { label: "GS 编码入库 ×5", color: "#f97316" },
-      { label: "财政评审“有据可查”", color: "#38bdf8" },
+      { label: "财政评审\u201c有据可查\u201d", color: "#38bdf8" },
+    ],
+    routes: [
+      { to: "/data-resources", label: "补充定额库", desc: "五项荒漠特殊工艺定额按 GS 编码入库" },
+      { to: "/quota-library", label: "定额资源中心", desc: "定额维护、旧材料价格域、对比分析" },
     ],
   },
 ];
@@ -108,6 +132,8 @@ function Card({ children, style }: { children: ReactNode; style?: CSSProperties 
 }
 
 export default function InnovationHub() {
+  const navigate = useNavigate();
+  const [expandedNo, setExpandedNo] = useState<string | null>(null);
   return (
     <div className="page-container">
       <PageHeader
@@ -159,6 +185,38 @@ export default function InnovationHub() {
                   </span>
                 ))}
               </div>
+              <button
+                onClick={() => setExpandedNo(expandedNo === inn.no ? null : inn.no)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6, width: "100%", marginTop: 10,
+                  padding: "6px 10px", fontSize: 12, cursor: "pointer", border: "1px solid #2c3e5f",
+                  borderRadius: 8, color: "#cbd5e1", background: "rgba(15,23,42,0.45)",
+                }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: 15 }}>{expandedNo === inn.no ? "expand_less" : "expand_more"}</span>
+                {expandedNo === inn.no ? "收起落地入口" : "展开平台落地入口"}
+              </button>
+              {expandedNo === inn.no && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+                  {inn.routes.map((r) => (
+                    <button
+                      key={r.to}
+                      onClick={() => navigate(r.to)}
+                      style={{
+                        display: "flex", alignItems: "flex-start", gap: 8, textAlign: "left",
+                        padding: "8px 10px", fontSize: 12, cursor: "pointer", border: `1px solid ${inn.color}44`,
+                        borderRadius: 8, color: "#e2e8f0", background: `${inn.color}10`,
+                      }}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: 16, color: inn.color, marginTop: 1 }}>open_in_new</span>
+                      <span>
+                        <span style={{ display: "block", fontWeight: 600, color: inn.color }}>{r.label}</span>
+                        <span style={{ display: "block", color: "#94a3b8", marginTop: 2, lineHeight: 1.55 }}>{r.desc}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </Card>
           ))}
         </div>
@@ -256,24 +314,6 @@ export default function InnovationHub() {
             ))}
           </div>
         </div>
-      </div>
-
-      {/* 总结条 */}
-      <div
-        style={{
-          borderRadius: 14,
-          padding: "18px 22px",
-          background: "linear-gradient(115deg, rgba(19,45,82,0.75), rgba(56,130,246,0.18))",
-          border: "1px solid rgba(56,189,248,0.3)",
-        }}
-      >
-        <div style={{ fontSize: 14, color: "#fde68a", fontWeight: 700, marginBottom: 6 }}>
-          塞垣新筑 · 从课堂到遗址的逻辑闭环
-        </div>
-        <div style={{ fontSize: 13, color: "#cbd5e1", lineHeight: 1.8 }}>
-          从一线痛点出发，以校企协同“五步贯穿、四步闭环”工作法为纽带，以 BIM 数字化建模与 AI 辅助计价为技术路径，输出五大创新与可复制成果，交出了工程、经济、可持续三重价值与人才成效的答卷——筑的不仅是荒漠驿站，更是文化遗产守护与智能绿色建造的人才之基。
-        </div>
-        <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 8 }}>感谢各位评委、各位专家的倾听！</div>
       </div>
     </div>
   );

@@ -378,3 +378,1026 @@ def export_valuation_pdf(project_id: int, db: Session) -> bytes:
         return buf.getvalue()
     finally:
         buf.close()
+
+
+# ── HTML 导出（成果报表版式，单文件自包含） ────────────────────────────────
+# 版式对齐应用根目录下的 cost-project-report.html（造价执行报表模板）：
+# 封面 / 编制说明 / 目录 / 项目概况 / 投资完成总览 / 造价构成分析 /
+# 分部执行 / 清单明细 / 绑定情况 / 材料价格 / 风险提示 / 签署页。
+
+_VALUATION_CSS = """<style>
+    :root {
+      --bg: #eef3f4; --bg2: #ffffff; --ink: #14323c; --muted: #587079;
+      --rule: #d7e2e5; --accent: #0e7490; --accent2: #c2600a;
+      --font: 'Microsoft YaHei', 'PingFang SC', 'SimHei', sans-serif;
+      --font-body: 'Songti SC', 'SimSun', 'NSimSun', serif;
+      --font-mono: 'Consolas', monospace;
+      --max: 980px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 16px; scroll-behavior: smooth; }
+    body {
+      font-family: var(--font-body);
+      color: var(--ink); background: var(--bg); line-height: 1.9; padding: 2rem 1rem;
+    }
+    article.page { max-width: var(--max); margin: 0 auto; }
+
+    /* 封面 */
+    .cover {
+      background: var(--bg2); border: 1px solid var(--rule);
+      border-top: 8px solid var(--accent); padding: 4rem 3.5rem 3.5rem; text-align: center;
+    }
+    .cover .report-no { font-family: var(--font); font-size: 0.9rem; color: var(--muted); text-align: right; letter-spacing: 0.05em; }
+    .cover .org-name { font-family: var(--font); font-weight: 700; font-size: 1.05rem; color: var(--accent); letter-spacing: 0.35em; margin-top: 2.5rem; }
+    .cover .org-cert { font-size: 0.78rem; color: var(--muted); letter-spacing: 0.12em; margin-top: 0.4rem; }
+    .cover h1 { font-family: var(--font); font-size: 1.8rem; font-weight: 700; letter-spacing: 0.08em; line-height: 1.6; margin: 3rem 0 1.2rem; }
+    .cover .subtitle { font-family: var(--font); font-size: 1.28rem; color: var(--accent); letter-spacing: 0.5em; text-indent: 0.5em; font-weight: 700; }
+    .cover .subtitle-thin { display: block; font-size: 0.96rem; letter-spacing: 0.18em; color: var(--muted); margin-top: 0.7rem; font-weight: 400; }
+    .cover .cover-rule { width: 4.5rem; height: 3px; background: var(--accent); margin: 2.6rem auto; }
+    .cover .cover-meta { width: 23rem; max-width: 100%; margin: 2.2rem auto 0; text-align: left; font-family: var(--font); font-size: 0.98rem; }
+    .cover .cover-meta .row { display: flex; align-items: baseline; margin-bottom: 1.1rem; }
+    .cover .cover-meta .label { white-space: nowrap; letter-spacing: 0.28em; color: var(--muted); }
+    .cover .cover-meta .value { flex: 1; border-bottom: 1px solid var(--rule); margin-left: 0.9rem; padding-left: 0.5rem; text-align: center; font-weight: 600; }
+    .cover .cover-date { font-family: var(--font); margin-top: 3rem; color: var(--muted); letter-spacing: 0.25em; font-size: 0.95rem; }
+
+    /* 编制说明 / 目录 */
+    .notes, .toc { background: var(--bg2); border: 1px solid var(--rule); padding: 3rem 3.2rem; margin-top: 1.6rem; }
+    .notes h2, .toc h2 { text-align: center; font-family: var(--font); letter-spacing: 0.5em; text-indent: 0.5em; margin-bottom: 1.8rem; }
+    .notes ol { padding-left: 1.6rem; }
+    .notes li { margin-bottom: 0.9rem; text-align: justify; }
+    .toc ol { list-style: none; }
+    .toc li { display: flex; align-items: baseline; font-family: var(--font); margin-bottom: 0.75rem; font-size: 0.97rem; }
+    .toc a { color: var(--ink); text-decoration: none; white-space: nowrap; }
+    .toc .dots { flex: 1; border-bottom: 1px dotted var(--rule); margin: 0 0.6rem; transform: translateY(-4px); }
+
+    /* 正文 */
+    section.doc {
+      background: var(--bg2); border: 1px solid var(--rule);
+      border-top: 4px solid var(--accent); padding: 2.6rem 3.2rem; margin-top: 1.6rem;
+    }
+    h2.sec { font-family: var(--font); font-size: 1.32rem; font-weight: 700; border-left: 6px solid var(--accent); padding-left: 0.85rem; padding-bottom: 0.35rem; border-bottom: 1px solid var(--rule); margin-bottom: 1.8rem; letter-spacing: 0.06em; }
+    h3.sub { font-family: var(--font); font-size: 1.05rem; font-weight: 700; color: var(--accent); margin: 2rem 0 0.9rem; }
+    h3.sub .tag { display: inline-block; font-size: 0.78rem; font-weight: 400; color: var(--accent2); border: 1px solid var(--accent2); border-radius: 3px; padding: 0 0.45rem; margin-left: 0.6rem; vertical-align: 2px; letter-spacing: 0.05em; }
+    p { margin-bottom: 1rem; text-align: justify; }
+    p.note { font-size: 0.88rem; color: var(--muted); margin: -0.4rem 0 1.2rem; }
+    strong.key { color: var(--accent); }
+    strong.bad { color: var(--accent2); }
+    .num { font-family: var(--font-mono); }
+
+    /* 指标卡 */
+    .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin: 1.6rem 0 2rem; }
+    .stat-card { background: var(--bg2); border: 1px solid var(--rule); border-top: 3px solid var(--accent); padding: 1.1rem 1rem; text-align: center; }
+    .stat-card.warn { border-top-color: var(--accent2); }
+    .stat-card .label { font-family: var(--font); font-size: 0.85rem; color: var(--muted); letter-spacing: 0.1em; }
+    .stat-card .value { font-family: var(--font); font-weight: 700; font-size: 1.4rem; color: var(--accent); margin-top: 0.35rem; font-variant-numeric: tabular-nums; }
+    .stat-card.warn .value { color: var(--accent2); }
+    .stat-card .unit { font-size: 0.82rem; font-weight: 400; color: var(--muted); margin-left: 0.15rem; }
+    .stat-card .sub { font-size: 0.78rem; color: var(--muted); margin-top: 0.3rem; font-family: var(--font); }
+
+    /* 表格 */
+    .table-wrap { overflow-x: auto; overflow-y: auto; max-height: 600px; margin: 1.2rem 0 1.6rem; border: 1px solid var(--rule); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.92rem; min-width: 620px; }
+    thead th { background: var(--accent); color: var(--bg2); font-family: var(--font); font-weight: 600; padding: 0.6rem 0.7rem; border: 1px solid var(--accent); letter-spacing: 0.04em; white-space: nowrap; }
+    tbody td { border: 1px solid var(--rule); padding: 0.5rem 0.7rem; vertical-align: middle; }
+    tbody tr:nth-child(even) { background: color-mix(in srgb, var(--accent) 3%, var(--bg2)); }
+    td.num, th.num { text-align: right; font-family: var(--font-mono); white-space: nowrap; }
+    td.ctr, th.ctr { text-align: center; }
+    tbody tr.total td { font-family: var(--font); font-weight: 700; background: color-mix(in srgb, var(--accent) 8%, var(--bg2)); border-top: 2px solid var(--accent); }
+    tbody tr.total td.num { font-family: var(--font-mono); }
+    td.up { color: var(--accent2); font-weight: 600; }
+    td.down { color: var(--accent); font-weight: 600; }
+    .table-title { font-family: var(--font); font-weight: 700; font-size: 0.95rem; text-align: center; margin: 1.8rem 0 0.2rem; }
+
+    /* 条形图（自包含，无需外部图表库） */
+    .hbar { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.55rem; font-size: 0.88rem; }
+    .hbar .hbar-label { width: 7.5rem; flex: none; font-family: var(--font); font-weight: 600; }
+    .hbar .hbar-track { flex: 1; background: color-mix(in srgb, var(--accent) 8%, var(--bg2)); border-radius: 3px; overflow: hidden; }
+    .hbar .hbar-fill { height: 16px; background: var(--accent); border-radius: 3px; }
+    .hbar.warny .hbar-fill { background: var(--accent2); }
+    .hbar .hbar-val { width: 5.5rem; flex: none; text-align: right; font-family: var(--font-mono); }
+    .hbar.dual .hbar-track { display: flex; }
+    .hbar.dual .hbar-fill-seg { height: 16px; }
+    .hbar.dual .seg-a { background: var(--accent); }
+    .hbar.dual .seg-b { background: var(--accent2); }
+
+    .chart-legend { display: flex; gap: 1.4rem; justify-content: center; font-size: 0.82rem; color: var(--muted); margin: 0.2rem 0 1rem; }
+    .chart-legend .sw { display: inline-block; width: 0.8rem; height: 0.8rem; border-radius: 2px; margin-right: 0.3rem; vertical-align: -1px; }
+    .chart-legend .sw.a { background: var(--accent); }
+    .chart-legend .sw.b { background: var(--accent2); }
+
+    /* 结论框 */
+    .callout { border-left: 4px solid var(--accent); background: color-mix(in srgb, var(--accent) 5%, var(--bg2)); padding: 1.1rem 1.4rem; margin: 1.4rem 0; }
+    .callout.warn { border-left-color: var(--accent2); background: color-mix(in srgb, var(--accent2) 5%, var(--bg2)); }
+    .callout .words { font-family: var(--font); font-weight: 700; color: var(--accent); font-size: 1.05rem; letter-spacing: 0.05em; }
+    .callout.warn .words { color: var(--accent2); }
+
+    /* 签署 */
+    .sign-page { background: var(--bg2); border: 1px solid var(--rule); border-top: 4px solid var(--accent); padding: 3rem 3.2rem; margin-top: 1.6rem; }
+    .sign-table { width: 100%; border-collapse: collapse; font-family: var(--font); font-size: 0.97rem; margin-top: 1rem; }
+    .sign-table td { border: 1px solid var(--rule); padding: 1.35rem 1rem; width: 25%; }
+    .sign-table .role { color: var(--muted); font-size: 0.85rem; display: block; margin-bottom: 0.3rem; }
+
+    footer.colophon { margin-top: 1.6rem; text-align: center; font-family: var(--font); font-size: 0.82rem; color: var(--muted); line-height: 1.9; padding-bottom: 1rem; }
+    footer.colophon .rule-line { width: 3rem; height: 2px; background: var(--accent); margin: 0.8rem auto; }
+
+    @media (max-width: 768px) {
+      body { padding: 1rem 0.6rem; }
+      .cover, .notes, .toc, section.doc, .sign-page { padding: 2rem 1.3rem; }
+      .cover h1 { font-size: 1.45rem; }
+      .stat-grid { grid-template-columns: repeat(2, 1fr); }
+      .stat-card .value { font-size: 1.2rem; }
+      table { min-width: 640px; }
+    }
+    @page { size: A4; margin: 14mm 12mm; }
+    @media print {
+      body { background: var(--bg2); padding: 0; }
+      .cover, .notes, .toc, .sign-page, section.doc { border: none; padding: 1.2rem 0.5rem; margin-top: 0; }
+      .cover { page-break-after: always; padding-top: 6rem; }
+      .notes, .toc { page-break-after: always; }
+      .sign-page { page-break-before: always; }
+      .table-wrap { max-height: none; overflow: visible; }
+      tr, .chart-figure, .stat-card { page-break-inside: avoid; }
+      * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  </style>"""
+
+_VALUATION_TEMPLATE = """<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{title}</title>
+{css}
+</head>
+<body>
+  <article class="page">
+
+    <!-- ================= 封面 ================= -->
+    <section class="cover" id="cover">
+      <div class="report-no">{report_no}</div>
+      <div class="org-name">{org_name}</div>
+      <div class="org-cert">{org_cert}</div>
+      <h1>{project_name}</h1>
+      <div class="subtitle">成果造价报表<span class="subtitle-thin">（{standard_label} · {generated} 编报）</span></div>
+      <div class="cover-rule"></div>
+      <div class="cover-meta">
+        <div class="row"><span class="label">建设单位</span><span class="value">{owner}</span></div>
+        <div class="row"><span class="label">编报单位</span><span class="value">{org_name}</span></div>
+        <div class="row"><span class="label">计价标准</span><span class="value">{standard_type}</span></div>
+        <div class="row"><span class="label">编报日期</span><span class="value">{generated}</span></div>
+      </div>
+      <div class="cover-date">{created_zh}</div>
+    </section>
+
+    <!-- ================= 编制说明 ================= -->
+    <section class="notes" id="notes">
+      <h2>编 制 说 明</h2>
+      <ol>
+        <li>本报表系为“{project_name}”项目编制并经系统计价计算后生成的<strong class="key">成果造价报表</strong>，反映项目工程量清单、定额绑定与综合单价计算结果。</li>
+        <li>本报表依据项目工程量清单、定额子目、材料价格及规则包费率编制，计量计价原则与项目计价标准保持一致。</li>
+        <li>报表数据随项目清单、绑定与价格信息的变更<strong class="key">实时同步更新</strong>，导出即反映导出时刻项目最新计价状态。</li>
+        <li>本报表仅供项目造价管理使用，不作为工程结算与支付的直接依据；正式结算以竣工结算审计报告为准。</li>
+      </ol>
+    </section>
+
+    <!-- ================= 目录 ================= -->
+    <nav class="toc" id="toc">
+      <h2>目　　录</h2>
+      <ol>
+        <li><a href="#s1">一、项目概况</a><span class="dots"></span></li>
+        <li><a href="#s2">二、投资完成总览</a><span class="dots"></span></li>
+        <li><a href="#s3">三、造价构成分析</a><span class="dots"></span></li>
+        <li><a href="#s4">四、分部工程造价执行情况</a><span class="dots"></span></li>
+        <li><a href="#s5">五、清单计价明细</a><span class="dots"></span></li>
+        <li><a href="#s6">六、计价与定额绑定情况</a><span class="dots"></span></li>
+        <li><a href="#s7">七、主要材料价格信息</a><span class="dots"></span></li>
+        <li><a href="#s8">八、风险提示与下期工作安排</a><span class="dots"></span></li>
+      </ol>
+    </nav>
+
+    <!-- ================= 一、项目概况 ================= -->
+    <section class="doc" id="s1">
+      <h2 class="sec">一、项目概况</h2>
+      <p>{overview_para}</p>
+      <div class="table-title">表1-1　项目概况表</div>
+      <div class="table-wrap">
+        <table>
+          <tbody>
+{overview_rows}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ================= 二、投资完成总览 ================= -->
+    <section class="doc" id="s2">
+      <h2 class="sec">二、投资完成总览</h2>
+      <p>{invest_para}</p>
+      <div class="stat-grid">
+{stat_cards}
+      </div>
+      <div class="table-title">表2-1　项目投资执行总表</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="ctr" style="width:8%">序号</th>
+              <th>指标名称</th>
+              <th class="num">金额(万元)</th>
+              <th class="ctr">占概算</th>
+              <th class="ctr">说明</th>
+            </tr>
+          </thead>
+          <tbody>
+{invest_rows}
+          </tbody>
+        </table>
+      </div>
+      <p class="note">{invest_note}</p>
+      <div class="chart-legend"><span><span class="sw a"></span>概算/预算</span><span><span class="sw b"></span>造价合计</span></div>
+      <div class="hbar dual"><span class="hbar-label">批复概算</span><div class="hbar-track"><div class="hbar-fill-seg seg-a" style="width:{card_a_pct}%"></div></div><span class="hbar-val">{budget_wan}</span></div>
+      <div class="hbar dual"><span class="hbar-label">造价合计</span><div class="hbar-track"><div class="hbar-fill-seg seg-b" style="width:{grand_pct}%"></div></div><span class="hbar-val">{grand_wan}</span></div>
+      <p class="note">图2-1　概算/预算与造价合计对比（单位：万元，条形长度按二者较大值归一）</p>
+    </section>
+
+    <!-- ================= 三、造价构成分析 ================= -->
+    <section class="doc" id="s3">
+      <h2 class="sec">三、造价构成分析</h2>
+      <p>{comp_para}</p>
+      <div class="table-title">表3-1　造价费用性质构成表</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="ctr" style="width:8%">序号</th>
+              <th>费用性质</th>
+              <th class="num">金额(万元)</th>
+              <th class="ctr">占比</th>
+              <th class="ctr">说明</th>
+            </tr>
+          </thead>
+          <tbody>
+{comp_rows}
+          </tbody>
+        </table>
+      </div>
+      <p class="note">注：占比为各费用性质金额占造价合计的比例；直接费=人工费+材料费+机械费。</p>
+      <div class="table-title">图3-1　造价费用性质构成比例</div>
+{hbars}
+    </section>
+
+    <!-- ================= 四、分部工程造价执行 ================= -->
+    <section class="doc" id="s4">
+      <h2 class="sec">四、分部工程造价执行情况</h2>
+      <p>{division_para}</p>
+      <div class="table-title">表4-1　分部工程造价执行表</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="ctr" style="width:8%">序号</th>
+              <th>分部工程</th>
+              <th class="num">清单项数</th>
+              <th class="num">已绑定</th>
+              <th class="num">金额(万元)</th>
+              <th class="ctr">占比</th>
+            </tr>
+          </thead>
+          <tbody>
+{division_rows}
+          </tbody>
+        </table>
+      </div>
+      <p class="note">{division_note}</p>
+      <div class="table-title">图4-1　各分部工程造价占比</div>
+{division_hbars}
+    </section>
+
+    <!-- ================= 五、清单计价明细 ================= -->
+    <section class="doc" id="s5">
+      <h2 class="sec">五、清单计价明细</h2>
+      <p>{items_para}</p>
+      <div class="table-title">表5-1　分部分项工程量清单计价表</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="ctr" style="width:6%">序号</th>
+              <th style="width:14%">项目编码</th>
+              <th>项目名称</th>
+              <th style="width:11%">分部</th>
+              <th class="ctr" style="width:7%">单位</th>
+              <th class="num">工程量</th>
+              <th class="num">综合单价(元)</th>
+              <th class="num">合价(元)</th>
+              <th class="ctr" style="width:9%">绑定</th>
+            </tr>
+          </thead>
+          <tbody>
+{item_rows}
+          </tbody>
+        </table>
+      </div>
+      <p class="note">{items_note}</p>
+    </section>
+
+    <!-- ================= 六、计价与定额绑定 ================= -->
+    <section class="doc" id="s6">
+      <h2 class="sec">六、计价与定额绑定情况</h2>
+      <p>{binding_para}</p>
+      <div class="stat-grid">
+{binding_cards}
+      </div>
+      <div class="table-title">表6-1　未绑定定额清单项（{unbound_shown} 项）</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="ctr" style="width:6%">序号</th>
+              <th style="width:14%">项目编码</th>
+              <th>项目名称</th>
+              <th style="width:11%">分部</th>
+              <th class="ctr" style="width:8%">单位</th>
+              <th class="num">工程量</th>
+            </tr>
+          </thead>
+          <tbody>
+{unbound_rows}
+          </tbody>
+        </table>
+      </div>
+      <p class="note">{unbound_note}</p>
+    </section>
+
+    <!-- ================= 七、主要材料价格信息 ================= -->
+    <section class="doc" id="s7">
+      <h2 class="sec">七、主要材料价格信息</h2>
+      <p>{material_para}</p>
+      <div class="table-title">表7-1　主要材料价格信息表</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="ctr" style="width:8%">序号</th>
+              <th>材料名称</th>
+              <th>规格型号</th>
+              <th class="ctr" style="width:9%">单位</th>
+              <th class="num">单价(元)</th>
+              <th>区域</th>
+              <th class="ctr" style="width:14%">生效日期</th>
+            </tr>
+          </thead>
+          <tbody>
+{material_rows}
+          </tbody>
+        </table>
+      </div>
+      <p class="note">{material_note}</p>
+    </section>
+
+    <!-- ================= 八、风险提示与下期安排 ================= -->
+    <section class="doc" id="s8">
+      <h2 class="sec">八、风险提示与下期工作安排</h2>
+      <h3 class="sub">8.1 造价风险提示<span class="tag">{risk_count} 项</span></h3>
+{risk_items}
+      <h3 class="sub">8.2 下期造价工作安排</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th class="ctr" style="width:8%">序号</th><th style="width:30%">工作事项</th><th>工作说明</th></tr>
+          </thead>
+          <tbody>
+{plan_rows}
+          </tbody>
+        </table>
+      </div>
+      <div class="callout{callout_cls}">
+        <p style="margin-bottom:0"><strong class="words">{conclusion_head}</strong>{conclusion_body}</p>
+      </div>
+    </section>
+
+    <!-- ================= 签署页 ================= -->
+    <section class="sign-page">
+      <h2 class="sec">报表签署</h2>
+      <table class="sign-table">
+        <tbody>
+          <tr>
+            <td><span class="role">编制人(造价工程师)</span>　　　　　　　</td>
+            <td><span class="role">复核人(造价工程师)</span>　　　　　　　</td>
+            <td><span class="role">项目部经理</span>　　　　　　　</td>
+            <td><span class="role">建设单位确认</span>　　　　　　　</td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="margin-top:2.6rem;font-family:var(--font);display:flex;justify-content:space-between;flex-wrap:wrap;gap:1.5rem;">
+        <p style="margin:0;">{org_name} · {project_name}项目部(章)</p>
+        <p style="margin:0;">编报日期：{generated}</p>
+      </div>
+    </section>
+
+    <footer class="colophon">
+      <div class="rule-line"></div>
+      <p>{org_name} · {project_name}项目成果造价报表</p>
+      <p>本报表数据与项目实时同步 · 仅供项目造价管理使用，不作为结算支付直接依据</p>
+    </footer>
+  </article>
+</body>
+</html>
+"""
+
+
+def _html_escape(value) -> str:
+    return (
+        str(value)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+def _fmt_wan(value: float) -> str:
+    """金额以万元展示；near-zero 显示为 -。"""
+    if value is None or abs(value or 0) < 0.005:
+        return "-"
+    return f"{value / 10000:,.2f}"
+
+
+def _fmt_yuan(value: float) -> str:
+    if value is None:
+        return "-"
+    return f"{value:,.2f}"
+
+
+def _get_org_setting(db: Session, key: str, default: str) -> str:
+    """按 key 读取系统设置表中的机构信息，读不到时返回默认值。"""
+    from app.models.system_setting import SystemSetting
+
+    try:
+        row = db.query(SystemSetting).filter(SystemSetting.key == key).first()
+        if row and row.value:
+            return row.value
+    except Exception:
+        pass
+    return default
+
+
+def _collect_valuation_data(project_id: int, db: Session) -> dict:
+    """汇总成果造价报表所需数据（全部来自项目数据库，实时同步）。"""
+    from sqlalchemy import or_
+
+    from app.models.calc_result import CalcResult
+    from app.models.line_item_quota_binding import LineItemQuotaBinding
+    from app.models.material_price import MaterialPrice
+    from app.models.measure_item import MeasureItem
+    from app.services.export_service import division_rank
+
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise ValueError(f"Project {project_id} not found")
+
+    org_name = _get_org_setting(db, "org_name", "筑衡工程造价咨询有限公司")
+    org_cert = _get_org_setting(db, "org_cert", "工程造价咨询甲级资质 · 证书编号:甲 31002026")
+
+    boq_items = (
+        db.query(BoqItem)
+        .filter(BoqItem.project_id == project_id)
+        .order_by(BoqItem.sort_order)
+        .all()
+    )
+    total_items = len(boq_items)
+
+    calc_map: dict[int, CalcResult] = {}
+    if boq_items:
+        for c in (
+            db.query(CalcResult)
+            .filter(CalcResult.boq_item_id.in_([b.id for b in boq_items]))
+            .all()
+        ):
+            calc_map[c.boq_item_id] = c
+
+    total_labor = sum(c.labor_cost for c in calc_map.values())
+    total_material = sum(c.material_cost for c in calc_map.values())
+    total_machine = sum(c.machine_cost for c in calc_map.values())
+    total_direct = sum(c.direct_cost for c in calc_map.values())
+    total_mgmt = sum(c.management_fee for c in calc_map.values())
+    total_profit = sum(c.profit for c in calc_map.values())
+    total_regulatory = sum(c.regulatory_fee for c in calc_map.values())
+    total_pre_tax = sum(c.pre_tax_total for c in calc_map.values())
+    total_tax = sum(c.tax for c in calc_map.values())
+    line_grand = sum(c.total_cost for c in calc_map.values())
+
+    measures = (
+        db.query(MeasureItem).filter(MeasureItem.project_id == project_id).all()
+    )
+    total_measures = 0.0
+    for m in measures:
+        if m.is_fixed:
+            total_measures += m.amount or 0
+        else:
+            base = total_direct if m.calc_base == "direct" else total_pre_tax
+            total_measures += (base or 0) * (m.rate or 0)
+    grand_total = line_grand + total_measures
+
+    binding_counts: dict[int, int] = {}
+    if boq_items:
+        for rb in (
+            db.query(LineItemQuotaBinding)
+            .filter(LineItemQuotaBinding.boq_item_id.in_([b.id for b in boq_items]))
+            .all()
+        ):
+            binding_counts[rb.boq_item_id] = binding_counts.get(rb.boq_item_id, 0) + 1
+    bound_count = sum(1 for b in boq_items if binding_counts.get(b.id, 0) > 0)
+    unbound_count = total_items - bound_count
+    calculated_count = len(calc_map)
+
+    div_map: dict[str, dict] = {}
+    for b in boq_items:
+        d = b.division or "未分类"
+        entry = div_map.setdefault(d, {"count": 0, "bound": 0, "total": 0.0})
+        entry["count"] += 1
+        if binding_counts.get(b.id, 0) > 0:
+            entry["bound"] += 1
+        entry["total"] += calc_map[b.id].total_cost if b.id in calc_map else 0.0
+    divisions = [
+        {
+            "name": d,
+            "count": v["count"],
+            "bound": v["bound"],
+            "total": v["total"],
+            "pct": (v["total"] / grand_total * 100) if grand_total else 0.0,
+        }
+        for d, v in div_map.items()
+    ]
+    divisions.sort(key=lambda x: (division_rank(x["name"]), -x["total"]))
+
+    material_rows: list[MaterialPrice] = []
+    try:
+        region = project.region or ""
+        raw = (
+            db.query(MaterialPrice)
+            .filter(
+                or_(
+                    MaterialPrice.region == region,
+                    MaterialPrice.region == "",
+                )
+            )
+            .order_by(MaterialPrice.name.asc(), MaterialPrice.effective_date.desc())
+            .all()
+        )
+        seen: dict[str, MaterialPrice] = {}
+        for r in raw:
+            key = f"{r.name}|{r.spec}|{r.unit}"
+            if key not in seen:
+                seen[key] = r
+        material_rows = sorted(seen.values(), key=lambda r: (r.name or "", r.spec or ""))
+    except Exception:
+        material_rows = []
+
+    budget = float(project.budget) if (project.budget or 0) else 0.0
+    surplus = (budget - grand_total) if budget else None
+
+    area = None
+    for b in boq_items:
+        if "建筑面积" in (b.name or "") or "总建筑面积" in (b.name or ""):
+            area = b.quantity
+            break
+
+    now = datetime.now(timezone.utc)
+    generated = now.strftime("%Y-%m-%d")
+    created_zh = now.strftime("%Y年%m月%d日")
+    status_label = {
+        "draft": "草稿",
+        "ongoing": "进行中",
+        "completed": "已完成",
+        "archived": "已归档",
+    }.get(project.status or "draft", project.status or "-")
+    standard_label = {
+        "GB50500": "《建设工程工程量清单计价规范》(GB 50500-2013/2024)",
+        "HKSMM4": "香港标准量度方法第4版 (HKSMM4)",
+    }.get(project.standard_type, project.standard_type or "-")
+
+    return {
+        "project": project,
+        "boq_items": boq_items,
+        "calc_map": calc_map,
+        "binding_counts": binding_counts,
+        "status_label": status_label,
+        "standard_label": standard_label,
+        "generated": generated,
+        "created_zh": created_zh,
+        "org_name": org_name,
+        "org_cert": org_cert,
+        "total_items": total_items,
+        "bound_count": bound_count,
+        "unbound_count": unbound_count,
+        "calculated_count": calculated_count,
+        "total_labor": total_labor,
+        "total_material": total_material,
+        "total_machine": total_machine,
+        "total_direct": total_direct,
+        "total_management": total_mgmt,
+        "total_profit": total_profit,
+        "total_regulatory": total_regulatory,
+        "total_pre_tax": total_pre_tax,
+        "total_tax": total_tax,
+        "total_measures": total_measures,
+        "line_grand": line_grand,
+        "grand_total": grand_total,
+        "budget": budget,
+        "surplus": surplus,
+        "area": area,
+        "divisions": divisions,
+        "material_rows": material_rows,
+    }
+
+
+def export_valuation_report_html(project_id: int, db: Session) -> bytes:
+    """按 cost-project-report.html 版式生成成果造价报表 HTML（单文件自包含）。"""
+    data = _collect_valuation_data(project_id, db)
+    project = data["project"]
+    project_name = project.name or "未命名项目"
+    owner = project.owner or "（未设置）"
+    e = _html_escape
+
+    total_items = data["total_items"]
+    grand_total = data["grand_total"]
+    budget = data["budget"]
+    surplus = data["surplus"]
+
+    report_prefix = (data["org_name"][:2] if len(data["org_name"]) >= 2 else data["org_name"])
+    year = data["generated"][:4]
+    report_no = f"{report_prefix}项报字〔{year}〕第 {project_id:03d} 号"
+
+    # ── 一、项目概况 ──
+    status_label = data["status_label"]
+    area_txt = f"{data['area']:,.2f}" if data["area"] is not None else "—"
+    budget_txt = f"{budget:,.2f}" if budget else "—"
+    total_qty = sum(b.quantity for b in data["boq_items"])
+    overview_para = (
+        f"本工程为{e(project.region or '')}的{e(project.project_type or '')}项目，采用{data['standard_label']}计价。"
+        f"项目当前状态{status_label}，共纳入工程量清单{e(total_items)} 项。"
+        "本报表依据项目清单、定额绑定、材料价格与规则包费率经系统计价计算生成。"
+    )
+    overview_pairs = [
+        ("项目名称", project_name, "建设地点", project.region or "—"),
+        ("建设单位", owner, "工程类型", project.project_type or "—"),
+        ("计价标准", project.standard_type, "项目状态", status_label),
+        ("工程量清单", f"{total_items} 项", "总工程量", f"{total_qty:,.4f}"),
+        ("开工日期", str(project.start_date or "—"), "竣工日期", str(project.end_date or "—")),
+        ("建筑面积", f"{area_txt} ㎡", "项目预算", f"{budget_txt} 元"),
+    ]
+    overview_rows = "".join(
+        f"          <tr><td style=\"width:20%\"><strong class=\"key\">{e(a)}</strong></td><td>{e(b)}</td>"
+        f"<td style=\"width:18%\"><strong class=\"key\">{e(c)}</strong></td><td>{e(d)}</td></tr>"
+        for a, b, c, d in overview_pairs
+    )
+
+    # ── 二、投资完成总览 ──
+    has_budget = budget > 0
+    if has_budget:
+        budget_desc = f"为 {budget:,.2f} 元"
+        surplus_label = "超支" if surplus < 0 else "结余"
+        surplus_part = f" 概算预计{surplus_label}{abs(surplus) / 10000:,.2f} 万元。"
+    else:
+        budget_desc = "未设置，以造价合计作为显示基准"
+        surplus_part = ""
+    invest_para = (
+        f"截至{e(data['generated'])}，项目预算（概算口径）{budget_desc}，"
+        f"造价合计<strong class=\"key\">{data['grand_total']:,.2f}</strong> 元（{_fmt_wan(grand_total)} 万元）。"
+        f"其中清单计价 {total_items} 项、已完成计价 {data['calculated_count']} 项、定额绑定 {data['bound_count']} 项。"
+        f"{surplus_part}"
+    )
+    grand_wan = _fmt_wan(grand_total)
+    budget_wan = _fmt_wan(budget)
+    comp_scale = max(budget, grand_total) or 1
+    card_a_pct = (budget / comp_scale * 100) if budget else 0
+    card_b_pct = (grand_total / comp_scale * 100) if grand_total else 0
+    bind_rate = (data["bound_count"] / total_items * 100) if total_items else 0.0
+    stat_cards = "".join(
+        f"""        <div class="stat-card{cls}">
+          <div class="label">{e(label)}</div>
+          <div class="value">{e(value)}<span class="unit">{e(unit)}</span></div>
+          <div class="sub">{e(sub)}</div>
+        </div>"""
+        for label, value, unit, sub, cls in [
+            ("项目预算/概算", budget_wan if has_budget else "未设置", "万元", f"{budget_txt} 元" if has_budget else "未设置概算口径", ""),
+            ("造价合计", grand_wan, "万元", "含税工程造价", ""),
+            ("清单项数", f"{total_items}", "项", f"已计价 {data['calculated_count']} 项", ""),
+            ("定额绑定率", f"{bind_rate:.1f}", "%", f"未绑定 {data['unbound_count']} 项", "warn" if data["unbound_count"] else ""),
+        ]
+    )
+    invest_rows_parts = [
+        ("1", "项目预算/概算", budget_wan, "100.00%" if has_budget else "—", "项目初始化设置" if has_budget else "未设置概算口径", False),
+        ("2", "分部分项工程费", _fmt_wan(data["line_grand"]), f"{data['line_grand'] / budget * 100:.2f}%" if has_budget else "—", "清单定额计价合计", False),
+        ("3", "其中：措施项目费", _fmt_wan(data["total_measures"]), f"{data['total_measures'] / budget * 100:.2f}%" if has_budget else "—", "措施项目计算口径", False),
+        ("4", "规费", _fmt_wan(data["total_regulatory"]), f"{data['total_regulatory'] / budget * 100:.2f}%" if has_budget else "—", "规费费率计提", False),
+        ("5", "税金", _fmt_wan(data["total_tax"]), f"{data['total_tax'] / budget * 100:.2f}%" if has_budget else "—", "增值税率计提", False),
+        ("6", "造价合计", grand_wan, f"{grand_total / budget * 100:.2f}%" if has_budget else "100.00%", "含税工程造价", True),
+    ]
+    sur_cls = ""
+    if has_budget:
+        sur_cls = " up" if surplus < 0 else " down"
+        invest_rows_parts.append(
+            (
+                "7",
+                "概算预计" + ("超支" if surplus < 0 else "结余"),
+                _fmt_wan(abs(surplus)),
+                f"{abs(surplus) / budget * 100:.2f}%",
+                "预算-造价合计",
+                False,
+            )
+        )
+    invest_rows = "".join(
+        f"            <tr{' class=\"total\"' if total else ''}><td class=\"ctr\">{e(idx)}</td><td>{e(name)}</td>"
+        f"<td class=\"num{' ' + sur_cls if (total and has_budget and surplus < 0) else ''}\">{e(val)}</td>"
+        f"<td class=\"ctr num\">{e(pct)}</td><td class=\"ctr\">{e(desc)}</td></tr>"
+        for idx, name, val, pct, desc, total in invest_rows_parts
+    )
+    invest_note = (
+        "注：分部分项工程费=人材机+管理费+利润+规费+税金（清单计价口径）；造价合计=分部分项工程费+措施项目费；"
+        "「概算预计结余/超支」=项目预算−造价合计。"
+    )
+
+    # ── 三、造价构成分析 ──
+    comp_para = (
+        f"按费用性质对造价合计{data['grand_total']:,.2f} 元进行结构分解：材料费占比最高"
+        f"（{data['total_material'] / grand_total * 100:.2f}%），其次为人工费"
+        f"（{data['total_labor'] / grand_total * 100:.2f}%）与税金"
+        f"（{data['total_tax'] / grand_total * 100:.2f}%）。"
+        if grand_total
+        else "项目暂无计算结果，无法进行造价构成分析。"
+    )
+    comp_items = [
+        ("人工费", data["total_labor"], "清单定额人工费合计"),
+        ("材料费", data["total_material"], "清单定额材料费合计"),
+        ("机械费", data["total_machine"], "清单定额机械费合计"),
+        ("直接费", data["total_direct"], "人+材+机"),
+        ("管理费", data["total_management"], "企业管理费"),
+        ("利润", data["total_profit"], "利润"),
+        ("规费", data["total_regulatory"], "社会保险费等"),
+        ("税金", data["total_tax"], "增值税"),
+        ("造价合计", data["grand_total"], "含税工程造价"),
+    ]
+    comp_rows = "".join(
+        f"""            <tr{(' class="total"' if i == len(comp_items) - 1 else '')}><td class="ctr">{'—' if i == len(comp_items) - 1 else i + 1}</td>"""
+        f"""<td>{e(name)}</td><td class="num">{_fmt_wan(val)}</td><td class="ctr num">"""
+        f"""{val / grand_total * 100:.2f}%</td><td class="ctr">{e(desc)}</td></tr>"""
+        for i, (name, val, desc) in enumerate(comp_items)
+    )
+    hbars = ""
+    for name, val, desc in comp_items:
+        pct = (val / grand_total * 100) if grand_total else 0.0
+        hbars += (
+            f"      <div class=\"hbar\">"
+            f"<span class=\"hbar-label\">{e(name)}</span>"
+            f"<div class=\"hbar-track\"><div class=\"hbar-fill\" style=\"width:{min(pct, 100):.2f}%\"></div></div>"
+            f"<span class=\"hbar-val\">{pct:.2f}% · {_fmt_wan(val)}万</span></div>\n"
+        )
+
+    # ── 四、分部造价执行 ──
+    division_para = (
+        f"项目共划分 {len(data['divisions'])} 个分部，分部造价合计 {data['grand_total']:,.2f} 元。"
+        "各分部按施工顺序与金额降序排列，执行情况见表4-1。"
+    )
+    division_rows = "".join(
+        f"            <tr><td class=\"ctr\">{i}</td><td>{e(d['name'])}</td><td class=\"num\">{d['count']}</td>"
+        f"<td class=\"num\">{d['bound']}</td><td class=\"num\">{_fmt_wan(d['total'])}</td>"
+        f"<td class=\"ctr num\">{d['pct']:.2f}%</td></tr>"
+        for i, d in enumerate(data["divisions"], 1)
+    )
+    if not data["divisions"]:
+        division_rows = "            <tr><td class=\"ctr\">—</td><td colspan=\"5\">项目暂无清单分部数据</td></tr>"
+    division_note = "注：占比为各分部金额占造价合计的比例；金额单位为万元。"
+    division_hbars = ""
+    for d in data["divisions"]:
+        division_hbars += (
+            f"      <div class=\"hbar\"><span class=\"hbar-label\">{e(d['name'])}</span>"
+            f"<div class=\"hbar-track\"><div class=\"hbar-fill\" style=\"width:{min(d['pct'], 100):.2f}%\"></div></div>"
+            f"<span class=\"hbar-val\">{d['pct']:.2f}% · {_fmt_wan(d['total'])}万</span></div>\n"
+        )
+    if not data["divisions"]:
+        division_hbars = "      <p>暂无分部数据。</p>\n"
+
+    # ── 五、清单计价明细 ──
+    items_para = (
+        f"清单计价明细共 {total_items} 项，按分部与清单序号排列，逐项列示综合单价与合价。"
+        f"其中已计价 {data['calculated_count']} 项、未计价 {total_items - data['calculated_count']} 项。"
+    )
+    shown_items = data["boq_items"][:150]
+    item_rows_parts = []
+    for i, b in enumerate(shown_items, 1):
+        c = data["calc_map"].get(b.id)
+        unit_price = _fmt_yuan(c.total_cost / b.quantity if c and b.quantity else None)
+        total_price = _fmt_yuan(c.total_cost if c else None)
+        if data["binding_counts"].get(b.id, 0) > 0:
+            bound_txt = "已绑定"
+        else:
+            bound_txt = '<strong class="bad">未绑定</strong>'
+        item_rows_parts.append(
+            f"            <tr>\n"
+            f"              <td class=\"ctr\">{i}</td>\n"
+            f"              <td>{e(b.code)}</td>\n"
+            f"              <td>{e(b.name)}</td>\n"
+            f"              <td>{e(b.division or '未分类')}</td>\n"
+            f"              <td class=\"ctr\">{e(b.unit)}</td>\n"
+            f"              <td class=\"num\">{b.quantity:,.2f}</td>\n"
+            f"              <td class=\"num\">{unit_price}</td>\n"
+            f"              <td class=\"num\">{total_price}</td>\n"
+            f"              <td class=\"ctr\">{bound_txt}</td>\n"
+            f"            </tr>"
+        )
+    item_rows = "\n".join(item_rows_parts)
+    if not shown_items:
+        item_rows = "            <tr><td class=\"ctr\">—</td><td colspan=\"8\">项目暂无清单数据</td></tr>"
+    if len(shown_items) < total_items:
+        shown_tip = "如需完整清单可参考系统清单明细页"
+    else:
+        shown_tip = "已全量展示"
+    items_note = (
+        f"注：共 {total_items} 项，明细表仅展示前 {len(shown_items)} 项（{shown_tip}）；综合单价=合价÷工程量。"
+    )
+
+    # ── 六、计价与定额绑定情况 ──
+    no_calc_count = total_items - data["calculated_count"]
+    binding_para = (
+        f"定额绑定与计价完成情况：已绑定 {data['bound_count']}/{total_items} 项（{bind_rate:.2f}%），"
+        f"已完成计价 {data['calculated_count']}/{total_items} 项。"
+        "未绑定或未计价的清单项将无法生成完整造价，影响成果完整度。"
+    )
+    binding_cards = "".join(
+        f"""        <div class="stat-card{cls}">
+          <div class="label">{e(label)}</div>
+          <div class="value">{e(value)}<span class="unit">{e(unit)}</span></div>
+          <div class="sub">{e(sub)}</div>
+        </div>"""
+        for label, value, unit, sub, cls in [
+            ("已绑定", f"{data['bound_count']}", "项", f"绑定率 {bind_rate:.2f}%", ""),
+            ("未绑定", f"{data['unbound_count']}", "项", "未关联定额子目", "warn" if data["unbound_count"] else ""),
+            ("已计价", f"{data['calculated_count']}", "项", "已生成综合单价", ""),
+            ("未计价", f"{no_calc_count}", "项", "缺少计算结果", "warn" if no_calc_count else ""),
+        ]
+    )
+    unbound_list = [b for b in data["boq_items"] if data["binding_counts"].get(b.id, 0) == 0][:20]
+    unbound_rows = "".join(
+        f"""            <tr>
+              <td class="ctr">{i}</td>
+              <td>{e(b.code)}</td>
+              <td>{e(b.name)}</td>
+              <td>{e(b.division or '未分类')}</td>
+              <td class="ctr">{e(b.unit)}</td>
+              <td class="num">{b.quantity:,.2f}</td>
+            </tr>"""
+        for i, b in enumerate(unbound_list, 1)
+    )
+    if not unbound_list:
+        unbound_rows = "            <tr><td class=\"ctr\">—</td><td colspan=\"5\">项目清单已全部绑定定额,无未绑定项</td></tr>"
+    unbound_note = (
+        f"注：共 {data['unbound_count']} 项未绑定定额，表6-1 仅展示前 {len(unbound_list)} 项。"
+        "请为未绑定清单项关联定额子目并重新执行计价。"
+    )
+
+    # ── 七、材料价格 ──
+    if data["material_rows"]:
+        material_para = (
+            f"按项目区域（{e(project.region or '默认')}）匹配的材料价格共 {len(data['material_rows'])} 类，"
+            "以下为各材料最新生效价格，供综合单价计算与调差参考。"
+        )
+        material_rows_html = "".join(
+            f"""            <tr>
+              <td class="ctr">{i}</td>
+              <td>{e(r.name)}</td>
+              <td>{e(r.spec or '—')}</td>
+              <td class="ctr">{e(r.unit)}</td>
+              <td class="num">{r.unit_price:,.2f}</td>
+              <td>{e(r.region or '默认')}</td>
+              <td class="ctr">{e(r.effective_date or '—')}</td>
+            </tr>"""
+            for i, r in enumerate(data["material_rows"], 1)
+        )
+        material_note = "注：价格为系统中该区域/默认区域当前生效的最新单价，单位以表中为准。"
+    else:
+        material_para = "项目当前没有匹配的材料价格数据。"
+        material_rows_html = (
+            "            <tr><td class=\"ctr\">—</td><td colspan=\"6\">暂无材料价格数据，请先在「材料价格」模块维护后重新导出</td></tr>"
+        )
+        material_note = "注：综合单价计算会按材料价格模块的数据取价，建议维护项目区域对应的材料价格。"
+
+    # ── 八、风险提示 ──
+    risks = []
+    if data["unbound_count"] > 0:
+        risks.append(
+            f"清单项未绑定定额风险。<strong class=\"bad\">{data['unbound_count']}</strong> 个清单项未关联定额子目,"
+            "将无法完整参与计价计算并计入造价合计,建议尽快完成定额绑定。"
+        )
+    if no_calc_count > 0:
+        risks.append(
+            f"清单项缺少计算结果风险。<strong class=\"bad\">{no_calc_count}</strong> 个清单项尚无计算成果"
+            "（可能因未绑定或绑定定额缺少人材机构成),建议重新执行计价计算。"
+        )
+    if has_budget and surplus < 0:
+        risks.append(
+            f"概算超支风险。当前造价合计已超出项目预算"
+            f"<strong class=\"bad\">{abs(surplus) / 10000:,.2f}</strong> 万元（超支率 "
+            f"{abs(surplus) / budget * 100:.2f}%）,建议复核偏差分部并严格控制后续成本。"
+        )
+    if not risks:
+        if total_items == 0:
+            risks.append("项目无清单数据。请先导入或录入工程量清单,再执行定额绑定与计价计算。")
+        else:
+            risks.append("当前项目清单已全部绑定并完成计价,造价结果完整,暂无重大风险。")
+    risk_items = "".join(
+        f"      <p><strong class=\"key\">{i}. {e(risk.split('。')[0])}。</strong>{e(risk.split('。', 1)[1])}</p>\n"
+        for i, risk in enumerate(risks, 1)
+    )
+    risk_count = len(risks)
+
+    plans = []
+    if data["unbound_count"] > 0:
+        plans.append(("完成未绑定清单项定额关联", f"完成 {data['unbound_count']} 个清单项定额子目绑定"))
+    if no_calc_count > 0:
+        plans.append(("复核未计价清单项", f"对 {no_calc_count} 个无计算成果清单项重新计价"))
+    if has_budget and surplus < 0:
+        plans.append(("超支部分部偏差专项复核", "对造价超概算的分部进行专项分析并出具控制建议"))
+    if len(plans) < 4:
+        plans.append(("核对主要材料价格信息", "核对材料价格与当期信息价一致性，更新价格数据"))
+    if len(plans) < 4:
+        plans.append(("成果文件三级复核", "对报表成果执行编制人自审、复核人复审、审定人终审"))
+    if len(plans) < 4:
+        plans.append(("按合同约定办理价款结算", "依据合同约定及时办理工程价款计量与支付审核"))
+    plan_rows = "".join(
+        f"""            <tr><td class="ctr">{i}</td><td>{e(name)}</td><td>{e(desc)}</td></tr>"""
+        for i, (name, desc) in enumerate(plans[:4], 1)
+    )
+
+    if has_budget:
+        if surplus >= 0:
+            conclusion_head = "总体评价："
+            conclusion_body = (
+                f"截至本报告期，项目造价合计 {data['grand_total']:,.2f} 元，控制在项目预算以内，"
+                f"预计结余 {surplus / 10000:,.2f} 万元，投资控制总体情况良好。"
+            )
+            callout_cls = ""
+        else:
+            conclusion_head = "总体评价："
+            conclusion_body = (
+                f"截至本报告期，项目造价合计 {data['grand_total']:,.2f} 元，已超出项目预算"
+                f"{abs(surplus) / 10000:,.2f} 万元，存在超支风险，请重点关注并采取措施。"
+            )
+            callout_cls = " warn"
+    else:
+        conclusion_head = "总体评价："
+        conclusion_body = (
+            f"截至本报告期，项目造价合计 {data['grand_total']:,.2f} 元（未设置预算，无法判断结余），"
+            "建议为项目设置概算/预算口径以开展投资对标。"
+        )
+        callout_cls = ""
+
+    html = _VALUATION_TEMPLATE.format(
+        css=_VALUATION_CSS,
+        title=f"{e(project_name)}成果造价报表({year})",
+        report_no=e(report_no),
+        org_name=e(data["org_name"]),
+        org_cert=e(data["org_cert"]),
+        project_name=e(project_name),
+        standard_label=e(data["standard_label"]),
+        standard_type=e(project.standard_type or "—"),
+        generated=e(data["generated"]),
+        created_zh=e(data["created_zh"]),
+        owner=e(owner),
+        overview_para=overview_para,
+        overview_rows=overview_rows,
+        invest_para=invest_para,
+        stat_cards=stat_cards,
+        invest_rows=invest_rows,
+        invest_note=invest_note,
+        card_a_pct=f"{card_a_pct:.2f}",
+        grand_pct=f"{card_b_pct:.2f}",
+        budget_wan=e(budget_wan),
+        grand_wan=e(grand_wan),
+        comp_para=comp_para,
+        comp_rows=comp_rows,
+        hbars=hbars,
+        division_para=division_para,
+        division_rows=division_rows,
+        division_note=division_note,
+        division_hbars=division_hbars,
+        items_para=items_para,
+        item_rows=item_rows,
+        items_note=items_note,
+        binding_para=binding_para,
+        binding_cards=binding_cards,
+        unbound_shown=len(unbound_list),
+        unbound_rows=unbound_rows,
+        unbound_note=unbound_note,
+        material_para=material_para,
+        material_rows=material_rows_html,
+        material_note=material_note,
+        risk_count=risk_count,
+        risk_items=risk_items,
+        plan_rows=plan_rows,
+        callout_cls=callout_cls,
+        conclusion_head=conclusion_head,
+        conclusion_body=conclusion_body,
+    )
+    return html.encode("utf-8")

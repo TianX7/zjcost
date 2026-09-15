@@ -100,9 +100,10 @@ CAD_EXE_CANDIDATES = [
 LOAD_TIMEOUT = 180  # 大图加载最长等待秒数
 # 冷启动后多少秒内仍没检测到 CADReader 主窗口就判失败。
 # CADReader 被"屏外/隐藏启动"时初始化（QtWebKit + OpenGL）常比单独双击慢，
-# 6 秒过严会把仍在正常加载中的实例误杀，导致前端"启动超时"。放宽到 10 秒，
-# 仍早于后端 EMBED_START_TIMEOUT(=12s)，保证到时状态已写成 failed 而非笼统超时。
-WAIT_MAIN_HWND_ABORT_S = 10.0
+# 且大图纸冷启动首窗出现更晚：10 秒会把仍在正常加载的实例误杀，导致前端
+# "启动超时"。后端 EMBED_START_TIMEOUT=30s，这里放宽到 22s，仍能保证在后端
+# 判超时之前把失败原因写成 failed（而不是后端笼统判"启动超时"）。
+WAIT_MAIN_HWND_ABORT_S = 22.0
 
 
 def find_cad_exe() -> str:

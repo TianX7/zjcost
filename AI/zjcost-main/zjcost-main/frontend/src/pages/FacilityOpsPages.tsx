@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
+import { Tabs, message } from "antd";
 import PageHeader from "../components/PageHeader";
 
 /* ─────────────────────────────────────────────────────────────
@@ -162,7 +163,7 @@ export interface OpsAlert {
 export function DetectStrip({ alerts, emptyText = "各项指标正常，暂无预警" }: {
   alerts: OpsAlert[]; emptyText?: string;
 }) {
-  const nav = useNavigate();
+  const [disposed, setDisposed] = useState<Record<string, boolean>>({});
   if (alerts.length === 0) {
     return (
       <div className="ops-alert-list">
@@ -173,24 +174,39 @@ export function DetectStrip({ alerts, emptyText = "各项指标正常，暂无�
       </div>
     );
   }
+  const toggleDispose = (a: OpsAlert, i: number) => {
+    const key = `${a.text}-${i}`;
+    const next = !disposed[key];
+    setDisposed((prev) => ({ ...prev, [key]: next }));
+    if (next) message.success(`已受理：${a.text}，处置单已生成`);
+  };
+  const disposedCount = alerts.filter((a, i) => disposed[`${a.text}-${i}`]).length;
   return (
     <div className="ops-alert-list">
-      {alerts.map((a, i) => (
-        <div key={`${a.text}-${i}`} className="ops-alert-row" style={{ animationDelay: `${i * 0.06}s` }}>
-          <span className={`ops-alert-icon ${a.level === "alarm" ? "alarm" : a.level}`}>
-            <span className="material-symbols-outlined">{a.icon}</span>
-          </span>
-          <div className="ops-alert-body">
-            <strong>{LEVEL_TEXT[a.level]} · {a.text}</strong>
-            <em>{a.detail}{a.action ? ` → ${a.action}` : ""}</em>
-          </div>
-          {a.to && (
-            <button type="button" className="ops-link-btn" onClick={() => nav(a.to!)}>
-              去处理
+      {alerts.map((a, i) => {
+        const key = `${a.text}-${i}`;
+        const isDisposed = disposed[key];
+        return (
+          <div key={key} className={`ops-alert-row${isDisposed ? " disposed" : ""}`} style={{ animationDelay: `${i * 0.06}s` }}>
+            <span className={`ops-alert-icon ${a.level === "alarm" ? "alarm" : a.level}`}>
+              <span className="material-symbols-outlined">{a.icon}</span>
+            </span>
+            <div className="ops-alert-body">
+              <strong>{LEVEL_TEXT[a.level]} · {a.text}</strong>
+              <em>{a.detail}{a.action ? ` → ${a.action}` : ""}</em>
+            </div>
+            <button type="button" className={`ops-link-btn${isDisposed ? " disposed" : ""}`} onClick={() => toggleDispose(a, i)}>
+              {isDisposed ? "撤销处置" : "处置"}
             </button>
-          )}
+          </div>
+        );
+      })}
+      {disposedCount > 0 && (
+        <div className="ops-alert-row disposed-summary">
+          <span className="ops-alert-icon ok"><span className="material-symbols-outlined">task_alt</span></span>
+          <div className="ops-alert-body"><strong>已处置 {disposedCount} 条</strong><em>处置记录留存于本界面，刷新后恢复待办</em></div>
         </div>
-      ))}
+      )}
     </div>
   );
 }
@@ -1191,6 +1207,33 @@ export function FacilityOpsPage() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * 合并页：光伏发电监测 / 净水与中水回用 / 设施运维管理
+ * 将三个专题合入单页，用 Tabs 分区切换。
+ * ───────────────────────────────────────────────────────────── */
+export function MergedOpsPage() {
+  const [searchParams] = useSearchParams();
+  const tab = searchParams.get("tab");
+  const defaultKey = tab === "water" ? "water" : tab === "ops" ? "ops" : "pv";
+  return (
+    <div className="page-container">
+      <PageHeader
+        icon="monitoring"
+        title="光伏 · 中水 · 运维"
+        subtitle="运营期三大专题合并视图：光伏发电监测 · 净水与中水回用 · 设施运维管理，Tab 分区一键切换"
+      />
+      <Tabs
+        defaultActiveKey={defaultKey}
+        items={[
+          { key: "pv", label: <><span className="material-symbols-outlined" style={{ verticalAlign: -4, marginRight: 4 }}>solar_power</span>光伏发电监测</>, children: <PvPowerPage /> },
+          { key: "water", label: <><span className="material-symbols-outlined" style={{ verticalAlign: -4, marginRight: 4 }}>water_drop</span>净水与中水回用</>, children: <WaterReusePage /> },
+          { key: "ops", label: <><span className="material-symbols-outlined" style={{ verticalAlign: -4, marginRight: 4 }}>build_circle</span>设施运维管理</>, children: <FacilityOpsPage /> },
+        ]}
+      />
     </div>
   );
 }

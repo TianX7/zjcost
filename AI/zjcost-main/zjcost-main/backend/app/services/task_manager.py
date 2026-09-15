@@ -34,6 +34,7 @@ class TaskInfo:
     error: str | None = None
     created_at: str = ""
     completed_at: str | None = None
+    cancelled: bool = False
 
 
 class TaskManager:
@@ -78,6 +79,27 @@ class TaskManager:
                 task.status = TaskStatus.FAILED
                 task.error = error
                 task.completed_at = datetime.now(timezone.utc).isoformat()
+
+    def request_cancel(self, task_id: str) -> bool:
+        """请求取消任务：置标志位，仅"运行中/排队中"任务生效。返回是否已受理。"""
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if not task:
+                return False
+            if task.status not in (TaskStatus.PENDING, TaskStatus.RUNNING):
+                return False
+            task.cancelled = True
+            return True
+
+    def is_cancelled(self, task_id: str) -> bool:
+        with self._lock:
+            task = self._tasks.get(task_id)
+            return bool(task and task.cancelled)
+
+    def remove_task(self, task_id: str) -> bool:
+        """从注册表中移除任务记录（用于清理历史/失败任务）。"""
+        with self._lock:
+            return self._tasks.pop(task_id, None) is not None
 
     def get_task(self, task_id: str) -> TaskInfo | None:
         with self._lock:

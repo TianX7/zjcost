@@ -59,9 +59,16 @@ _GEOMETRY_STORE: dict[str, dict] = {}
 _geometry_lock = threading.Lock()
 
 # 嵌入式 CAD 快速看图状态：同一时间仅一个实例（task_id + 坐标文件）
-_EMBED_STATE: dict = {"task_id": "", "rect_file": None, "state_file": None, "proc": None}
-_embed_lock = threading.Lock()
-EMBED_START_TIMEOUT = 24.0
+_EMBED_STATE: dict = {
+    "task_id": "",
+    "rect_file": None,
+    "state_file": None,
+    "proc": None,
+    "last_rect_at": 0.0,
+}
+EMBED_START_TIMEOUT = 30.0
+# 坐标流停滞阈值（秒）：超时未收到前端上报，后端自动删除坐标文件，cad_viewer 轮询到后立即隐藏
+_EMBED_RECT_STALE_TIMEOUT = 8.0
 
 # 同一张图纸重复上传直接复用已有结果（sha256 -> task_id），秒出
 _RESULT_CACHE: dict[str, str] = {}
@@ -975,22 +982,83 @@ def _export_task_excel(task_id: str, task: dict) -> bytes:
     return buf.getvalue()
 
 
+class _DiskQueueReader:
+    """从 worker 输出的 JSONL 文件按行增量读取队列消息（替代 multiprocessing.Queue）。"""
+
+    def __init__(self, path):
+        self.path = path
+        self._pos = 0
+
+    def get(self, timeout: float = 0.5):
+        deadline = time.time() + timeout
+        while True:
+            data = b""
+            try:
+                with open(self.path, "rb") as fh:
+                    fh.seek(self._pos)
+                    data = fh.read()
+            except FileNotFoundError:
+                data = b""
+            nl = data.find(b"\n")
+            if nl >= 0:
+                line = data[:nl].decode("utf-8", "replace")
+                self._pos += nl + 1
+                try:
+                    item = json.loads(line)
+                    return item[0], item[1]
+                except Exception:
+                    return "ignore", None
+            if time.time() >= deadline:
+                raise queue.Empty
+            time.sleep(0.05)
+
+
+def _backend_root() -> str:
+    """返回 backend 目录绝对路径（dev 下 worker 子进程往里加 PYTHONPATH）。"""
+    return str(Path(__file__).resolve().parents[3])
+
+
+def _worker_launch_command() -> list[str]:
+    """定位 worker 执行器：打包版优先 windowed 的 dxf_analysis_worker.exe，
+    开发回退到 tools/drawing_analysis_worker.py + sys.executable。"""
+    bundled = Path(sys.executable).resolve().parent / "dxf_analysis_worker.exe"
+    if bundled.is_file():
+        return [str(bundled)]
+    script = Path(_backend_root()) / "tools" / "drawing_analysis_worker.py"
+    if script.is_file():
+        return [sys.executable, str(script)]
+    return []
+
+
 def _start_cad_analysis(file_bytes: bytes, filename: str):
-    """启动 DXF/DWG 解析子进程。
+    """启动 DXF/DWG 解析子进程（独立进程、隐藏控制台窗口）。
 
     ezdxf/matplotlib 解析是 CPU 密集型，单次 C 级调用可达分钟级；在主进程
     线程里跑会霸占 GIL 把事件循环饿死（看图 rect、状态轮询全部超时，前端
     卡在"CAD 内核预览启动中"并报错）。进程隔离后子进程再慢也不影响服务。
+
+    工作进程以 CREATE_NO_WINDOW / windowed exe 启动，任何上传都不会弹出
+    python 控制台黑窗（multiprocessing spawn 在打包版无控制台环境下每次
+    上传都会新建一个 python 黑窗）。
     """
-    ctx = multiprocessing.get_context("spawn")
-    result_queue = ctx.Queue()
-    process = ctx.Process(
-        target=analyze_dxf_bytes_worker,
-        args=(file_bytes, filename, result_queue),
-        daemon=False,
+    worker = _worker_launch_command()
+    if not worker:
+        raise RuntimeError("解析 worker 程序缺失（dxf_analysis_worker.exe / tools/drawing_analysis_worker.py）")
+    work_dir = Path(tempfile.mkdtemp(prefix="zjcost_cad_"))
+    ext = Path(filename).suffix.lower()
+    if ext not in (".dxf", ".dwg"):
+        ext = ".dwg"
+    in_file = work_dir / f"input{ext}"
+    in_file.write_bytes(file_bytes)
+    out_file = work_dir / "queue.jsonl"
+    env = {**os.environ, "PYTHONPATH": _backend_root()}
+    proc = subprocess.Popen(
+        [*worker, str(in_file), str(out_file)],
+        creationflags=subprocess.CREATE_NO_WINDOW,
+        env=env,
     )
-    process.start()
-    return process, result_queue
+    logger.info("CAD 解析 worker 已启动：pid=%s", proc.pid)
+    return proc, _DiskQueueReader(out_file)
 
 
 def _cad_wait_base(process, result_queue, progress_cb) -> dict:
@@ -1000,7 +1068,7 @@ def _cad_wait_base(process, result_queue, progress_cb) -> dict:
     """
     result = None
     error_msg = None
-    while process.is_alive() and result is None and error_msg is None:
+    while process.poll() is None and result is None and error_msg is None:
         try:
             kind, payload = result_queue.get(timeout=0.5)
         except queue.Empty:
@@ -1018,7 +1086,7 @@ def _cad_wait_base(process, result_queue, progress_cb) -> dict:
     # 进程已退出仍未拿到 result：清空队列残留，再做一次兜底读取
     while result is None:
         try:
-            kind, payload = result_queue.get_nowait()
+            kind, payload = result_queue.get(timeout=0)
         except queue.Empty:
             break
         if kind == "result":
@@ -1027,7 +1095,7 @@ def _cad_wait_base(process, result_queue, progress_cb) -> dict:
             error_msg = str(payload)
     if result is None:
         raise RuntimeError(
-            error_msg or f"图纸解析子进程异常退出（exitcode={process.exitcode}）"
+            error_msg or f"图纸解析子进程异常退出（exitcode={process.returncode}）"
         )
     return result
 
@@ -1036,7 +1104,7 @@ def _cad_tail_raster(process, result_queue, progress_cb) -> None:
     """后台收尾线程：基础结果已返回后，继续接收子进程推送的高清原图
     （cad_raster，经 progress 通道送达 store），直到子进程退出并回收。"""
     try:
-        while process.is_alive():
+        while process.poll() is None:
             try:
                 kind, payload = result_queue.get(timeout=0.5)
             except queue.Empty:
@@ -1048,9 +1116,9 @@ def _cad_tail_raster(process, result_queue, progress_cb) -> None:
                     pass
             # 基础 result/error 已在 _cad_wait_base 处理，此处忽略
     finally:
-        if process.is_alive():
+        if process.poll() is None:
             try:
-                process.join(timeout=5)
+                process.wait(timeout=5)
             except Exception:
                 pass
 
@@ -1418,14 +1486,22 @@ async def embed_cad_start(task_id: str, rect: dict):
         proc = subprocess.Popen(
             [*viewer_cmd, "--embed", str(rect_file), target],
             close_fds=True,
-            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+            # 实测：DETACHED_PROCESS / CREATE_NEW_PROCESS_GROUP 与 CREATE_NO_WINDOW
+            # 组合时 CREATE_NO_WINDOW 会失效（CPython 会跳过 STARTF SW_HIDE），子进程
+            # 必然新建 python 黑窗。必须单用 CREATE_NO_WINDOW 才真正不弹窗。
+            creationflags=subprocess.CREATE_NO_WINDOW,
             cwd=_view_cwd,
         )
     except Exception as exc:
         logger.exception("调起嵌入式图纸查看器失败：%s", target)
         raise HTTPException(status_code=500, detail=f"调起嵌入式图纸查看器失败: {exc}") from exc
-    with _embed_lock:
-        _EMBED_STATE.update(task_id=task_id, rect_file=rect_file, state_file=state_file, proc=proc)
+    _EMBED_STATE.update(
+        task_id=task_id,
+        rect_file=rect_file,
+        state_file=state_file,
+        proc=proc,
+        last_rect_at=time.time(),
+    )
     logger.info("已在预览区嵌入 CAD 快速看图：%s", target)
 
     # 等待查看器把状态写到 attached 再返回成功：attach 表示 CAD 已挂到宿主，
@@ -1434,6 +1510,8 @@ async def embed_cad_start(task_id: str, rect: dict):
     # 启动失败/超时自动回退内置渲染，不再让前端一直停在"CAD 内核预览启动中…"
     deadline = time.time() + EMBED_START_TIMEOUT
     while time.time() < deadline:
+        # 启动等待期也在持续"心跳"，避免兜底任务在慢启动时误停
+        _EMBED_STATE["last_rect_at"] = time.time()
         payload = None
         try:
             payload = json.loads(state_file.read_text(encoding="utf-8"))
@@ -1460,28 +1538,29 @@ async def embed_cad_start(task_id: str, rect: dict):
 
 @router.post("/{task_id}/embed-cad/rect", summary="上报预览区屏幕坐标（嵌入模式跟随）")
 async def embed_cad_rect(task_id: str, rect: dict):
-    with _embed_lock:
-        if _EMBED_STATE["task_id"] != task_id or not _EMBED_STATE["rect_file"]:
-            return {"ok": False}
-        rect_file = _EMBED_STATE["rect_file"]
+    # 高频上报路径（每 120ms）：不参与互斥（所有调用方都在同一事件循环，
+    # dict 快照在 GIL 下原子），且文件写提到线程池执行，避免磁盘 I/O 卡顿
+    # 拖死事件循环导致全站请求挂起（历史上曾因此整站无响应）。
+    if _EMBED_STATE["task_id"] != task_id or not _EMBED_STATE["rect_file"]:
+        return {"ok": False}
     try:
-        rect_file.write_text(
-            json.dumps({"x": rect.get("x", 0), "y": rect.get("y", 0),
-                        "w": rect.get("w", 0), "h": rect.get("h", 0),
-                        "visible": bool(rect.get("visible", True)),
-                        "pf": bool(rect.get("pf", True))}, ensure_ascii=False),
-            encoding="utf-8",
+        content = json.dumps(
+            {"x": rect.get("x", 0), "y": rect.get("y", 0),
+             "w": rect.get("w", 0), "h": rect.get("h", 0),
+             "visible": bool(rect.get("visible", True)),
+             "pf": bool(rect.get("pf", True))}, ensure_ascii=False,
         )
+        await asyncio.to_thread(_EMBED_STATE["rect_file"].write_text, content, encoding="utf-8")
     except Exception:
         return {"ok": False}
+    _EMBED_STATE["last_rect_at"] = time.time()
     return {"ok": True}
 
 
 @router.post("/{task_id}/embed-cad/stop", summary="停止嵌入的 CAD 快速看图")
 async def embed_cad_stop(task_id: str):
-    with _embed_lock:
-        if _EMBED_STATE["task_id"] != task_id:
-            return {"ok": False}
+    if _EMBED_STATE["task_id"] != task_id:
+        return {"ok": False}
     _embed_stop()
     return {"ok": True}
 
@@ -1489,11 +1568,10 @@ async def embed_cad_stop(task_id: str):
 @router.get("/{task_id}/embed-cad/status", summary="查询嵌入的 CAD 快速看图状态")
 async def embed_cad_status(task_id: str):
     """查看器启动/退出状态查询：前端据此在启动失败或运行中途退出时回退内置渲染。"""
-    with _embed_lock:
-        if _EMBED_STATE["task_id"] != task_id:
-            return {"state": "not_found", "message": ""}
-        state_file = _EMBED_STATE["state_file"]
-        proc = _EMBED_STATE["proc"]
+    if _EMBED_STATE["task_id"] != task_id:
+        return {"state": "not_found", "message": ""}
+    state_file = _EMBED_STATE["state_file"]
+    proc = _EMBED_STATE["proc"]
     message = ""
     state = "starting"
     if state_file and state_file.is_file():
@@ -1511,10 +1589,9 @@ async def embed_cad_status(task_id: str):
 
 def _embed_stop() -> None:
     """停止当前嵌入实例：删除坐标文件（查看器轮询到消失即自行退出）。"""
-    with _embed_lock:
-        rect_file = _EMBED_STATE["rect_file"]
-        state_file = _EMBED_STATE["state_file"]
-        _EMBED_STATE.update(task_id="", rect_file=None, state_file=None, proc=None)
+    rect_file = _EMBED_STATE["rect_file"]
+    state_file = _EMBED_STATE["state_file"]
+    _EMBED_STATE.update(task_id="", rect_file=None, state_file=None, proc=None, last_rect_at=0.0)
     if rect_file:
         try:
             rect_file.unlink(missing_ok=True)
@@ -1525,6 +1602,40 @@ def _embed_stop() -> None:
             state_file.unlink(missing_ok=True)
         except Exception:
             pass
+
+
+async def _embed_sweeper_loop() -> None:
+    """兜底清理：前端已关闭（keepalive 停止请求丢失）时，坐标流停滞超阈值就
+    自动删除坐标文件，cad_viewer 轮询到文件消失立即隐藏看图窗口并退出。"""
+    while True:
+        await asyncio.sleep(2.0)
+        try:
+            task_id = _EMBED_STATE["task_id"]
+            last_rect_at = _EMBED_STATE["last_rect_at"]
+            if task_id and last_rect_at and time.time() - last_rect_at > _EMBED_RECT_STALE_TIMEOUT:
+                logger.info(
+                    "CAD 嵌入坐标流停滞 %.0fs，自动停止并隐藏看图窗口",
+                    time.time() - last_rect_at,
+                )
+                _embed_stop()
+        except Exception:
+            logger.exception("CAD 嵌入兜底清理任务异常")
+
+
+_embed_sweeper_task: asyncio.Task | None = None
+
+
+def start_embed_sweeper() -> None:
+    global _embed_sweeper_task
+    if _embed_sweeper_task is None or _embed_sweeper_task.done():
+        _embed_sweeper_task = asyncio.create_task(_embed_sweeper_loop())
+
+
+def stop_embed_sweeper() -> None:
+    global _embed_sweeper_task
+    if _embed_sweeper_task is not None:
+        _embed_sweeper_task.cancel()
+        _embed_sweeper_task = None
 
 
 @router.get("/{task_id}/geometry", summary="获取快速看图几何数据（解析中可提前拉取）")

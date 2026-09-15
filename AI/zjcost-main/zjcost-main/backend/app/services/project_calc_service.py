@@ -92,6 +92,8 @@ def _base_price_line_result(base_price: float, quantity: float, fee_config: FeeC
     # so management/profit/regulatory/tax are no longer all zero.
     management_fee = _r2(base_total * fee.management_rate)
     profit = _r2(base_total * fee.profit_rate)
+    # 该路径仅有综合基价、无法拆分人工费，规费统一按直接费基数计取
+    # （避免 regulatory_base="labor" 下规费为 0；口径注释见 FeeConfig）
     regulatory_fee = _r2(base_total * fee.regulatory_rate)
     pre_tax_total = _r2(base_total + management_fee + profit + regulatory_fee)
     tax = _r2(pre_tax_total * fee.tax_rate)
@@ -139,6 +141,7 @@ def _resolve_fee_config(project_id: int, db: Session) -> FeeConfig:
                 profit_rate=rp.profit_rate,
                 regulatory_rate=rp.regulatory_rate,
                 tax_rate=rp.tax_rate,
+                regulatory_base=getattr(rp, "regulatory_base", "direct"),
             )
     return DEFAULT_FEE_CONFIG
 

@@ -1,7 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Alert, Button, Empty, Select, Space, Spin, Table, Tag, Typography } from "antd";
-import { DownloadOutlined, ReloadOutlined } from "@ant-design/icons";
+import { Alert, Button, Empty, Input, Modal, Select, Space, Spin, Table, Tag, Typography, message } from "antd";
+import { DownloadOutlined, EditOutlined, ReloadOutlined } from "@ant-design/icons";
 import PageHeader from "../components/PageHeader";
 import { api, type CalcSummary, type LineCalcResult, type Project } from "../api";
 
@@ -114,6 +114,36 @@ export default function QuantityCenter() {
   const totalAmount = buckets.rows.reduce((s, r) => s + (r.amount ?? 0), 0);
   const projectName = projects.find((p) => p.id === projectId)?.name ?? "";
   const allUnmatched = buckets.totalItems > 0 && buckets.matched === 0;
+
+  // ── 就地修编码：纠正编码后进行国标归集 ──
+  const [editItem, setEditItem] = useState<LineCalcResult | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+
+  const openEditCode = (line: LineCalcResult) => {
+    setEditItem(line);
+    setEditValue(line.boq_code ?? "");
+  };
+
+  const saveCode = async () => {
+    if (projectId == null || editItem == null) return;
+    const code = editValue.trim();
+    if (!code) {
+      message.error("编码不能为空");
+      return;
+    }
+    setEditSaving(true);
+    try {
+      await api.updateBoqItem(projectId, editItem.boq_item_id, { code });
+      message.success(`已更新编码：${editItem.boq_code} → ${code}（归集后即自动归位）`);
+      setEditItem(null);
+      await reload();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "更新编码失败");
+    } finally {
+      setEditSaving(false);
+    }
+  };
 
   const openBoq = () => {
     if (projectId != null) navigate(`/projects/${projectId}?tab=boq`);
@@ -258,7 +288,7 @@ export default function QuantityCenter() {
         <div className="content-card">
           <div className="content-card-head">
             <h3 className="content-card-title"><span className="material-symbols-outlined">warning</span>未落入分类的清单（{buckets.unmatched.length} 项）</h3>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>可能属措施或其他专业项目，请核对编码</Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>疑似编码归类段未按国标填写。就地修正编码即可自动归位，金额随重新计价更新。</Typography.Text>
           </div>
           <div className="content-card-body flush">
             <Table
@@ -266,10 +296,19 @@ export default function QuantityCenter() {
               size="small"
               dataSource={buckets.unmatched}
               pagination={{ pageSize: 8, showTotal: (t) => `共 ${t} 项` }}
+              scroll={{ x: 560 }}
               columns={[
                 { title: "编码", dataIndex: "boq_code", width: 130, ellipsis: true },
                 { title: "名称", dataIndex: "boq_name", ellipsis: true },
                 { title: "合价", dataIndex: "total", width: 140, align: "right", render: (v: number) => <span className="num">{fmtMoney(v ?? 0)}</span> },
+                {
+                  title: "操作",
+                  key: "actions",
+                  width: 120,
+                  render: (_, row) => (
+                    <Button size="small" icon={<EditOutlined />} onClick={() => openEditCode(row)}>修编码</Button>
+                  ),
+                },
               ]}
             />
           </div>
@@ -279,6 +318,37 @@ export default function QuantityCenter() {
       {!summary && !loading && projects.length === 0 && (
         <Empty description="暂无工程量数据，可先在图纸识别或 BIM 算量页生成清单" />
       )}
+
+      {/* 就地修编码 Modal */}
+      <Modal
+        title={`修编码 · ${editItem?.boq_name ?? ""}`}
+        open={editItem != null}
+        onCancel={() => setEditItem(null)}
+        onOk={saveCode}
+        okText="保存并重新归集"
+        confirmLoading={editSaving}
+        width={480}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 6 }}>
+          <div>
+            <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 4 }}>原编码（无法归入 GB 50854 / GB 50856 分类段）</div>
+            <Tag color="red">{editItem?.boq_code ?? ""}</Tag>
+          </div>
+          <div>
+            <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 4 }}>新编码（按国标项目编码前 6 位填写，如 010401、031001）</div>
+            <Input
+              value={editValue}
+              onChange={(event) => setEditValue(event.target.value)}
+              placeholder="输入国标清单编码"
+              maxLength={20}
+              onPressEnter={() => void saveCode()}
+            />
+          </div>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            保存后该条清单将以新编码重新归集至对应分类，并标记待重新计价。
+          </Typography.Text>
+        </div>
+      </Modal>
     </div>
   );
 }

@@ -4,6 +4,7 @@ import {
   Button,
   Col,
   Descriptions,
+  Drawer,
   Empty,
   Form,
   Input,
@@ -13,6 +14,7 @@ import {
   Row,
   Select,
   Space,
+  Spin,
   Table,
   Tabs,
   Tag,
@@ -31,6 +33,7 @@ import {
   LinkOutlined,
   PlusOutlined,
   ReloadOutlined,
+  RobotOutlined,
   SafetyOutlined,
   SettingOutlined,
   ThunderboltOutlined,
@@ -39,6 +42,7 @@ import {
 import type {
   BoqItem,
   BoqItemCreate,
+  CalcProvenance,
   CalcSummary,
   DiffReport,
   MeasureItem,
@@ -217,6 +221,23 @@ function BoqWorkspaceTab({ projectId }: { projectId: number }) {
   const [editing, setEditing] = useState<BoqItem | null>(null);
   const [autoLoading, setAutoLoading] = useState(false);
   const [form] = Form.useForm<BoqItemCreate>();
+  const [provOpen, setProvOpen] = useState(false);
+  const [provLoading, setProvLoading] = useState(false);
+  const [provenance, setProvenance] = useState<CalcProvenance | null>(null);
+
+  const openProvenance = async (boqItemId: number) => {
+    setProvOpen(true);
+    setProvLoading(true);
+    setProvenance(null);
+    try {
+      setProvenance(await api.getProvenance(boqItemId));
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "加载计算溯源失败");
+      setProvOpen(false);
+    } finally {
+      setProvLoading(false);
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -326,7 +347,22 @@ function BoqWorkspaceTab({ projectId }: { projectId: number }) {
           <h3 className="content-card-title"><span className="material-symbols-outlined">table_rows</span>清单明细（{items.length} 项）</h3>
         </div>
         <div className="content-card-body flush">
-          <Table rowKey="id" columns={columns} dataSource={items} loading={loading} scroll={{ x: 1350 }} pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }} />
+          <Table
+            rowKey="id"
+            columns={columns}
+            dataSource={items}
+            loading={loading}
+            scroll={{ x: 1350 }}
+            pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }}
+            rowClassName={(row) => (row.rate != null && Number(row.rate) > 0 ? "" : "ant-table-row-warning")}
+            onRow={(row) => ({
+              onClick: (event) => {
+                const target = event.target as HTMLElement;
+                if (target.closest("button, a, .ant-popover")) return;
+                void openProvenance(row.id);
+              },
+            })}
+          />
         </div>
       </div>
 
@@ -352,6 +388,82 @@ function BoqWorkspaceTab({ projectId }: { projectId: number }) {
           </Row>
         </Form>
       </Modal>
+
+      <Drawer
+        title="计价溯源"
+        open={provOpen}
+        onClose={() => setProvOpen(false)}
+        width={520}
+      >
+        {provLoading ? (
+          <Spin />
+        ) : provenance ? (
+          <div>
+            <Typography.Title level={4}>{provenance.boq_code} - {provenance.boq_name}</Typography.Title>
+            <Typography.Paragraph type="secondary">
+              工程量：{provenance.boq_quantity} {provenance.boq_unit}
+            </Typography.Paragraph>
+            {provenance.calc_breakdown && (
+              <div className="unit-formula" style={{ marginBottom: 16 }}>
+                <div className="unit-formula-row">
+                  <span className="unit-formula-label">直接费</span>
+                  <code title="各绑定定额直接费汇总">
+                    {(provenance.bindings.map((b) => Number(b.direct_cost ?? 0).toFixed(2)).join(" + ") || "0.00")}
+                  </code>
+                </div>
+                <div className="unit-formula-row">
+                  <span className="unit-formula-label">税前合计</span>
+                  <code title="直接费 + 管理费 + 利润 + 规费">
+                    {Number(provenance.calc_breakdown.direct_cost).toFixed(2)} + {Number(provenance.calc_breakdown.management_fee).toFixed(2)} + {Number(provenance.calc_breakdown.profit).toFixed(2)} + {Number(provenance.calc_breakdown.regulatory_fee).toFixed(2)} = {Number(provenance.calc_breakdown.pre_tax_total).toFixed(2)}
+                  </code>
+                </div>
+                <div className="unit-formula-row">
+                  <span className="unit-formula-label">含税合计</span>
+                  <code title="税前合计 + 税金">
+                    {Number(provenance.calc_breakdown.pre_tax_total).toFixed(2)} + {Number(provenance.calc_breakdown.tax).toFixed(2)} = {Number(provenance.calc_breakdown.total).toFixed(2)}
+                  </code>
+                </div>
+                <div className="unit-formula-row">
+                  <span className="unit-formula-label">合价</span>
+                  <code title="综合单价 × 工程量">
+                    {money(provenance.unit_price)} × {Number(provenance.boq_quantity).toLocaleString("zh-CN")} = {money(provenance.calc_total)}
+                  </code>
+                </div>
+              </div>
+            )}
+            {provenance.bindings.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <Typography.Text strong>绑定定额</Typography.Text>
+                {provenance.bindings.map((binding) => (
+                  <div
+                    key={binding.binding_id}
+                    style={{
+                      marginTop: 8,
+                      padding: 12,
+                      background: "var(--bg)",
+                      borderRadius: 8,
+                      border: "1px solid var(--border)",
+                    }}
+                  >
+                    <Tag color="blue">{binding.quota.quota_code}</Tag>
+                    <Typography.Text strong>{binding.quota.quota_name}</Typography.Text>
+                    <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 6 }}>
+                      人工 {binding.quota.labor_qty}，材料 {binding.quota.material_qty}，机械 {binding.quota.machine_qty}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="smart-explain-box" style={{ marginTop: 16 }}>
+              <RobotOutlined style={{ color: "var(--primary)", marginRight: 8 }} />
+              <Typography.Text strong>计算说明</Typography.Text>
+              <div style={{ marginTop: 6, color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                {provenance.explanation}
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </Drawer>
     </div>
   );
 }

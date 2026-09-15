@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, Empty, Input, Progress, Select, Space, Table, Tag, message } from "antd";
-import { FileExcelOutlined, FilePdfOutlined, FileZipOutlined } from "@ant-design/icons";
+import { FileExcelOutlined, FilePdfOutlined, FileTextOutlined, FileZipOutlined } from "@ant-design/icons";
 import type { Project, ReportData } from "../api";
 import { api } from "../api";
 
@@ -53,10 +53,10 @@ export default function ReportsPage() {
 
   const bindingRateNumber = Number.parseFloat(String(report?.statistics.binding_rate ?? "0")) || 0;
 
-  const [exporting, setExporting] = useState<"pdf" | "excel" | "package" | null>(null);
+  const [exporting, setExporting] = useState<"pdf" | "excel" | "html" | "package" | null>(null);
 
   const handleExport = useCallback(
-    async (format: "pdf" | "excel") => {
+    async (format: "pdf" | "excel" | "html") => {
       if (!projectId) {
         message.warning("请先选择项目");
         return;
@@ -64,11 +64,11 @@ export default function ReportsPage() {
       setExporting(format);
       try {
         const blob = await api.exportReport(projectId, format);
-        const ext = format === "excel" ? "xlsx" : "pdf";
+        const ext = format === "excel" ? "xlsx" : format === "html" ? "html" : "pdf";
         const name = report?.project?.name ?? `project-${projectId}`;
-        const prefix = format === "excel" ? "valuation_report" : "tender_package";
+        const prefix = format === "excel" ? "valuation_report" : format === "html" ? "cost_project_report" : "tender_package";
         downloadBlob(blob, `${prefix}_${name}_${projectId}.${ext}`);
-        message.success(`已导出${format === "excel" ? " Excel" : " PDF"} 成果报表`);
+        message.success(`已导出${format === "excel" ? " Excel" : format === "html" ? " HTML" : " PDF"} 成果报表`);
       } catch (err) {
         message.error(err instanceof Error ? err.message : "导出报表失败");
       } finally {
@@ -156,6 +156,9 @@ export default function ReportsPage() {
             </Button>
             <Button size="small" icon={<FileExcelOutlined />} loading={exporting === "excel"} disabled={!projectId} onClick={() => void handleExport("excel")}>
               导出 Excel
+            </Button>
+            <Button size="small" icon={<FileTextOutlined />} loading={exporting === "html"} disabled={!projectId} onClick={() => void handleExport("html")}>
+              导出 HTML
             </Button>
             <Button size="small" icon={<FileZipOutlined />} loading={exporting === "package"} disabled={!projectId} onClick={() => void handleExportPackage()}>
               导出清单包

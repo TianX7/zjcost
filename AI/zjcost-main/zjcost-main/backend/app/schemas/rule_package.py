@@ -8,6 +8,7 @@ class RulePackageCreate(BaseModel):
     profit_rate: float = 0.05
     regulatory_rate: float = 0.03
     tax_rate: float = 0.09
+    regulatory_base: str = "direct"
     rounding_rule: str = "ROUND_HALF_UP"
     version: str = "1.0"
 
@@ -20,6 +21,7 @@ class RulePackageOut(BaseModel):
     profit_rate: float
     regulatory_rate: float
     tax_rate: float
+    regulatory_base: str
     rounding_rule: str
     version: str
 

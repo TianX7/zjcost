@@ -12,10 +12,11 @@ import {
   Table,
   Tag,
   Tooltip,
+  Upload,
   message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { CalculatorOutlined, DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { CalculatorOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, ExportOutlined, FileExcelOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import {
   type LossEstimateResponse,
   type OldMaterialAcquisitionMethod,
@@ -23,6 +24,15 @@ import {
   type OldMaterialStatsResponse,
   api,
 } from "../api";
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 // 获取方式标签映射
 const ACQUISITION_METHOD_META: Record<
@@ -37,6 +47,210 @@ function methodTag(method: OldMaterialAcquisitionMethod) {
   const meta = ACQUISITION_METHOD_META[method];
   if (!meta) return <Tag>{method}</Tag>;
   return <Tag color={meta.color}>{meta.label}</Tag>;
+}
+
+function fmtNum(value: number | undefined | null, digits = 2) {
+  if (value == null || Number.isNaN(value)) return "-";
+  return Number(value).toFixed(digits);
+}
+
+// 旧材料定额展开溯源面板：三级价格构成（回收 / 加工 / 运输）+ 可溯出处与检测信息
+function OldMaterialDetailPanel({ record }: { record: OldMaterialDTO }) {
+  const r = Number(record.recycle_price ?? 0);
+  const p = Number(record.process_price ?? 0);
+  const t = Number(record.transport_price ?? 0);
+  const clean = Number(record.clean_price ?? 0);
+  const cut = Number(record.cut_price ?? 0);
+  const polish = Number(record.polish_price ?? 0);
+  const drill = Number(record.drill_price ?? 0);
+  const hasProcessDetail = clean > 0 || cut > 0 || polish > 0 || drill > 0;
+
+  return (
+    <div className="quota-detail-panel">
+      <div className="quota-detail-row">
+        <div className="quota-detail-item">
+          <span className="material-symbols-outlined">engineering</span>
+          <div>
+            <span className="quota-detail-label">人工消耗</span>
+            <strong>{fmtNum(record.labor_qty)}</strong>
+          </div>
+        </div>
+        <div className="quota-detail-item">
+          <span className="material-symbols-outlined">inventory</span>
+          <div>
+            <span className="quota-detail-label">材料消耗</span>
+            <strong>{fmtNum(record.material_qty)}</strong>
+          </div>
+        </div>
+        <div className="quota-detail-item">
+          <span className="material-symbols-outlined">precision_manufacturing</span>
+          <div>
+            <span className="quota-detail-label">机械消耗</span>
+            <strong>{fmtNum(record.machine_qty)}</strong>
+          </div>
+        </div>
+        <div className="quota-detail-item">
+          <span className="material-symbols-outlined">payments</span>
+          <div>
+            <span className="quota-detail-label">综合单价</span>
+            <strong>{record.base_price == null ? "-" : `¥${record.base_price.toFixed(2)}`}</strong>
+          </div>
+        </div>
+      </div>
+
+      {/* 三级价格溯源：回收 + 加工 + 运输 */}
+      <div className="quota-detail-row" style={{ marginTop: 8, flexWrap: "wrap", gap: 12 }}>
+        <div className="quota-detail-item">
+          <span className="material-symbols-outlined">home_work</span>
+          <div>
+            <span className="quota-detail-label">回收价格</span>
+            <strong>¥{fmtNum(r, 2)}</strong>
+          </div>
+        </div>
+        <div className="quota-detail-item">
+          <span className="material-symbols-outlined">handyman</span>
+          <div>
+            <span className="quota-detail-label">加工价格</span>
+            <strong>¥{fmtNum(p, 2)}</strong>
+            {hasProcessDetail && (
+              <span style={{ display: "block", fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
+                清洗{fmtNum(clean, 2)} + 切割{fmtNum(cut, 2)} + 打磨{fmtNum(polish, 2)} + 钻孔{fmtNum(drill, 2)}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="quota-detail-item">
+          <span className="material-symbols-outlined">local_shipping</span>
+          <div>
+            <span className="quota-detail-label">运输价格</span>
+            <strong>¥{fmtNum(t, 2)}</strong>
+          </div>
+        </div>
+        <div className="quota-detail-item">
+          <span className="material-symbols-outlined">functions</span>
+          <div>
+            <span className="quota-detail-label">单级合计</span>
+            <strong>¥{fmtNum(r + p + t, 2)}</strong>
+          </div>
+        </div>
+        {record.transport_distance && (
+          <div className="quota-detail-item">
+            <span className="material-symbols-outlined">alt_route</span>
+            <div>
+              <span className="quota-detail-label">运输距离</span>
+              <strong>{record.transport_distance}</strong>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 出处信息：回收 / 加工 / 运输来源 */}
+      {(record.recycle_source || record.recycle_supplier || record.process_source || record.transport_source) && (
+        <div className="quota-detail-row" style={{ marginTop: 8, flexWrap: "wrap", gap: 12 }}>
+          {record.recycle_source && (
+            <div className="quota-detail-item">
+              <span className="material-symbols-outlined">source</span>
+              <div>
+                <span className="quota-detail-label">回收来源</span>
+                <strong>{record.recycle_source}</strong>
+              </div>
+            </div>
+          )}
+          {record.recycle_supplier && (
+            <div className="quota-detail-item">
+              <span className="material-symbols-outlined">storefront</span>
+              <div>
+                <span className="quota-detail-label">回收供应商</span>
+                <strong>{record.recycle_supplier}</strong>
+              </div>
+            </div>
+          )}
+          {record.process_source && (
+            <div className="quota-detail-item">
+              <span className="material-symbols-outlined">factory</span>
+              <div>
+                <span className="quota-detail-label">加工来源</span>
+                <strong>{record.process_source}</strong>
+              </div>
+            </div>
+          )}
+          {record.transport_source && (
+            <div className="quota-detail-item">
+              <span className="material-symbols-outlined">route</span>
+              <div>
+                <span className="quota-detail-label">运输来源</span>
+                <strong>{record.transport_source}</strong>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 可溯字段与检测信息 */}
+      {record.work_content && (
+        <div className="quota-detail-row" style={{ marginTop: 8 }}>
+          <div className="quota-detail-item" style={{ flexBasis: "100%" }}>
+            <span className="material-symbols-outlined">construction</span>
+            <div>
+              <span className="quota-detail-label">工作内容</span>
+              <strong>{record.work_content}</strong>
+            </div>
+          </div>
+        </div>
+      )}
+      {record.applicable_scope && (
+        <div className="quota-detail-row" style={{ marginTop: 8 }}>
+          <div className="quota-detail-item" style={{ flexBasis: "100%" }}>
+            <span className="material-symbols-outlined">my_location</span>
+            <div>
+              <span className="quota-detail-label">适用范围</span>
+              <strong>{record.applicable_scope}</strong>
+            </div>
+          </div>
+        </div>
+      )}
+      {(record.origin_note || record.batch_no || record.inspection_report_no || record.version) && (
+        <div className="quota-detail-row" style={{ marginTop: 8, flexWrap: "wrap", gap: 12 }}>
+          {record.origin_note && (
+            <div className="quota-detail-item" style={{ flexBasis: "100%" }}>
+              <span className="material-symbols-outlined">description</span>
+              <div>
+                <span className="quota-detail-label">来源说明</span>
+                <strong>{record.origin_note}</strong>
+              </div>
+            </div>
+          )}
+          {record.batch_no && (
+            <div className="quota-detail-item">
+              <span className="material-symbols-outlined">qr_code_2</span>
+              <div>
+                <span className="quota-detail-label">批次号</span>
+                <strong>{record.batch_no}</strong>
+              </div>
+            </div>
+          )}
+          {record.inspection_report_no && (
+            <div className="quota-detail-item">
+              <span className="material-symbols-outlined">fact_check</span>
+              <div>
+                <span className="quota-detail-label">检测报告</span>
+                <strong>{record.inspection_report_no}</strong>
+              </div>
+            </div>
+          )}
+          {record.version && (
+            <div className="quota-detail-item">
+              <span className="material-symbols-outlined">history</span>
+              <div>
+                <span className="quota-detail-label">版本</span>
+                <strong>{record.version}</strong>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 const RELIC_LEVEL_OPTIONS = ["国家级", "省级", "市县级", "一般文物", "未定级"];
@@ -98,6 +312,7 @@ export default function OldMaterialLibrary() {
   const modalMethod = Form.useWatch("acquisition_method", form);
   const [lossModalOpen, setLossModalOpen] = useState(false);
   const [lossResult, setLossResult] = useState<LossEstimateResponse | null>(null);
+  const [expandedKeys, setExpandedKeys] = useState<number[]>([]);
   const [lossCalculating, setLossCalculating] = useState(false);
   const [lossForm] = Form.useForm();
   // 大屏演示：AI 损耗预测结果（旧砖演示场景，与汇报话术 9.5% 一致）
@@ -144,15 +359,15 @@ export default function OldMaterialLibrary() {
       .catch(() => setDemoItem(null));
   }, []);
 
-  // 大屏演示：AI 损耗预测（旧砖 · 西北荒漠基准 · 遗址现场拆除回收 · 简易苫盖 · 人工拆砌 · 短途运输）
+  // 大屏演示：AI 损耗预测（其他 · 华北平原 · 旧料市场采购 · 室内仓储 · 人工拆砌 · 短途运输 10km）
   useEffect(() => {
     api
       .estimateOldMaterialLoss({
-        material_type: "old_brick",
-        region: "northwest_desert",
-        material_source: "site_salvage",
-        storage_condition: "shelter",
-        transport_distance_km: 20,
+        material_type: "other",
+        region: "north_plain",
+        material_source: "market",
+        storage_condition: "indoor",
+        transport_distance_km: 10,
         construction_method: "manual",
       })
       .then(setLossDemoResult)
@@ -263,14 +478,52 @@ export default function OldMaterialLibrary() {
     setLossResult(null);
     lossForm.resetFields();
     lossForm.setFieldsValue({
-      material_type: "old_brick",
-      region: "northwest_desert",
-      material_source: "site_salvage",
-      storage_condition: "shelter",
-      transport_distance_km: 20,
+      material_type: "other",
+      region: "north_plain",
+      material_source: "market",
+      storage_condition: "indoor",
+      transport_distance_km: 10,
       construction_method: "manual",
     });
     setLossModalOpen(true);
+  };
+
+  // 导出定额：Sheet1 对齐 2020 土建+安装定额 11 列模板，Sheet2 对标北京市《建设工程
+  // 施工消耗量标准》DB11/T 2382-2024 的人工/材料/机具消耗量，筛选条件与列表一致
+  const [exporting, setExporting] = useState(false);
+  const handleExportQuota = async () => {
+    setExporting(true);
+    try {
+      const blob = await api.exportOldMaterials({
+        keyword: debouncedKeyword || undefined,
+        acquisition_method: acquisitionMethod,
+        heritage_site: heritageSite || undefined,
+      });
+      downloadBlob(blob, "遗址修复旧材料补充定额.xlsx");
+      message.success("定额导出成功");
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "导出定额失败");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // 导入旧材料定额 Excel：上传后按 (编码) upsert，完成刷新表格与统计
+  const [importing, setImporting] = useState(false);
+  const handleImportExcel = async (file: File) => {
+    setImporting(true);
+    try {
+      const result = await api.importOldMaterials(file);
+      message.success(
+        `导入完成：新增 ${result.created} 条，更新 ${result.updated} 条，跳过 ${result.skipped} 条`,
+      );
+      await load();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "导入失败");
+    } finally {
+      setImporting(false);
+    }
+    return false;
   };
 
   const handleLossEstimate = async () => {
@@ -645,6 +898,35 @@ export default function OldMaterialLibrary() {
         <Button icon={<ReloadOutlined />} loading={loading} onClick={load}>
           刷新
         </Button>
+        <Button icon={<DownloadOutlined />} loading={exporting} onClick={handleExportQuota}>
+          导出定额
+        </Button>
+        <Button
+          icon={<ExportOutlined />}
+          loading={exporting}
+          onClick={() => {
+            setExporting(true);
+            api
+              .exportOldMaterials({})
+              .then((blob) => {
+                downloadBlob(blob, "旧材料定额库.xlsx");
+                message.success("旧材料定额库导出成功");
+              })
+              .catch((err) => {
+                message.error(err instanceof Error ? err.message : "导出旧材料定额库失败");
+              })
+              .finally(() => setExporting(false));
+          }}
+        >
+          旧材定额库导出
+        </Button>
+        <Upload
+          accept=".xlsx"
+          showUploadList={false}
+          beforeUpload={handleImportExcel}
+        >
+          <Button icon={<FileExcelOutlined />} loading={importing}>导入Excel</Button>
+        </Upload>
         <Button icon={<CalculatorOutlined />} onClick={openLossEstimate}>
           AI损耗预测
         </Button>
@@ -673,6 +955,22 @@ export default function OldMaterialLibrary() {
             loading={loading}
             scroll={{ x: 1750 }}
             pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `共 ${t} 条${items.length >= OML_LIST_LIMIT ? `（仅加载前 ${OML_LIST_LIMIT} 条）` : ""}` }}
+            onRow={(record) => ({
+              onClick: (event) => {
+                if ((event.target as HTMLElement).closest(".ant-table-row-expand-icon")) return;
+                setExpandedKeys((keys) =>
+                  keys.includes(record.id)
+                    ? keys.filter((k) => k !== record.id)
+                    : [...keys, record.id]
+                );
+              },
+            })}
+            expandable={{
+              expandedRowRender: (record) => <OldMaterialDetailPanel record={record} />,
+              rowExpandable: () => true,
+              expandedRowKeys: expandedKeys,
+              onExpandedRowsChange: (rows) => setExpandedKeys(rows as number[]),
+            }}
             locale={{
               emptyText: (
                 <Empty description="未找到旧材料定额，可点击「新增旧材料」添加">

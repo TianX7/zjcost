@@ -214,7 +214,9 @@ def test_calculate_supports_multi_quota_composition_with_coefficient(client, db)
     calc = client.post(f"/api/projects/{pid}/calculate").json()
     line = calc["line_results"][0]
     assert line["direct_cost"] == 20.0
-    assert line["total"] == 25.29
+    # 默认费率（北京口径）：管理12% 利润7% 规费19.76%(base=人工费) 税9%
+    # direct20: mngt=2.40 profit=1.40 reg=10*0.1976=1.98 pretax=25.78 tax=2.32 total=28.10
+    assert line["total"] == 28.10
 
 
 def test_provenance_contains_unit_price_and_breakdown(client, db):

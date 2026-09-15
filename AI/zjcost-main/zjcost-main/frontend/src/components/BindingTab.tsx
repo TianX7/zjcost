@@ -261,6 +261,15 @@ export default function BindingTab({ projectId }: Props) {
         pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `共 ${total} 项` }}
         rowClassName={(row) => (row.bound ? "" : "ant-table-row-warning")}
         scroll={{ x: 860 }}
+        onRow={(row) => ({
+          onClick: () => {
+            if (!row.bound) {
+              message.info("该清单项尚未绑定定额，点击任意行内的「选择定额」完成绑定后可查看溯源");
+              return;
+            }
+            void openProvenance(row.id);
+          },
+        })}
       />
 
       <Modal

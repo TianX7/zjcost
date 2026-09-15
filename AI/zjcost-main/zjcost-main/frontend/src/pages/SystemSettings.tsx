@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Button, Empty, Form, Input, InputNumber, Modal, Select, Table, Tabs, Tag, message } from "antd";
+import { Button, Empty, Form, Input, InputNumber, Modal, Popconfirm, Select, Table, Tabs, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { CalculatorOutlined, CheckCircleOutlined, CloudSyncOutlined, DesktopOutlined, PlusOutlined, ReloadOutlined, SafetyOutlined } from "@ant-design/icons";
+import { CalculatorOutlined, CheckCircleOutlined, CloudSyncOutlined, DeleteOutlined, DesktopOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SafetyOutlined } from "@ant-design/icons";
 import type { PriceSourceInfo, Project, RulePackage, RulePackageCreate, SystemCheckItem } from "../api";
 import { api } from "../api";
 import PageHeader from "../components/PageHeader";
@@ -29,6 +29,7 @@ export default function SystemSettings() {
   const [rulesLoading, setRulesLoading] = useState(false);
   const [ruleModalOpen, setRuleModalOpen] = useState(false);
   const [submittingRule, setSubmittingRule] = useState(false);
+  const [editingRule, setEditingRule] = useState<RulePackage | null>(null);
   const [bindLoadingId, setBindLoadingId] = useState<number | null>(null);
   const [bindSelection, setBindSelection] = useState<Record<number, number>>({});
   const [ruleForm] = Form.useForm<RulePackageCreate>();
@@ -71,19 +72,57 @@ export default function SystemSettings() {
     void loadRules();
   }, [loadRules]);
 
-  const createRule = async () => {
+  const openCreateRule = () => {
+    setEditingRule(null);
+    ruleForm.resetFields();
+    ruleForm.setFieldsValue({ region: "全国", management_rate: 0.08, profit_rate: 0.05, regulatory_rate: 0.03, tax_rate: 0.09, rounding_rule: "ROUND_HALF_UP", version: "1.0" });
+    setRuleModalOpen(true);
+  };
+
+  const openEditRule = (record: RulePackage) => {
+    setEditingRule(record);
+    ruleForm.setFieldsValue({
+      name: record.name,
+      region: record.region || "全国",
+      management_rate: record.management_rate,
+      profit_rate: record.profit_rate,
+      regulatory_rate: record.regulatory_rate,
+      tax_rate: record.tax_rate,
+      rounding_rule: record.rounding_rule,
+      version: record.version,
+    });
+    setRuleModalOpen(true);
+  };
+
+  const saveRule = async () => {
     try {
       const values = await ruleForm.validateFields();
       setSubmittingRule(true);
-      await api.createRulePackage(values);
-      message.success(`规则包「${values.name}」已创建`);
+      if (editingRule) {
+        await api.updateRulePackage(editingRule.id, values);
+        message.success(`规则包「${values.name}」已更新`);
+      } else {
+        await api.createRulePackage(values);
+        message.success(`规则包「${values.name}」已创建`);
+      }
       ruleForm.resetFields();
       setRuleModalOpen(false);
+      setEditingRule(null);
       await loadRules();
     } catch (err) {
       if (err instanceof Error) message.error(err.message);
     } finally {
       setSubmittingRule(false);
+    }
+  };
+
+  const deleteRule = async (record: RulePackage) => {
+    try {
+      const res = await api.deleteRulePackage(record.id);
+      message.success(res.message || "规则包已删除");
+      await loadRules();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "删除规则包失败");
     }
   };
 
@@ -190,7 +229,7 @@ export default function SystemSettings() {
                     <h3 className="content-card-title"><span className="material-symbols-outlined">tune</span>规则包</h3>
                     <div style={{ display: "flex", gap: 8 }}>
                       <Button icon={<ReloadOutlined />} loading={rulesLoading} onClick={loadRules}>刷新</Button>
-                      <Button type="primary" icon={<PlusOutlined />} onClick={() => setRuleModalOpen(true)}>新建规则包</Button>
+                      <Button type="primary" icon={<PlusOutlined />} onClick={openCreateRule}>新建规则包</Button>
                     </div>
                   </div>
                   <div className="content-card-body flush">
@@ -217,6 +256,26 @@ export default function SystemSettings() {
                           align: "center",
                           render: (_: unknown, row) => (
                             <Tag color={(ruleUsage.get(row.id) ?? 0) > 0 ? "green" : "default"}>{ruleUsage.get(row.id) ?? 0} 个</Tag>
+                          ),
+                        },
+                        {
+                          title: "操作",
+                          key: "actions",
+                          width: 110,
+                          render: (_: unknown, row) => (
+                            <span style={{ display: "inline-flex", gap: 6 }}>
+                              <Button size="small" icon={<EditOutlined />} onClick={() => openEditRule(row)}>编辑</Button>
+                              <Popconfirm
+                                title="删除规则包"
+                                description={(ruleUsage.get(row.id) ?? 0) > 0 ? `该包已被 ${ruleUsage.get(row.id)} 个项目绑定，删除后将解绑并回默认费率。` : "确认删除该规则包？"}
+                                okText="删除"
+                                cancelText="取消"
+                                okButtonProps={{ danger: true }}
+                                onConfirm={() => deleteRule(row)}
+                              >
+                                <Button size="small" danger icon={<DeleteOutlined />} />
+                              </Popconfirm>
+                            </span>
                           ),
                         },
                       ]}
@@ -384,14 +443,14 @@ export default function SystemSettings() {
         ]}
       />
 
-      {/* 新建规则包 */}
+      {/* 新建 / 编辑规则包 */}
       <Modal
-        title="新建计费规则包"
+        title={editingRule ? `编辑规则包 · ${editingRule.name}` : "新建计费规则包"}
         open={ruleModalOpen}
-        onCancel={() => setRuleModalOpen(false)}
-        onOk={createRule}
+        onCancel={() => { setEditingRule(null); setRuleModalOpen(false); }}
+        onOk={saveRule}
         confirmLoading={submittingRule}
-        okText="创建"
+        okText={editingRule ? "保存" : "创建"}
         cancelText="取消"
         destroyOnClose
       >

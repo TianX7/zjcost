@@ -106,8 +106,12 @@ def update_boq_item(
     if not row:
         raise HTTPException(status_code=404, detail="BOQ item not found")
 
-    before = {"name": row.name, "characteristics": row.characteristics, "unit": row.unit, "quantity": row.quantity, "division": row.division}
+    before = {"code": row.code, "name": row.name, "characteristics": row.characteristics, "unit": row.unit, "quantity": row.quantity, "division": row.division}
 
+    if payload.code is not None:
+        row.code = payload.code
+        # 编码变更意味着归集口径变化，旧计价结果作废，需重新计价
+        db.query(CalcResult).filter(CalcResult.boq_item_id == row.id).delete()
     if payload.name is not None:
         row.name = payload.name
     if payload.characteristics is not None:
@@ -137,7 +141,7 @@ def update_boq_item(
     db.commit()
     db.refresh(row)
 
-    after = {"name": row.name, "characteristics": row.characteristics, "unit": row.unit, "quantity": row.quantity, "division": row.division}
+    after = {"code": row.code, "name": row.name, "characteristics": row.characteristics, "unit": row.unit, "quantity": row.quantity, "division": row.division}
     write_audit_log(
         db=db, project_id=project_id,
         action="update_boq_item", resource_type="boq_item", resource_id=row.id,

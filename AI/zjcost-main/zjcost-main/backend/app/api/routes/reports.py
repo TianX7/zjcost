@@ -227,10 +227,10 @@ def get_report(
 @router.get("/projects/{project_id}/report/export")
 def export_report(
     project_id: int,
-    format: str = Query("pdf", description="Export format: pdf or excel"),
+    format: str = Query("pdf", description="Export format: pdf, excel or html"),
     db: Session = Depends(get_db),
 ):
-    """Export a valuation report as PDF or Excel."""
+    """Export a valuation report as PDF, Excel or HTML."""
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -253,6 +253,16 @@ def export_report(
         return StreamingResponse(
             io.BytesIO(file_bytes),
             media_type="application/pdf",
+            headers={"Content-Disposition": build_attachment_disposition(filename)},
+        )
+    elif format == "html":
+        from app.services.report_export_service import export_valuation_report_html
+        file_bytes = export_valuation_report_html(project_id=project_id, db=db)
+        safe_name = _sanitize_filename(project.name)
+        filename = f"cost_project_report_{safe_name}_{project_id}.html"
+        return StreamingResponse(
+            io.BytesIO(file_bytes),
+            media_type="text/html; charset=utf-8",
             headers={"Content-Disposition": build_attachment_disposition(filename)},
         )
     else:

@@ -22,7 +22,7 @@ const MODEL_SCENE_TITLE = "田维东2 · 自动构建模型";
 
 const MIN_DRAWING_SCALE = 0.6;
 const MAX_DRAWING_SCALE = 10;
-const CAD_EMBED_START_TIMEOUT_MS = 15000;
+const CAD_EMBED_START_TIMEOUT_MS = 25000;
 const CAD_EMBED_STATUS_INTERVAL_MS = 2000;
 
 function clampDrawingScale(value: number) {
@@ -596,17 +596,37 @@ export default function DrawingRecognition() {
       }
       const w = right - left, h = bottom - top;
       if (w < 100 || h < 100) return null;
-      // CSS 视口坐标 → 物理屏幕坐标（页面缩放 100% 时精确）
+      // CSS 视口坐标 → 物理屏幕坐标：
+      // window.screenX/screenY 已是物理像素（相对扩展桌面原点），
+      // getBoundingClientRect 返回 CSS（逻辑）像素，需乘 dpr 转物理像素。
+      // 不能把 screenX 也乘 dpr——多显示器 DPI 不一致时（主屏 4K/副屏 1080p）
+      // 会放大错位，导致窗口不落在副屏目标位置。
+      // CSS 视口坐标 → 物理屏幕坐标：
+      // window.screenX/screenY 与 getBoundingClientRect 同为 CSS（逻辑）像素，
+      // 屏幕坐标空间定义在 DIP，物理像素 = DIP × devicePixelRatio，
+      // 因此 screenX + 视口内偏移 直接相加后整体乘 dpr 即得物理坐标。
       const dpr = window.devicePixelRatio || 1;
       const cx = window.screenX + (window.outerWidth - window.innerWidth) / 2;
       const cy = window.screenY + (window.outerHeight - window.innerHeight);
+      // 存在可见的 antd Modal（重挂定额/新增构件弹窗等）：原生 CAD 窗无法被
+      // DOM 压住，此时整体让出，避免遮挡居中弹窗的交互
+      const hasVisibleModal = Array.from(
+        document.querySelectorAll(".ant-modal-wrap"),
+      ).some((el) => {
+        if ((el as HTMLElement).style.display === "none") return false;
+        const modalEl = el.querySelector<HTMLElement>(".ant-modal");
+        return !!modalEl && modalEl.offsetWidth > 0 && modalEl.offsetHeight > 0;
+      });
       return {
         x: Math.round((cx + left) * dpr),
         y: Math.round((cy + top) * dpr),
         w: Math.round(w * dpr),
         h: Math.round(h * dpr),
         // 切到 3D 模型视图/标签页隐藏时暂停显示（ref 读最新值，坐标流不断）
-        visible: !document.hidden && modelViewRef.current === "drawing",
+        visible:
+          !document.hidden &&
+          modelViewRef.current === "drawing" &&
+          !hasVisibleModal,
         // 页面是否持有焦点：看图窗获得焦点时为 false（此时由查看器按
         // 前台窗口判定保持显示）；切到其他软件时为 false → 看图窗跟随隐藏
         pf: document.hasFocus(),
@@ -691,6 +711,17 @@ export default function DrawingRecognition() {
     window.addEventListener("blur", onBlur);
     window.addEventListener("resize", tick);
     window.addEventListener("scroll", tick, true);
+    // 窗口被拖到不同 DPI 的副屏时 devicePixelRatio 会变化：显式监听
+    // （MDN 推荐），否则 dpr 变了但无 resize/scroll 事件，坐标换算失真
+    const mq = window.matchMedia(
+      `(resolution: ${window.devicePixelRatio}dppx)`,
+    );
+    const onMq = () => { tick(); };
+    mq.addEventListener?.("change", onMq);
+    // 浏览器直接关闭/刷新时，React unmount 不保证执行，用 pagehide + keepalive fetch
+    // 立即通知后端删除坐标文件，cad_viewer 轮询到后毫秒级隐藏看图窗口
+    const onPageHide = () => { api.stopCadEmbedKeepalive(taskId); };
+    window.addEventListener("pagehide", onPageHide);
     return () => {
       alive = false;
       clearInterval(iv);
@@ -699,6 +730,8 @@ export default function DrawingRecognition() {
       window.removeEventListener("blur", onBlur);
       window.removeEventListener("resize", tick);
       window.removeEventListener("scroll", tick, true);
+      mq.removeEventListener?.("change", onMq);
+      window.removeEventListener("pagehide", onPageHide);
       api.stopCadEmbed(taskId).catch(() => {});
     };
   }, [cadEmbed, taskId]);

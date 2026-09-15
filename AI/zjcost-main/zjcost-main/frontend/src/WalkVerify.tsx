@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Button, ConfigProvider, Progress, Space, Tag, Typography, message, theme } from "antd";
-import { ArrowLeftOutlined, CloudUploadOutlined, HomeOutlined, ReloadOutlined } from "@ant-design/icons";
-import { api, type IfcElement, type IfcTaskStatus } from "./api";
+import { Button, ConfigProvider, Input, Progress, Space, Tag, Typography, message, theme } from "antd";
+import { ArrowLeftOutlined, CheckCircleOutlined, CloudUploadOutlined, DeleteOutlined, HistoryOutlined, HomeOutlined, ReloadOutlined, WarningOutlined } from "@ant-design/icons";
+import { api, type IfcElement, type IfcTaskStatus, type WalkReviewRecord } from "./api";
 import Ifc3DViewer, { type Element3D } from "./components/Ifc3DViewer";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 
@@ -520,6 +520,13 @@ export default function WalkVerify() {
   const attemptsRef = useRef(0);
   const loadAbortRef = useRef<AbortController | null>(null);
 
+  // 复核结论留痕：结论（通过 / 待整改）、整改说明、历史记录
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewResult, setReviewResult] = useState<"passed" | "needs_fix">("passed");
+  const [reviewNote, setReviewNote] = useState("");
+  const [reviewHistory, setReviewHistory] = useState<WalkReviewRecord[]>([]);
+  const [savingReview, setSavingReview] = useState(false);
+
   // 真实加载进度：按 fetch 流式下载字节数 / 解析 / 构建三个阶段推进
   const loadModel = useCallback(async () => {
     loadAbortRef.current?.abort();
@@ -681,6 +688,45 @@ export default function WalkVerify() {
     }, 220);
   }, [navigate, exiting]);
 
+  const loadReviews = useCallback(async () => {
+    try {
+      const res = await api.listWalkReviews(20);
+      setReviewHistory(res.items);
+    } catch { setReviewHistory([]); }
+  }, []);
+
+  useEffect(() => { void loadReviews(); }, [loadReviews]);
+
+  const saveReview = useCallback(async () => {
+    setSavingReview(true);
+    try {
+      await api.createWalkReview({
+        scene_title: sceneTitle,
+        element_count: sceneElements.length,
+        result: reviewResult,
+        note: reviewNote,
+      });
+      message.success(reviewResult === "passed" ? "复核结论已保存：核查通过" : "复核结论已保存：待整改");
+      setReviewOpen(false);
+      setReviewNote("");
+      await loadReviews();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "保存复核结论失败");
+    } finally {
+      setSavingReview(false);
+    }
+  }, [sceneTitle, sceneElements.length, reviewResult, reviewNote, loadReviews]);
+
+  const deleteReview = useCallback(async (review: WalkReviewRecord) => {
+    try {
+      await api.deleteWalkReview(review.id);
+      message.success(`复核记录 #${review.id} 已删除`);
+      setReviewHistory((prev) => prev.filter((r) => r.id !== review.id));
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "删除复核记录失败");
+    }
+  }, []);
+
   return (
     <ConfigProvider
       theme={{
@@ -811,6 +857,99 @@ export default function WalkVerify() {
                   </Typography.Text>
                 )}
               </Space>
+            )}
+          </div>
+
+          {/* 复核结论浮层 — 右下角 */}
+          <div className="walk-review-fab" style={{
+            position: "absolute", right: 14, bottom: 14, zIndex: 30,
+            display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end",
+          }}>
+            <Button type="primary" icon={<HistoryOutlined />} onClick={() => setReviewOpen((v) => !v)}>
+              复核结论
+            </Button>
+            {reviewOpen && (
+              <div style={{
+                width: 320, maxHeight: "60vh", overflow: "auto",
+                background: "rgba(13, 31, 60, 0.94)", borderRadius: 10,
+                border: "1px solid rgba(80, 160, 255, 0.28)",
+                boxShadow: "0 12px 32px rgba(0, 0, 0, 0.45)",
+                padding: "14px 14px 12px",
+              }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0", marginBottom: 10 }}>
+                  保存复核结论
+                  <span style={{ float: "right", fontSize: 11, color: "#64748b", fontWeight: 400 }}>
+                    {sceneElements.length} 构件 · {sceneTitle}
+                  </span>
+                </div>
+                <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                  <Button
+                    size="small"
+                    type={reviewResult === "passed" ? "primary" : "default"}
+                    style={reviewResult === "passed" ? { background: "#22c55e", borderColor: "#22c55e" } : undefined}
+                    icon={<CheckCircleOutlined />}
+                    onClick={() => setReviewResult("passed")}
+                  >
+                    核查通过
+                  </Button>
+                  <Button
+                    size="small"
+                    type={reviewResult === "needs_fix" ? "primary" : "default"}
+                    style={reviewResult === "needs_fix" ? { background: "#f59e0b", borderColor: "#f59e0b" } : undefined}
+                    danger={reviewResult === "needs_fix"}
+                    icon={<WarningOutlined />}
+                    onClick={() => setReviewResult("needs_fix")}
+                  >
+                    待整改
+                  </Button>
+                </div>
+                <Input.TextArea
+                  rows={3}
+                  value={reviewNote}
+                  onChange={(e) => setReviewNote(e.target.value)}
+                  placeholder="输入复核意见 / 整改说明（留痕）"
+                  style={{ marginBottom: 10, background: "rgba(15,23,42,0.6)", color: "#e2e8f0", borderColor: "rgba(80,160,255,0.25)" }}
+                />
+                <Button type="primary" block loading={savingReview} onClick={() => { void saveReview(); }}>
+                  保存结论
+                </Button>
+
+                <div style={{ marginTop: 12, borderTop: "1px solid rgba(80,160,255,0.15)", paddingTop: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: 14, color: "#64748b" }}>history</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "#94a3b8" }}>近期复核留痕 {reviewHistory.length} 条</span>
+                  </div>
+                  {reviewHistory.length === 0 ? (
+                    <div style={{ fontSize: 11, color: "#64748b", padding: "6px 0" }}>暂无留痕记录</div>
+                  ) : (
+                    reviewHistory.map((r) => (
+                      <div key={r.id} style={{
+                        display: "flex", alignItems: "flex-start", gap: 6,
+                        padding: "6px 0", borderBottom: "1px solid rgba(80,160,255,0.1)",
+                      }}>
+                        <Tag color={r.result === "passed" ? "green" : "orange"} style={{ margin: 0, flexShrink: 0 }}>
+                          {r.result === "passed" ? "通过" : "待整改"}
+                        </Tag>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 11, color: "#cbd5e1", lineHeight: 1.5 }}>
+                            {r.scene_title || `复核 #${r.id}`}
+                            {r.element_count > 0 && <span style={{ color: "#64748b" }}> · {r.element_count} 构件</span>}
+                          </div>
+                          {r.note && <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5 }}>{r.note}</div>}
+                          <div style={{ fontSize: 10, color: "#64748b", marginTop: 2 }}>{r.created_at}</div>
+                        </div>
+                        <Button
+                          size="small"
+                          type="text"
+                          icon={<DeleteOutlined />}
+                          style={{ color: "#64748b", flexShrink: 0 }}
+                          onClick={() => { void deleteReview(r); }}
+                        />
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
             )}
           </div>
 

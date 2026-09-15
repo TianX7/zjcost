@@ -1365,6 +1365,42 @@
   font-size: 18px;
 }
 
+.vr-disposal-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  margin-bottom: 12px;
+  border-radius: 8px;
+  background: rgba(77, 212, 255, 0.08);
+  border: 1px solid rgba(77, 212, 255, 0.2);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.vr-disposal-hint .material-symbols-outlined {
+  font-size: 16px;
+  color: #4dd4ff;
+}
+
+.vr-table-wrap .ant-table {
+  background: transparent;
+}
+
+.vr-table-wrap .ant-table-thead > tr > th {
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+.vr-table-wrap .ant-table-tbody > tr > td {
+  border-bottom: 1px solid rgba(80, 160, 255, 0.08);
+}
+
+.vr-table-wrap .ant-table-tbody > tr:hover > td {
+  background: rgba(61, 139, 255, 0.08);
+}
+
 .vr-table-wrap {
   border-radius: 12px;
   overflow: hidden;

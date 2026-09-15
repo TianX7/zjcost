@@ -426,6 +426,11 @@ export default function PricingManagement() {
                 scroll={{ x: 1100 }}
                 pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }}
                 columns={gbColumns}
+                onRow={(row) => ({
+                  onClick: () => {
+                    if (row.boqItemId != null) showProvenance(row.boqItemId);
+                  },
+                })}
                 locale={{
                   emptyText: (
                     <Empty description={projectId ? "当前项目暂无计价明细。请先完成清单和定额绑定，再执行计价。" : "请先选择项目。"}>
@@ -445,6 +450,9 @@ export default function PricingManagement() {
                 scroll={{ x: 1120 }}
                 pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }}
                 columns={columns}
+                onRow={(row) => ({
+                  onClick: () => showProvenance(row.boq_item_id),
+                })}
                 locale={{
                   emptyText: (
                     <Empty description={projectId ? "当前项目暂无计价明细。请先完成清单和定额绑定，再执行计价。" : "请先选择项目。"}>

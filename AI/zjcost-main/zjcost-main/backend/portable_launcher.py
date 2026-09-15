@@ -436,6 +436,9 @@ def _open_desktop_window(url: str, app_dir: Path, *, track: bool = True) -> subp
                     # 应用崩溃重启后不再弹"恢复页面？"气泡
                     "--disable-session-crashed-bubble",
                     "--hide-crash-restore-bubble",
+                    # 禁用账户同步弹窗（Edge/Chrome 登录/同步提示）
+                    "--disable-features=ChromeSigninClient,SigninIntercept",
+                    "--disable-sync",
                 ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -604,6 +607,50 @@ def _write_launcher_event(app_dir: Path, event: str, **payload: object) -> None:
             fh.write(json.dumps(record, ensure_ascii=False) + "\n")
     except Exception:
         pass
+
+
+WINDOW_CLOSE_GRACE_SECONDS = 6.0
+_WINDOW_CLOSE_CANCEL_REQUESTED = threading.Event()
+_WINDOW_CLOSE_REQUESTED_AT: float | None = None
+
+
+def _apply_server_exit() -> None:
+    server = globals().get("_SERVER")
+    if server is not None:
+        try:
+            server.should_exit = True
+            return
+        except Exception:
+            pass
+    os._exit(0)
+
+
+def request_window_close() -> None:
+    """前端页面卸载通知：等待一个宽限期，若期间未被 cancel 则优雅退出。
+
+    `--app` 模式下 Edge 启动器进程会立即退出并被判定为 delegated，导致
+    关闭浏览器窗口后主进程无法感知。这里由前端在 pagehide 时显式通知。
+    """
+    global _WINDOW_CLOSE_REQUESTED_AT
+    if _env_enabled("ZJCOST_KEEP_SERVER_ON_WINDOW_CLOSE"):
+        return
+    now = time.monotonic()
+    _WINDOW_CLOSE_REQUESTED_AT = now
+    _WINDOW_CLOSE_CANCEL_REQUESTED.clear()
+
+    def _delayed_exit() -> None:
+        while time.monotonic() - now < WINDOW_CLOSE_GRACE_SECONDS:
+            if _WINDOW_CLOSE_CANCEL_REQUESTED.is_set():
+                return
+            time.sleep(0.1)
+        _apply_server_exit()
+
+    threading.Thread(target=_delayed_exit, daemon=True).start()
+
+
+def cancel_window_close() -> None:
+    """页面刷新（重新加载）时调用，取消待执行的窗口关闭退出。"""
+    _WINDOW_CLOSE_CANCEL_REQUESTED.set()
 
 
 def _mark_running_later(app_dir: Path, port: int) -> None:

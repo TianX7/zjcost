@@ -531,8 +531,13 @@ async def _lifespan(app: FastAPI):
     mark_stale_processing_failed("ifc_parse", "服务重启导致任务中断，请重新上传 IFC 模型")
     create_backup()  # auto-backup on startup
     start_backup_timer()  # periodic backup if configured
+    from app.api.routes.drawing_recognition import start_embed_sweeper, stop_embed_sweeper
+
+    start_embed_sweeper()
 
     yield
+
+    stop_embed_sweeper()
 
 
 app.router.lifespan_context = _lifespan
@@ -566,6 +571,7 @@ PACKAGED_ROUTE_MODULES = (
     "calculate",
     "collaboration",
     "drawing_recognition",
+    "dynamic_control",
     "exports",
     "graph",
     "ifc_parse",
@@ -592,6 +598,7 @@ PACKAGED_ROUTE_MODULES = (
     "tasks",
     "validation",
     "valuation_management",
+    "walk_review",
 )
 
 
@@ -623,6 +630,43 @@ def _register_routes() -> None:
 
 
 _register_routes()
+
+
+def _portable_launcher_module():
+    """延迟导入 portable_launcher（运行时模块已完整加载，避免导入环）。"""
+    try:
+        import portable_launcher  # noqa: PLC0415
+        return portable_launcher
+    except Exception:
+        return None
+
+
+@app.post("/api/_internal/window/close", response_model=None)
+async def _internal_window_close(request: Request):
+    host = request.client.host if request.client else None
+    if not _is_loopback_client(host):
+        return JSONResponse({"ok": False}, status_code=403)
+    mod = _portable_launcher_module()
+    if mod is not None:
+        try:
+            mod.request_window_close()
+        except Exception:
+            logger.exception("request_window_close 失败")
+    return {"ok": True}
+
+
+@app.post("/api/_internal/window/cancel-close", response_model=None)
+async def _internal_window_cancel_close(request: Request):
+    host = request.client.host if request.client else None
+    if not _is_loopback_client(host):
+        return JSONResponse({"ok": False}, status_code=403)
+    mod = _portable_launcher_module()
+    if mod is not None:
+        try:
+            mod.cancel_window_close()
+        except Exception:
+            logger.exception("cancel_window_close 失败")
+    return {"ok": True}
 
 
 def _frontend_dist_dir() -> Path | None:

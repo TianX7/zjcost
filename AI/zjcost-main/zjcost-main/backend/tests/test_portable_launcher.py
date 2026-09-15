@@ -242,3 +242,24 @@ def test_multiprocessing_child_duplicate_never_reopens_window(tmp_path, monkeypa
     event_log = (data_dir / "launcher-events.log").read_text(encoding="utf-8")
     assert '"multiprocessing_child": true' in event_log
     assert '"reopened": false' in event_log
+
+
+def test_request_window_close_exits_after_grace(tmp_path, monkeypatch):
+    monkeypatch.setattr(portable_launcher, "WINDOW_CLOSE_GRACE_SECONDS", 0.15)
+    exited: list[bool] = []
+    monkeypatch.setattr(portable_launcher, "_apply_server_exit", lambda: exited.append(True))
+    portable_launcher._WINDOW_CLOSE_CANCEL_REQUESTED.clear()
+    portable_launcher.request_window_close()
+    time.sleep(0.4)
+    assert exited == [True]
+
+
+def test_request_window_close_cancelled_does_not_exit(tmp_path, monkeypatch):
+    monkeypatch.setattr(portable_launcher, "WINDOW_CLOSE_GRACE_SECONDS", 5.0)
+    exited: list[bool] = []
+    monkeypatch.setattr(portable_launcher, "_apply_server_exit", lambda: exited.append(True))
+    portable_launcher._WINDOW_CLOSE_CANCEL_REQUESTED.clear()
+    portable_launcher.request_window_close()
+    portable_launcher.cancel_window_close()
+    time.sleep(0.3)
+    assert exited == []

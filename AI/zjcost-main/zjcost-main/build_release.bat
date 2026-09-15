@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-title Öşºâ - Ò»¼ü´ò°ü·¢²¼
+title ç­‘è¡¡ - ä¸€é”®æ‰“åŒ…å‘å¸ƒ
 
 set "ROOT=%~dp0"
 set "BACKEND=%ROOT%backend"
@@ -9,20 +9,20 @@ set "TOOLS=%ROOT%tools"
 set "PORTABLE_PY=%TOOLS%\python\python.exe"
 
 echo.
-echo  ¨X¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨[
-echo  ¨U   Öşºâ (zjcost) ¡ª Ò»¼ü´ò°ü           ¨U
-echo  ¨^¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨a
+echo  â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
+echo  â•‘   ç­‘è¡¡ (zjcost) â€” ä¸€é”®æ‰“åŒ…           â•‘
+echo  â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 echo.
 
-REM ©¤©¤ 1. ²éÕÒ Python£¨Ğè´ø venv Ä£¿é£»embedded ±ãĞ¯°æÃ»ÓĞ£¬ĞëÑéÖ¤£© ©¤©¤
+REM â”€â”€ 1. æŸ¥æ‰¾ Pythonï¼ˆéœ€å¸¦ venv æ¨¡å—ï¼›embedded ä¾¿æºç‰ˆæ²¡æœ‰ï¼Œé¡»éªŒè¯ï¼‰ â”€â”€
 set "FOUND_PY="
 if exist "%PORTABLE_PY%" (
     "%PORTABLE_PY%" -c "import venv" >nul 2>&1
     if not errorlevel 1 (
         set "FOUND_PY=%PORTABLE_PY%"
-        echo  [OK] ±ãĞ¯ Python: %PORTABLE_PY%
+        echo  [OK] ä¾¿æº Python: %PORTABLE_PY%
     ) else (
-        echo  [..] ±ãĞ¯ Python Îª embedded °æ£¨ÎŞ venv Ä£¿é£©£¬¸ÄÓÃÏµÍ³ Python
+        echo  [..] ä¾¿æº Python ä¸º embedded ç‰ˆï¼ˆæ—  venv æ¨¡å—ï¼‰ï¼Œæ”¹ç”¨ç³»ç»Ÿ Python
     )
 )
 if not defined FOUND_PY (
@@ -31,33 +31,33 @@ if not defined FOUND_PY (
         python -c "import venv" >nul 2>&1
         if not errorlevel 1 (
             set "FOUND_PY=python"
-            echo  [OK] ÏµÍ³ Python
+            echo  [OK] ç³»ç»Ÿ Python
         ) else (
-            echo  [!!] ÏµÍ³ Python È±ÉÙ venv Ä£¿é
+            echo  [!!] ç³»ç»Ÿ Python ç¼ºå°‘ venv æ¨¡å—
         )
     ) else (
-        echo  [..] Î´ÕÒµ½ÏµÍ³ Python
+        echo  [..] æœªæ‰¾åˆ°ç³»ç»Ÿ Python
     )
 )
 if not defined FOUND_PY (
-    echo  [!!] Î´ÕÒµ½¿ÉÓÃµÄ Python£¨ĞèÍêÕû°æ Python 3.12+£¬embedded °æÎŞ·¨´´½¨ venv£©
-    echo      Çë°²×° Python 3.12+ ºóÖØÊÔ
+    echo  [!!] æœªæ‰¾åˆ°å¯ç”¨çš„ Pythonï¼ˆéœ€å®Œæ•´ç‰ˆ Python 3.12+ï¼Œembedded ç‰ˆæ— æ³•åˆ›å»º venvï¼‰
+    echo      è¯·å®‰è£… Python 3.12+ åé‡è¯•
     pause
     exit /b 1
 )
 
-REM ©¤©¤ 2. È·±£ venv ºÍÒÀÀµÒÑ°²×° ©¤©¤
+REM â”€â”€ 2. ç¡®ä¿ venv å’Œä¾èµ–å·²å®‰è£… â”€â”€
 if not exist "%BACKEND%\venv\Scripts\python.exe" (
-    echo  [..] ´´½¨ venv...
+    echo  [..] åˆ›å»º venv...
     "!FOUND_PY!" -m venv "%BACKEND%\venv"
 )
-echo  [..] °²×°ºó¶ËÒÀÀµ...
+echo  [..] å®‰è£…åç«¯ä¾èµ–...
 "%BACKEND%\venv\Scripts\pip.exe" install -r "%BACKEND%\requirements.txt" -q
 "%BACKEND%\venv\Scripts\pip.exe" install pyinstaller -q
 
-REM ©¤©¤ 3. ¹¹½¨Ç°¶Ë ©¤©¤
+REM â”€â”€ 3. æ„å»ºå‰ç«¯ â”€â”€
 echo.
-echo  [..] ¹¹½¨Ç°¶ËÉú²ú°æ±¾...
+echo  [..] æ„å»ºå‰ç«¯ç”Ÿäº§ç‰ˆæœ¬...
 set "FOUND_NPM="
 if exist "%TOOLS%\node\npm.cmd" (
     set "FOUND_NPM=%TOOLS%\node\npm.cmd"
@@ -72,33 +72,33 @@ if defined FOUND_NPM (
         call "!FOUND_NPM!" install
     )
     call "!FOUND_NPM!" run build
-    echo  [OK] Ç°¶Ë¹¹½¨Íê³É
+    echo  [OK] å‰ç«¯æ„å»ºå®Œæˆ
 ) else (
-    echo  [!!] Î´ÕÒµ½ npm£¬Ìø¹ıÇ°¶Ë¹¹½¨
-    echo      ÇëÈ·±£ frontend/dist/ ÒÑÊÖ¶¯¹¹½¨
+    echo  [!!] æœªæ‰¾åˆ° npmï¼Œè·³è¿‡å‰ç«¯æ„å»º
+    echo      è¯·ç¡®ä¿ frontend/dist/ å·²æ‰‹åŠ¨æ„å»º
 )
 
-REM ©¤©¤ 4. PyInstaller ´ò°ü ©¤©¤
+REM â”€â”€ 4. PyInstaller æ‰“åŒ… â”€â”€
 echo.
-echo  [..] PyInstaller ´ò°üÖĞ£¨Ô¼ 3-10 ·ÖÖÓ£©...
+echo  [..] PyInstaller æ‰“åŒ…ä¸­ï¼ˆçº¦ 3-10 åˆ†é’Ÿï¼‰...
 cd /d "%ROOT%\packaging"
 
-"%BACKEND%\venv\Scripts\pyinstaller.exe" --clean --noconfirm "Öşºâ.spec"
+"%BACKEND%\venv\Scripts\pyinstaller.exe" --clean --noconfirm "zhuheng.spec"
 if errorlevel 1 (
-    echo  [!!] PyInstaller ´ò°üÊ§°Ü
-    echo      ³£¼ûÔ­Òò£º
-    echo      1. É±¶¾Èí¼şÀ¹½Ø ¡ª Çë½«ÏîÄ¿¼ÓÈë°×Ãûµ¥
-    echo      2. È±ÉÙÒÀÀµ ¡ª ÔËĞĞ start_dev.bat ÏÈ×°ºÃÒÀÀµ
-    echo      3. Ç°¶ËÎ´¹¹½¨ ¡ª ĞèÒª frontend/dist/ Ä¿Â¼
+    echo  [!!] PyInstaller æ‰“åŒ…å¤±è´¥
+    echo      å¸¸è§åŸå› ï¼š
+    echo      1. æ€æ¯’è½¯ä»¶æ‹¦æˆª â€” è¯·å°†é¡¹ç›®åŠ å…¥ç™½åå•
+    echo      2. ç¼ºå°‘ä¾èµ– â€” è¿è¡Œ start_dev.bat å…ˆè£…å¥½ä¾èµ–
+    echo      3. å‰ç«¯æœªæ„å»º â€” éœ€è¦ frontend/dist/ ç›®å½•
     pause
     exit /b 1
 )
 
 echo.
-echo  ¨X¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨[
-echo  ¨U   ´ò°üÍê³É£¡                          ¨U
-echo  ¨U   ²ú³öÄ¿Â¼: packaging/dist/           ¨U
-echo  ¨U   ½« dist/ ÎÄ¼ş¼Ğ¿½¸øÓÃ»§¼´¿ÉÔËĞĞ      ¨U
-echo  ¨^¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨a
+echo  â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
+echo  â•‘   æ‰“åŒ…å®Œæˆï¼                          â•‘
+echo  â•‘   äº§å‡ºç›®å½•: packaging/dist/           â•‘
+echo  â•‘   å°† dist/ æ–‡ä»¶å¤¹æ‹·ç»™ç”¨æˆ·å³å¯è¿è¡Œ      â•‘
+echo  â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 echo.
 pause
