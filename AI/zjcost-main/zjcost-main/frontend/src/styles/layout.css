@@ -117,14 +117,11 @@
 }
 
 .app-sidebar-brand-icon {
-  background: rgba(20, 86, 184, 0.1);
-  padding: 8px;
-  border-radius: var(--radius);
+  display: none !important;
 }
 
 .app-sidebar-brand-icon .material-symbols-outlined {
-  font-size: 24px;
-  color: var(--primary);
+  display: none !important;
 }
 
 .app-sidebar-brand-text h1 {

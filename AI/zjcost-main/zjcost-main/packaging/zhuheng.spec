@@ -115,6 +115,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=str(SPEC_DIR / "transparent.ico"),
 )
 
 # 独立图纸查看器入口：cad_viewer.exe（后端通过 subprocess 调用，加载 CADReader 看图内核）
@@ -157,6 +158,7 @@ cad_view_exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=str(SPEC_DIR / "transparent.ico"),
 )
 
 # 独立图纸解析 worker：dxf_analysis_worker.exe（windowed，无控制台窗口），
@@ -206,6 +208,7 @@ dxf_worker_exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=str(SPEC_DIR / "transparent.ico"),
 )
 
 coll = COLLECT(

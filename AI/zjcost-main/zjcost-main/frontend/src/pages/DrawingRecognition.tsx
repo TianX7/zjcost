@@ -15,10 +15,10 @@ type DrawingResult = Awaited<ReturnType<typeof api.getDrawingResult>>;
 /** 解析会话缓存：切换页面后返回可恢复上次结果（结果过大时降级为仅存任务号，走后端取回） */
 const DR_SESSION_KEY = "zjcost.dr.lastSession";
 
-/** 演示用预置模型数据：田维东2.ifc 的构件网格预览（与 museum-complex.walk.json 同源） */
+/** 演示用预置模型数据：展馆.ifc 的构件网格预览（与 museum-complex.walk.json 同源） */
 const MODEL_JSON_URL = `${import.meta.env.BASE_URL}models/museum-complex.walk.json`;
-const MODEL_DISPLAY_NAME = "田维东2.ifc";
-const MODEL_SCENE_TITLE = "田维东2 · 自动构建模型";
+const MODEL_DISPLAY_NAME = "展馆.ifc";
+const MODEL_SCENE_TITLE = "展馆 · 自动构建模型";
 
 const MIN_DRAWING_SCALE = 0.6;
 const MAX_DRAWING_SCALE = 10;

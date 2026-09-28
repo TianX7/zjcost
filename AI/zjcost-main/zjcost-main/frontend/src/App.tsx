@@ -21,7 +21,6 @@ const PricingAudit = lazy(() => import("./pages/PricingAudit"));
 const SystemSettings = lazy(() => import("./pages/SystemSettings"));
 const OldMaterialLibrary = lazy(() => import("./pages/OldMaterialLibrary"));
 const DynamicControl = lazy(() => import("./pages/DynamicControl"));
-const InnovationHub = lazy(() => import("./pages/InnovationHub"));
 
 const NAV_ITEMS = [
   { path: "/dashboard", icon: "query_stats", label: "总控工作台" },
@@ -36,7 +35,6 @@ const NAV_ITEMS = [
   { path: "/unit-price-analysis", icon: "price_change", label: "综合单价分析" },
   { path: "/pricing-audit", icon: "calculate", label: "计价复核与审计" },
   { path: "/dynamic-control", icon: "monitoring", label: "动态管控" },
-  { path: "/innovation-hub", icon: "workspace_premium", label: "创新成果" },
   { path: "/settings", icon: "tune", label: "系统参数配置" },
 ];
 
@@ -52,7 +50,6 @@ const PAGE_TITLES: Record<string, { title: string; hint: string }> = {
   "/facility-ops": { title: "光伏 · 中水 · 运维", hint: "运营期三大专题合并视图：发电监测 / 水处理回用 / 设施运维" },
   "/pricing-audit": { title: "计价复核与审计", hint: "核对价格、定额与风险项" },
   "/dynamic-control": { title: "动态管控", hint: "从造价到运维：四源关联、偏差对比、支付校验、风险模拟与后评估" },
-  "/innovation-hub": { title: "创新成果", hint: "五大创新点、工程/经济/可持续三重价值与校企协同人才成效总览" },
   "/data-resources": { title: "定额与价格库", hint: "维护计价基础数据" },
   "/old-materials": { title: "旧材利用定额", hint: "遗址修复材料定额清单：当地回收 / 原材料复现" },
   "/unit-price-analysis": { title: "综合单价分析", hint: "分析综合单价构成与合理性" },
@@ -240,6 +237,46 @@ function RouteFallback() {
   return <div className="page-container">正在加载...</div>;
 }
 
+function ModalFxGuard() {
+  useEffect(() => {
+    const id = "zh-modal-fx-js";
+    if (document.getElementById(id)) return;
+    const style = document.createElement("style");
+    style.id = id;
+    style.textContent = `
+.ant-modal-content {
+  background: linear-gradient(165deg, #224e87, #1a3d6a) !important;
+  border: 1px solid rgba(80, 160, 255, 0.45) !important;
+  box-shadow: inset 0 1px 0 rgba(140, 200, 255, 0.20), 0 24px 64px rgba(0, 0, 0, 0.55), 0 0 42px rgba(90, 220, 255, 0.45) !important;
+  animation: zh-modal-glow 3s ease-in-out infinite !important;
+}
+.ant-modal-content::before {
+  content: ""; position: absolute; top: 0; left: -60%; right: -60%; height: 3px; z-index: 4; pointer-events: none;
+  background: linear-gradient(90deg, transparent, #7de9ff, transparent);
+  animation: zh-modal-scan 3s ease-in-out infinite;
+}
+.ant-modal-content::after {
+  content: ""; position: absolute; inset: 0; z-index: 4; pointer-events: none;
+  background:
+    linear-gradient(#7de9ff 1px, transparent 1px) 0 0 / 34px 34px no-repeat,
+    linear-gradient(90deg, #7de9ff 1px, transparent 1px) 0 0 / 34px 34px no-repeat,
+    linear-gradient(#7de9ff 1px, transparent 1px) 100% 100% / 34px 34px no-repeat,
+    linear-gradient(90deg, #7de9ff 1px, transparent 1px) 100% 100% / 34px 34px no-repeat;
+}
+@keyframes zh-modal-glow {
+  0%, 100% { box-shadow: inset 0 1px 0 rgba(140, 200, 255, 0.20), 0 24px 64px rgba(0, 0, 0, 0.55), 0 0 28px rgba(90, 220, 255, 0.35); }
+  50% { box-shadow: inset 0 1px 0 rgba(140, 200, 255, 0.24), 0 24px 64px rgba(0, 0, 0, 0.55), 0 0 52px rgba(125, 233, 255, 0.65); }
+}
+@keyframes zh-modal-scan {
+  0%, 100% { transform: translateX(-30%); opacity: 0.3; }
+  50% { transform: translateX(30%); opacity: 1; }
+}
+    `.trim();
+    document.head.appendChild(style);
+  }, []);
+  return null;
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
@@ -273,7 +310,7 @@ export default function App() {
               headerBg: "rgba(26, 61, 106, 0.65)",
               rowHoverBg: "rgba(61, 139, 255, 0.12)",
             },
-            Modal: { contentBg: "#152f56", headerBg: "#152f56" },
+            Modal: { contentBg: "#152f56", headerBg: "#152f56", titleColor: "#e2e8f0" },
             Drawer: { colorBgElevated: "#152f56" },
             Collapse: { colorBgContainer: "rgba(19, 45, 82, 0.55)", headerBg: "rgba(22, 51, 94, 0.4)" },
             Tag: { borderRadiusSM: 4 },
@@ -283,6 +320,7 @@ export default function App() {
         <AntApp>
           <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, "")}>
             <TourModeProvider>
+            <ModalFxGuard />
             <AuthGate>
               <Suspense fallback={<RouteFallback />}>
                 <Routes>
@@ -308,7 +346,6 @@ export default function App() {
                             <Route path="/projects/:id" element={<ProjectDetail />} />
                             <Route path="/pricing-audit" element={<PricingAudit />} />
                             <Route path="/dynamic-control" element={<DynamicControl />} />
-                            <Route path="/innovation-hub" element={<InnovationHub />} />
                             <Route path="/pricing" element={<Navigate to="/pricing-audit" replace />} />
                             <Route path="/audit" element={<Navigate to="/pricing-audit" replace />} />
                             <Route path="/reports" element={<Navigate to="/pricing-audit" replace />} />

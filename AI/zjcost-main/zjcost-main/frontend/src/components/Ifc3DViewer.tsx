@@ -2282,7 +2282,7 @@ function findExhibitionHallCenters(sceneItems: SceneItem[], groundZ: number): { 
       const size = item.bounds.getSize(new THREE.Vector3());
       const thickness = size.z;
       const aspect = Math.max(size.x, size.y) / Math.max(Math.min(size.x, size.y), 0.01);
-      return area > 12 && area < 600 && aspect < 2.5 && z > groundZ - 0.5 && z < groundZ + 3 && thickness < 1.5;
+      return area > 12 && area < 2500 && aspect < 2.5 && z > groundZ - 0.5 && z < groundZ + 3 && thickness < 1.5;
     })
     .sort((a, b) => footprintArea(b.bounds) - footprintArea(a.bounds));
 
@@ -8274,6 +8274,22 @@ export default function Ifc3DViewer({
 
   const [viewMode, setViewMode] = useState<ViewMode>(initialViewMode);
 
+  const [xrSupported, setXrSupported] = useState(false);
+
+  const [xrActive, setXrActive] = useState(false);
+
+  const xrControlRef = useRef<{ start: () => void; stop: () => void }>(null);
+
+  useEffect(() => {
+
+    if (typeof navigator !== "undefined" && navigator.xr) {
+
+      navigator.xr.isSessionSupported("immersive-vr").then(setXrSupported).catch(() => setXrSupported(false));
+
+    }
+
+  }, []);
+
   const [buildStageLabel, setBuildStageLabel] = useState<string | null>(null);
 
   const [renderMode, setRenderMode] = useState<RenderMode>("solid");
@@ -8718,6 +8734,7 @@ export default function Ifc3DViewer({
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.shadowMap.enabled = shadowsEnabled;
     renderer.info.autoReset = false;
+    renderer.xr.enabled = true;
 
     const scene = new THREE.Scene();
 
@@ -8739,6 +8756,8 @@ export default function Ifc3DViewer({
     }
 
     const controls = new OrbitControls(camera, renderer.domElement);
+
+    (window as unknown as Record<string, unknown>).__debugCamera = camera;
 
     controls.enabled = !isWalkMode;
 
@@ -8924,6 +8943,8 @@ export default function Ifc3DViewer({
 
           c.addPass(outputPass);
 
+          (window as unknown as Record<string, unknown>).__debugComposer = c;
+
           return c;
 
         })()
@@ -9076,7 +9097,9 @@ export default function Ifc3DViewer({
 
     const forceGridLayout = viewMode === "grid";
 
-    const useGridLayout = forceGridLayout || uniquePositions <= 1 || spread > Math.max(maxBoxSize * 220, 2000);
+    const anyMeshPreview = prepared.some((p) => p.isMeshPreview);
+
+    const useGridLayout = forceGridLayout || (uniquePositions <= 1 && !anyMeshPreview) || spread > Math.max(maxBoxSize * 220, 2000);
 
     const useExplodeLayout = viewMode === "explode" && !useGridLayout;
 
@@ -9092,6 +9115,18 @@ export default function Ifc3DViewer({
 
       z: (maxPos.z - minPos.z) / 2,
 
+    };
+
+    (window as unknown as Record<string, unknown>).__dbgLayout = {
+      uniquePositions,
+      spread: +spread.toFixed(3),
+      maxBoxSize: +maxBoxSize.toFixed(3),
+      useGridLayout,
+      columns,
+      cellSize: +cellSize.toFixed(3),
+      minPos: { x: minPos.x, y: minPos.y, z: minPos.z },
+      maxPos: { x: maxPos.x, y: maxPos.y, z: maxPos.z },
+      modelCenter: { x: modelCenter.x, y: modelCenter.y, z: modelCenter.z },
     };
 
     const explodeDistance = clamp(Math.max(spread, maxBoxSize) * 0.045, 0.6, 8);
@@ -9691,15 +9726,52 @@ export default function Ifc3DViewer({
     const exhibitionHalls = findExhibitionHallCenters(sceneItems, groundZ);
     console.log(`[Spawn] exhibitionHalls=${exhibitionHalls.length}`);
 
-    // 出生点绑定到带入口招牌的展馆：双馆时为第二个馆（用户指定的出生招牌）
-    const primaryHall = exhibitionHalls.length > 1 ? exhibitionHalls[1] : exhibitionHalls[0];
+    // 构件质量中心：场景可能包含馆外景观/广场构件，会把场景包围盒中心
+    // 推向模型外侧，导致出生点落在展馆外。用构件中心的中位数比平均值
+    // 对离群构件（外周广场、停车区等）更稳健，能稳定落在建筑稠密区。
+    const walkCentroidXs: number[] = [];
+    const walkCentroidYs: number[] = [];
+    sceneItems.forEach((item) => {
+      const b = item.bounds;
+      if (b && !b.isEmpty()) {
+        const c = b.getCenter(new THREE.Vector3());
+        walkCentroidXs.push(c.x);
+        walkCentroidYs.push(c.y);
+      }
+    });
+    walkCentroidXs.sort((a, b) => a - b);
+    walkCentroidYs.sort((a, b) => a - b);
+    const walkMassCenter = new THREE.Vector3(
+      walkCentroidXs[Math.floor(walkCentroidXs.length / 2)] || 0,
+      walkCentroidYs[Math.floor(walkCentroidYs.length / 2)] || 0,
+      0,
+    );
+
+    // 主展馆：优先取离构件质量中心最近的展厅簇（展厅识别可能把景区外围
+    // 设施/广场算作“展馆”，距离排序可剔除这些远离建筑主体的簇）。
+    const primaryHall = (() => {
+      if (exhibitionHalls.length === 0) return undefined;
+      let best = exhibitionHalls[0];
+      let bestDistance = Infinity;
+      exhibitionHalls.forEach((hall) => {
+        const d = new THREE.Vector3(hall.center.x, hall.center.y, 0).distanceTo(
+          new THREE.Vector3(walkMassCenter.x, walkMassCenter.y, 0),
+        );
+        if (d < bestDistance) {
+          bestDistance = d;
+          best = hall;
+        }
+      });
+      return best;
+    })();
+    const primaryHallValid = !!primaryHall;
 
     // 上帝视角：相机绕主展馆中心自动环绕，展示全馆布局。
     // 半径/高度取主展馆自身跨度；若用全局模型包围盒，相机会被推到离馆很远的位置。
-    const showcaseCenter = primaryHall
+    const showcaseCenter = primaryHallValid && primaryHall
       ? new THREE.Vector3(primaryHall.center.x, primaryHall.center.y, primaryHall.center.z)
-      : center.clone();
-    const showcaseSpan = primaryHall
+      : walkMassCenter.clone();
+    const showcaseSpan = primaryHallValid && primaryHall
       ? Math.max(
           primaryHall.bounds.max.x - primaryHall.bounds.min.x,
           primaryHall.bounds.max.y - primaryHall.bounds.min.y,
@@ -9789,7 +9861,7 @@ export default function Ifc3DViewer({
     };
 
     // 出生点设在主展馆入口招牌正南 4m 的广场上，面向招牌
-    const rawSpawnPoint = primaryHall
+    const rawSpawnPoint = primaryHallValid && primaryHall
       ? new THREE.Vector3(
           clamp(
             primaryHall.center.x,
@@ -9804,8 +9876,8 @@ export default function Ifc3DViewer({
           groundZ + 0.02,
         )
       : new THREE.Vector3(
-          center.x,
-          bounds.isEmpty() ? -8 : bounds.min.y - Math.min(walkPadding * 0.65, 12),
+          walkMassCenter.x,
+          walkMassCenter.y - Math.min(walkPadding * 0.65, 12),
           groundZ + 0.02,
         );
 
@@ -9848,6 +9920,19 @@ export default function Ifc3DViewer({
       ? findWalkSpawnPoint(walkSpawnCandidates, canStandAt, walkBounds, groundZ)
 
       : rawSpawnPoint;
+
+    (window as unknown as Record<string, unknown>).__dbgSpawn = {
+      halls: exhibitionHalls.map((h) => ({
+        center: h.center.toArray().map((v) => +v.toFixed(2)),
+        min: h.bounds.min.toArray().map((v) => +v.toFixed(2)),
+        max: h.bounds.max.toArray().map((v) => +v.toFixed(2)),
+      })),
+      groundZ: +groundZ.toFixed(3),
+      center: center.toArray().map((v) => +v.toFixed(2)),
+      walkBounds: { minX: +walkBounds.minX.toFixed(2), maxX: +walkBounds.maxX.toFixed(2), minY: +walkBounds.minY.toFixed(2), maxY: +walkBounds.maxY.toFixed(2) },
+      rawSpawn: rawSpawnPoint.toArray().map((v) => +v.toFixed(2)),
+      spawn: spawnPoint.toArray().map((v) => +v.toFixed(2)),
+    };
 
     const walkInspectableItems = isWalkMode
 
@@ -11952,9 +12037,9 @@ export default function Ifc3DViewer({
 
       // 出生朝向：面向主展馆入口招牌
 
-      const dx = (primaryHall ? primaryHall.center.x : center.x) - spawnPoint.x;
+      const dx = (primaryHallValid && primaryHall ? primaryHall.center.x : walkMassCenter.x) - spawnPoint.x;
 
-      const dy = (primaryHall ? primaryHall.bounds.min.y + 2.5 : center.y) - spawnPoint.y;
+      const dy = (primaryHallValid && primaryHall ? primaryHall.bounds.min.y + 2.5 : walkMassCenter.y) - spawnPoint.y;
 
       const initialYaw = (Math.abs(dx) + Math.abs(dy) > 0.5)
 
@@ -12565,12 +12650,139 @@ export default function Ifc3DViewer({
 
 
 
+    // ── WebXR 眼镜接入（immersive-vr 沉浸式漫游）──────────────────────────
+      const xrMount = new THREE.Group();
+      xrMount.name = "xrMount";
+      const playerRig = new THREE.Group();
+      playerRig.name = "playerRig";
+      scene.add(playerRig);
+
+      let xrSession: XRSession | null = null;
+      let xrLoopActive = false;
+      let xrMountBuilt = false;
+      let xrSelectHeld = false;
+      const xrSpawnPos = new THREE.Vector3();
+      const xrExitPos = new THREE.Vector3();
+      const xrExitQuat = new THREE.Quaternion();
+      const xrHeadDir = new THREE.Vector3();
+      const xrRightVec = new THREE.Vector3();
+      const xrMoveVec = new THREE.Vector3();
+      const xrHeadQuat = new THREE.Quaternion();
+      const xrController0 = renderer.xr.getController(0);
+      const xrController1 = renderer.xr.getController(1);
+
+      const onXrSelectStart = () => {
+        xrSelectHeld = true;
+      };
+      const onXrSelectEnd = () => {
+        xrSelectHeld = false;
+      };
+      xrController0.addEventListener("selectstart", onXrSelectStart);
+      xrController0.addEventListener("selectend", onXrSelectEnd);
+      xrController1.addEventListener("selectstart", onXrSelectStart);
+      xrController1.addEventListener("selectend", onXrSelectEnd);
+
+      const ensureXrMount = () => {
+        if (xrMountBuilt) return;
+        xrMountBuilt = true;
+        const children = [...scene.children];
+        children.forEach((child) => {
+          scene.remove(child);
+          if (child === playerRig) return;
+          xrMount.add(child);
+        });
+        scene.add(xrMount);
+        scene.add(playerRig);
+        scene.add(xrController0);
+        scene.add(xrController1);
+      };
+
+      const startXr = async () => {
+        try {
+          if (typeof navigator === "undefined" || !navigator.xr || xrSession) return;
+          const supported = await navigator.xr.isSessionSupported("immersive-vr");
+          if (!supported) return;
+          ensureXrMount();
+          camera.getWorldPosition(xrExitPos);
+          camera.getWorldQuaternion(xrExitQuat);
+          xrSpawnPos.copy(walkState.position);
+          const session = await navigator.xr.requestSession("immersive-vr", {
+            optionalFeatures: ["local-floor", "bounded-floor", "local"],
+          });
+          xrSession = session;
+          renderer.xr.setReferenceSpaceType("local-floor");
+          playerRig.add(camera);
+          await renderer.xr.setSession(session);
+          xrMount.rotation.x = -Math.PI / 2;
+          playerRig.position.set(xrSpawnPos.x, xrSpawnPos.z, -xrSpawnPos.y);
+          camera.position.set(0, 0, 0);
+          camera.quaternion.identity();
+          camera.up.set(0, 1, 0);
+          controls.enabled = false;
+          session.addEventListener("end", () => stopXr());
+          setXrActive(true);
+        } catch (error) {
+          console.error("[XR] 进入眼镜模式失败:", error);
+        }
+      };
+
+      const stopXr = () => {
+        if (xrSession) {
+          const session = xrSession;
+          xrSession = null;
+          session.end().catch(() => {});
+        }
+        xrMount.rotation.x = 0;
+        playerRig.position.set(0, 0, 0);
+        playerRig.remove(camera);
+        camera.up.set(0, 0, 1);
+        camera.position.copy(xrExitPos);
+        camera.quaternion.copy(xrExitQuat);
+        camera.updateMatrixWorld(true);
+        if (renderer.xr) renderer.setAnimationLoop(null);
+        xrLoopActive = false;
+        xrSelectHeld = false;
+        animate();
+        controls.enabled = !isWalkMode;
+        setXrActive(false);
+      };
+
+      const updateXrPlayer = (deltaSeconds: number) => {
+        if (!xrSession || !renderer.xr) return;
+        const head = renderer.xr.getCamera();
+        head.getWorldQuaternion(xrHeadQuat);
+        xrHeadDir.set(0, 0, -1).applyQuaternion(xrHeadQuat);
+        xrHeadDir.y = 0;
+        if (xrHeadDir.lengthSq() < 1e-4) xrHeadDir.set(0, 0, -1);
+        xrHeadDir.normalize();
+        xrRightVec.set(-xrHeadDir.z, 0, xrHeadDir.x);
+        xrMoveVec.set(0, 0, 0);
+        const forward = xrSelectHeld || walkState.keys.has("w") || walkState.keys.has("arrowup");
+        const back = walkState.keys.has("s") || walkState.keys.has("arrowdown");
+        const left = walkState.keys.has("a") || walkState.keys.has("arrowleft");
+        const right = walkState.keys.has("d") || walkState.keys.has("arrowright");
+        if (forward) xrMoveVec.add(xrHeadDir);
+        if (back) xrMoveVec.addScaledVector(xrHeadDir, -1);
+        if (left) xrMoveVec.addScaledVector(xrRightVec, -1);
+        if (right) xrMoveVec.add(xrRightVec);
+        if (xrMoveVec.lengthSq() > 0) {
+          xrMoveVec.normalize();
+          const speed = walkState.keys.has("shift") ? WALK_SPEED * 1.9 : WALK_SPEED;
+          playerRig.position.addScaledVector(xrMoveVec, speed * deltaSeconds);
+        }
+      };
+
+      xrControlRef.current = {
+        start: () => startXr(),
+        stop: () => stopXr(),
+      };
+
     let lastFrameAt = performance.now();
     let lastStatsAt = performance.now();
 
-    const animate = () => {
+    let changed = false;
 
-      frameId = window.requestAnimationFrame(animate);
+    const tick = () => {
 
       const now = performance.now();
 
@@ -12578,10 +12790,22 @@ export default function Ifc3DViewer({
 
       lastFrameAt = now;
 
+      const xrActiveFrame = renderer.xr.isPresenting;
+
+      if (xrActiveFrame && !xrLoopActive) {
+
+        xrLoopActive = true;
+
+        window.cancelAnimationFrame(frameId);
+
+        renderer.setAnimationLoop(tick);
+
+      }
+
       // ── 自适应分辨率（核显兜底）：持续掉帧逐级降低渲染倍率，恢复流畅后逐步回升。
       // 只在真实渲染的帧上计量（needsRender 关闭时空转帧不计）。30 帧慢 → 降 0.15，
       // 150 帧流畅 → 升 0.15，下限 0.55×，避免画质抖动。
-      if (needsRender) {
+      if (!xrActiveFrame && needsRender) {
         const frameMs = deltaSeconds * 1000;
         if (frameMs > 24) {
           adaptiveSlowFrames += 1;
@@ -12603,6 +12827,15 @@ export default function Ifc3DViewer({
           adaptiveFastFrames = 0;
         }
       }
+
+      if (xrActiveFrame) {
+
+        // XR 眼镜模式：头部 pose 由设备接管，这里只做前进/平移
+        updateXrPlayer(deltaSeconds);
+
+        needsRender = true;
+
+      } else {
 
       // 上帝视角：相机绕展馆中心自动环绕
       if (showcaseActiveRef.current) {
@@ -12835,7 +13068,9 @@ export default function Ifc3DViewer({
         }
       }
 
-      const changed = isWalkMode ? false : controls.update();
+      changed = isWalkMode ? false : controls.update();
+
+      }
 
       // 展品缓慢旋转
       if (isWalkMode || showcaseActiveRef.current) {
@@ -12858,7 +13093,7 @@ export default function Ifc3DViewer({
 
         renderer.info.reset();
 
-        if (composer) {
+        if (composer && !xrActiveFrame) {
 
           composer.render();
 
@@ -12878,6 +13113,16 @@ export default function Ifc3DViewer({
         });
 
       }
+
+      if (!xrActiveFrame) {
+        frameId = window.requestAnimationFrame(tick);
+      }
+
+    };
+
+    const animate = () => {
+
+      frameId = window.requestAnimationFrame(tick);
 
     };
 
@@ -12994,6 +13239,30 @@ export default function Ifc3DViewer({
       window.cancelAnimationFrame(frameId);
 
       window.cancelAnimationFrame(buildAnimFrame);
+
+      if (xrSession) {
+
+        xrSession.end().catch(() => {});
+
+        xrSession = null;
+
+      }
+
+      if (renderer.xr) {
+
+        renderer.setAnimationLoop(null);
+
+        xrController0.removeEventListener("selectstart", onXrSelectStart);
+
+        xrController0.removeEventListener("selectend", onXrSelectEnd);
+
+        xrController1.removeEventListener("selectstart", onXrSelectStart);
+
+        xrController1.removeEventListener("selectend", onXrSelectEnd);
+
+      }
+
+      xrControlRef.current = { start: () => {}, stop: () => {} };
 
       window.removeEventListener("resize", onResize);
 
@@ -13441,6 +13710,23 @@ export default function Ifc3DViewer({
             >
               <span className="material-symbols-outlined">360</span>
             </button>
+            {xrSupported && isWalkView && (
+              <button
+                type="button"
+                className={`ifc-walk-tool-btn${xrActive ? " active" : ""}`}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={() => {
+                  if (xrActive) {
+                    xrControlRef.current?.stop();
+                  } else {
+                    xrControlRef.current?.start();
+                  }
+                }}
+                title={xrActive ? "退出眼镜模式(WebXR)" : "进入眼镜模式(WebXR沉浸式漫游)"}
+              >
+                <span className="material-symbols-outlined">view_in_ar</span>
+              </button>
+            )}
           </div>
         </div>
       )}

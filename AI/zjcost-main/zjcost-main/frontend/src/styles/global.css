@@ -977,15 +977,86 @@ body::after {
 }
 .ant-input::placeholder { color: var(--text-secondary) !important; }
 
+.ant-modal-mask {
+  background: rgba(11, 26, 48, 0.62) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.ant-modal-wrap {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
 .ant-modal-content {
-  background: var(--bg-elevated) !important;
-  border: 1px solid var(--border) !important;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(165deg, #224e87, #1a3d6a) !important;
+  border: 1px solid rgba(80, 160, 255, 0.45) !important;
   border-radius: var(--radius-xl) !important;
-  box-shadow: var(--shadow-lg) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(140, 200, 255, 0.20),
+    0 24px 64px rgba(0, 0, 0, 0.55),
+    0 0 42px rgba(90, 220, 255, 0.45) !important;
+  animation: zh-modal-glow 3s ease-in-out infinite;
+}
+
+/* 顶部流动光带 */
+.ant-modal-content::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -60%;
+  right: -60%;
+  height: 3px;
+  z-index: 4;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, #7de9ff, transparent);
+  animation: zh-modal-scan 3s ease-in-out infinite;
+}
+
+/* 四角科技角标 */
+.ant-modal-content::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  background:
+    linear-gradient(#7de9ff 1px, transparent 1px) 0 0 / 34px 34px no-repeat,
+    linear-gradient(90deg, #7de9ff 1px, transparent 1px) 0 0 / 34px 34px no-repeat,
+    linear-gradient(#7de9ff 1px, transparent 1px) 100% 100% / 34px 34px no-repeat,
+    linear-gradient(90deg, #7de9ff 1px, transparent 1px) 100% 100% / 34px 34px no-repeat;
+}
+
+/* 标题栏发光分隔 */
+.ant-modal-header {
+  border-bottom: 1px solid rgba(80, 160, 255, 0.25) !important;
+  background: linear-gradient(90deg, rgba(61, 139, 255, 0.08), transparent 60%) !important;
+}
+
+@keyframes zh-modal-glow {
+  0%, 100% {
+    box-shadow:
+      inset 0 1px 0 rgba(140, 200, 255, 0.20),
+      0 24px 64px rgba(0, 0, 0, 0.55),
+      0 0 28px rgba(90, 220, 255, 0.35);
+  }
+  50% {
+    box-shadow:
+      inset 0 1px 0 rgba(140, 200, 255, 0.24),
+      0 24px 64px rgba(0, 0, 0, 0.55),
+      0 0 52px rgba(125, 233, 255, 0.65);
+  }
+}
+
+@keyframes zh-modal-scan {
+  0%, 100% { transform: translateX(-30%); opacity: 0.3; }
+  50% { transform: translateX(30%); opacity: 1; }
 }
 .ant-modal-header {
-  background: transparent !important;
-  border-bottom: 1px solid var(--border) !important;
+  background: linear-gradient(90deg, rgba(61, 139, 255, 0.08), transparent 60%) !important;
+  border-bottom: 1px solid rgba(80, 160, 255, 0.25) !important;
 }
 /*  开项弹窗 */
 .gen-modal .ant-modal-header { display: none !important; }

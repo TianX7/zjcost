@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, Empty, Form, Input, InputNumber, Modal, Popconfirm, Progress, Select, Space, Table, Tabs, Tag, Tooltip, message } from "antd";
+import { Alert, Button, Empty, Form, Input, InputNumber, Modal, Popconfirm, Progress, Select, Space, Table, Tabs, Tag, Tooltip, Upload, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { CopyOutlined, DeleteOutlined, EditOutlined, FileExcelOutlined, InboxOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import type { QuotaAcquisitionMethod, QuotaItemCreatePayload, QuotaItemDTO, QuotaResourceDetail, QuotaStatsResponse } from "../api";
 import { api } from "../api";
 
@@ -308,6 +308,17 @@ export default function QuotaLibrary() {
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm<QuotaItemCreatePayload>();
   const modalMethod = Form.useWatch("acquisition_method", form);
+  // 复用（模板再应用）：把已有定额复制一份生成新定额条目，供新项目套用
+  const [reuseOpen, setReuseOpen] = useState(false);
+  const [reuseSource, setReuseSource] = useState<QuotaItemDTO | null>(null);
+  const [reusing, setReusing] = useState(false);
+  const [reuseForm] = Form.useForm<{ quota_code: string; name: string }>();
+  // 导入定额（Excel）
+  const [importOpen, setImportOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importDiscipline, setImportDiscipline] = useState("AUTO");
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ created?: number; updated?: number; skipped?: number; imported?: number } | null>(null);
 
   // 搜索防抖
   useEffect(() => {
@@ -469,6 +480,47 @@ export default function QuotaLibrary() {
     }
   };
 
+  const openReuse = (record: QuotaItemDTO) => {
+    setReuseSource(record);
+    reuseForm.setFieldsValue({
+      quota_code: `${record.quota_code}-R`,
+      name: `${record.name}（复用）`,
+    });
+    setReuseOpen(true);
+  };
+
+  const handleReuse = async () => {
+    if (!reuseSource) return;
+    try {
+      const values = await reuseForm.validateFields();
+      setReusing(true);
+      const payload: QuotaItemCreatePayload = {
+        quota_code: values.quota_code,
+        discipline: reuseSource.discipline,
+        name: values.name,
+        unit: reuseSource.unit,
+        labor_qty: Number(reuseSource.labor_qty ?? 0),
+        material_qty: Number(reuseSource.material_qty ?? 0),
+        machine_qty: Number(reuseSource.machine_qty ?? 0),
+        base_price: reuseSource.base_price,
+        work_content: reuseSource.work_content ?? "",
+        applicable_scope: reuseSource.applicable_scope ?? "",
+        chapter: reuseSource.chapter,
+        version: reuseSource.version ?? "",
+        origin_note: reuseSource.origin_note ?? "",
+      };
+      const res = await api.createQuotaItem(payload);
+      message.success(`已复用生成新定额 ${res.item.quota_code} · ${res.item.name}`);
+      setReuseOpen(false);
+      setReuseSource(null);
+      await load();
+    } catch (err) {
+      if (err instanceof Error) message.error(err.message);
+    } finally {
+      setReusing(false);
+    }
+  };
+
   const restoreReference = async () => {
     setRestoring(true);
     try {
@@ -480,6 +532,33 @@ export default function QuotaLibrary() {
       message.error(err instanceof Error ? err.message : "恢复基础库失败");
     } finally {
       setRestoring(false);
+    }
+  };
+
+  const openImport = () => {
+    setImportOpen(true);
+    setImportFile(null);
+    setImportDiscipline("AUTO");
+    setImportResult(null);
+  };
+
+  const handleImport = async () => {
+    if (!importFile) {
+      message.warning("请选择 .xlsx 格式的定额 Excel 文件");
+      return;
+    }
+    setImporting(true);
+    try {
+      const res = await api.importQuota(importFile, importDiscipline);
+      const created = res.created ?? 0;
+      const updated = res.updated ?? 0;
+      setImportResult({ created, updated, skipped: res.skipped, imported: res.imported });
+      message.success(`定额导入完成：新增 ${created} 条、更新 ${updated} 条、跳过 ${res.skipped} 条`);
+      await load();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "定额导入失败");
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -545,10 +624,13 @@ export default function QuotaLibrary() {
     {
       title: "操作",
       key: "actions",
-      width: 150,
+      width: 230,
       fixed: "right",
       render: (_, record) => (
         <Space size={4} onClick={(event) => event.stopPropagation()}>
+          <Tooltip title="复用为模板，生成新定额供新项目套用">
+            <Button size="small" icon={<CopyOutlined />} onClick={() => openReuse(record)}>复用</Button>
+          </Tooltip>
           <Tooltip title="编辑定额">
             <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)}>编辑</Button>
           </Tooltip>
@@ -560,7 +642,7 @@ export default function QuotaLibrary() {
             okButtonProps={{ danger: true }}
             onConfirm={() => handleDelete(record)}
           >
-            <Button size="small" danger icon={<DeleteOutlined />} />
+            <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
           </Popconfirm>
         </Space>
       ),
@@ -738,6 +820,7 @@ export default function QuotaLibrary() {
                     ]}
                   />
                   <Button icon={<ReloadOutlined />} loading={loading} onClick={load}>刷新</Button>
+                  <Button icon={<FileExcelOutlined />} onClick={openImport}>导入定额</Button>
                   <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增定额</Button>
                   {qualityStats.missingPrice > 0 && (
                     <Tooltip title="这些条目缺少基价，自动套价时无法计价，需补充维护">
@@ -1135,6 +1218,95 @@ export default function QuotaLibrary() {
             <Input.TextArea rows={2} placeholder="回收地点或复现依据" />
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* 复用为模板 Modal：把已有定额复制一份，供新项目套用 */}
+      <Modal
+        title={reuseSource ? `复制定额 · ${reuseSource.quota_code}` : "复制定额"}
+        open={reuseOpen}
+        onCancel={() => { setReuseOpen(false); setReuseSource(null); }}
+        onOk={handleReuse}
+        okText="生成复用定额"
+        confirmLoading={reusing}
+        width={560}
+        destroyOnClose
+      >
+        <Form form={reuseForm} layout="vertical">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+            <Form.Item name="quota_code" label="新定额编码" rules={[{ required: true, message: "请输入新定额编码" }]}>
+              <Input placeholder="如 GS-01-R" />
+            </Form.Item>
+            <Form.Item name="name" label="新定额名称" rules={[{ required: true, message: "请输入新定额名称" }]}>
+              <Input />
+            </Form.Item>
+          </div>
+          {reuseSource && (
+            <>
+              <div className="content-card" style={{ marginBottom: 16 }}>
+                <div className="content-card-body" style={{ fontSize: 13, color: "var(--text-secondary)", display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div>
+                    源定额：<Tag color={disciplineColor(reuseSource.discipline)}>{reuseSource.discipline}</Tag>
+                    <strong style={{ color: "var(--text-primary)" }}>{reuseSource.quota_code} · {reuseSource.name}</strong>
+                  </div>
+                  <div>将随定额一起复用：单位 {reuseSource.unit}｜人工 {fmtNum(reuseSource.labor_qty)}｜材料 {fmtNum(reuseSource.material_qty)}｜机械 {fmtNum(reuseSource.machine_qty)}｜基价 {reuseSource.base_price == null ? "—" : `¥${reuseSource.base_price.toFixed(2)}`}</div>
+                  {reuseSource.work_content && <div>工作内容：{reuseSource.work_content}</div>}
+                  {reuseSource.applicable_scope && <div>适用范围：{reuseSource.applicable_scope}</div>}
+                </div>
+              </div>
+            </>
+          )}
+        </Form>
+      </Modal>
+
+      {/* 导入定额 Modal：上传 Excel，按专业/表格自动识别并 upsert */}
+      <Modal
+        title="导入定额"
+        open={importOpen}
+        onCancel={() => { setImportOpen(false); setImportFile(null); setImportResult(null); }}
+        onOk={handleImport}
+        okText="开始导入"
+        confirmLoading={importing}
+        width={600}
+        destroyOnClose
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+            支持 <code>.xlsx</code> 格式的定额 Excel 表，自动识别表头（编码、名称、单位、人材机消耗、基价、章节等）。
+            已存在的编码（相同专业）将更新，其余新增；专业选择 AUTO 时按工作表名自动归类。
+          </div>
+          <div>
+            <Upload.Dragger
+              accept=".xlsx"
+              maxCount={1}
+              beforeUpload={(file) => { setImportFile(file as unknown as File); setImportResult(null); return false; }}
+              onRemove={() => { setImportFile(null); setImportResult(null); }}
+              fileList={importFile ? [{ uid: "-1", name: importFile.name, status: "done" }] : []}
+            >
+              <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+              <p className="ant-upload-text">点击或拖拽定额 Excel 文件到此处</p>
+              <p className="ant-upload-hint">单个 .xlsx 文件，≤100MB</p>
+            </Upload.Dragger>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ fontSize: 13, color: "var(--text-secondary)", whiteSpace: "nowrap" }}>导入专业</span>
+            <Select
+              style={{ width: 260 }}
+              value={importDiscipline}
+              onChange={setImportDiscipline}
+              options={[
+                { value: "AUTO", label: "自动识别（按工作表名）" },
+                ...disciplineOptions,
+              ]}
+            />
+          </div>
+          {importResult && (
+            <Alert
+              type="success"
+              showIcon
+              message={`导入结果：新增 ${importResult.created ?? 0} 条、更新 ${importResult.updated ?? 0} 条、跳过 ${importResult.skipped ?? 0} 条`}
+            />
+          )}
+        </div>
       </Modal>
     </div>
   );
