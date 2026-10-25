@@ -2,6 +2,7 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -30,6 +31,15 @@ def _to_out(r: BoqItem) -> BoqItemOut:
         amount=r.amount,
         remark=r.remark or "",
     )
+
+
+def _commit_or_conflict(db: Session, code: str) -> None:
+    """编码在项目内唯一，重复编码应返回 409 而不是 500。"""
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=f"清单编码 {code} 在本项目中已存在")
 
 
 @router.get("/{project_id}/boq-items", response_model=list[BoqItemOut])
@@ -82,7 +92,7 @@ def create_boq_item(
         remark=payload.remark,
     )
     db.add(item)
-    db.commit()
+    _commit_or_conflict(db, item.code)
     db.refresh(item)
     write_audit_log(
         db=db, project_id=project_id,
@@ -138,7 +148,7 @@ def update_boq_item(
     row.amount = row.rate * row.quantity
     row.is_dirty = 1
 
-    db.commit()
+    _commit_or_conflict(db, row.code)
     db.refresh(row)
 
     after = {"code": row.code, "name": row.name, "characteristics": row.characteristics, "unit": row.unit, "quantity": row.quantity, "division": row.division}

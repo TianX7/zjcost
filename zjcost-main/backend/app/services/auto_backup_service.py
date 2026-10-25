@@ -5,7 +5,7 @@ Backups are stored in <ZJCOST_DATA_DIR>/backups/ with rotation.
 """
 
 import os
-import shutil
+import sqlite3
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -15,7 +15,8 @@ logger = getLogger(__name__)
 
 _DATA_DIR = Path(os.getenv("ZJCOST_DATA_DIR", str(Path(__file__).resolve().parents[2]))).resolve()
 _BACKUP_DIR = _DATA_DIR / "backups"
-_MAX_BACKUPS = int(os.getenv("ZJCOST_MAX_BACKUPS", "10"))
+# 运行库可能达数百 MB，默认只保留 3 份，避免副本把磁盘占满
+_MAX_BACKUPS = int(os.getenv("ZJCOST_MAX_BACKUPS", "3"))
 _BACKUP_INTERVAL_HOURS = float(os.getenv("ZJCOST_BACKUP_INTERVAL_HOURS", "0"))  # 0 = startup only
 
 
@@ -34,9 +35,10 @@ def _db_path() -> Path | None:
 
 def create_backup() -> Path | None:
     """Create a timestamped backup of the SQLite database.
-    
+
     Returns the backup file path, or None if no database found.
-    Uses SQLite backup API via shutil for safety (file may be in WAL mode).
+    使用 SQLite 在线备份 API：先做 WAL 检查点再由引擎自身拷贝，
+    避免直接复制 db/wal/shm 得到不一致或损坏的备份。
     """
     db_file = _db_path()
     if db_file is None:
@@ -48,19 +50,27 @@ def create_backup() -> Path | None:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_file = _BACKUP_DIR / f"valuation_{timestamp}.db"
 
+    src = dst = None
     try:
-        shutil.copy2(db_file, backup_file)
-        # Also copy WAL/SHM if present
-        for ext in (".db-wal", ".db-shm"):
-            sidecar = db_file.parent / (db_file.name + ext)
-            if sidecar.exists():
-                shutil.copy2(sidecar, _BACKUP_DIR / (backup_file.name + ext))
+        src = sqlite3.connect(f"file:{db_file.as_posix()}?mode=ro", uri=True, timeout=30)
+        dst = sqlite3.connect(backup_file)
+        with dst:
+            src.backup(dst)
         logger.info("Database backup created: %s", backup_file)
         _rotate_backups()
         return backup_file
     except Exception as exc:
         logger.error("Backup failed: %s", exc)
+        try:
+            backup_file.unlink(missing_ok=True)
+        except Exception:
+            pass
         return None
+    finally:
+        if dst is not None:
+            dst.close()
+        if src is not None:
+            src.close()
 
 
 def _rotate_backups() -> None:

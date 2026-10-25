@@ -16,7 +16,7 @@ import sys
 
 def _append_file(path: str, item) -> None:
     with open(path, "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(item, ensure_ascii=False) + "\n")
+        fh.write(json.dumps(item, ensure_ascii=False, default=str) + "\n")
 
 
 class _FileQueue:
@@ -26,10 +26,9 @@ class _FileQueue:
         self.path = path
 
     def put(self, item, *args, **kwargs) -> None:
-        try:
-            _append_file(self.path, item)
-        except Exception:
-            pass
+        # 不吞异常：落盘失败必须冒泡给调用方，否则父进程只会看到
+        # “子进程 exitcode=0 却没有结果”的假死状态，无法定位原因。
+        _append_file(self.path, item)
 
 
 def main(argv: list[str]) -> int:

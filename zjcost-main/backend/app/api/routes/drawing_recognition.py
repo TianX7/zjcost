@@ -38,7 +38,12 @@ from app.services.drawing_recognition_service import (
 from app.services.drawing_valuation_service import create_valuation_from_drawing
 from app.services.dxf_analysis_service import analyze_dxf_bytes_worker
 from app.services.dwg_conversion_service import convert_dxf_to_dwg_bytes, get_converter_status
-from app.services.task_store import load_background_task, save_background_task
+from app.services.task_store import (
+    load_background_task,
+    load_task_artifact,
+    save_background_task,
+    update_task_artifact,
+)
 from app.utils.datetime import parse_datetime
 from app.utils.headers import build_attachment_disposition, sanitize_filename
 
@@ -1163,11 +1168,14 @@ def _run_recognition(
                     with _raster_lock:
                         _RASTER_STORE[task_id] = raster
                     extra["cad_raster_ready"] = True
+                    # 进度通道的数据不进任务快照，单独落盘以保证服务重启后仍可查看
+                    update_task_artifact(task_id, {"cad_raster": raster})
                 geometry = payload.pop("cad_geometry", None)
                 if geometry:
                     with _geometry_lock:
                         _GEOMETRY_STORE[task_id] = geometry
                     extra["cad_geometry_ready"] = True
+                    update_task_artifact(task_id, {"cad_geometry": geometry})
                 text = payload.get("progress", "")
                 explicit_pct = payload.pop("progress_percent", None)
                 if explicit_pct is not None:
@@ -1644,7 +1652,7 @@ async def get_drawing_geometry(task_id: str):
         geometry = _GEOMETRY_STORE.get(task_id)
     if geometry is None:
         task = _get_task(task_id)
-        geometry = (task or {}).get("cad_geometry")
+        geometry = (task or {}).get("cad_geometry") or load_task_artifact(task_id, "cad_geometry")
     if not geometry or not geometry.get("bbox"):
         raise HTTPException(status_code=404, detail="快速看图几何尚未生成")
     return {"cad_geometry": geometry}
@@ -1656,7 +1664,7 @@ async def get_drawing_raster(task_id: str):
         raster = _RASTER_STORE.get(task_id)
     if raster is None:
         task = _get_task(task_id)
-        raster = (task or {}).get("cad_raster")
+        raster = (task or {}).get("cad_raster") or load_task_artifact(task_id, "cad_raster")
     if not raster or not raster.get("data_url"):
         raise HTTPException(status_code=404, detail="渲染图尚未生成")
     return {"cad_raster": raster}
@@ -1675,6 +1683,10 @@ async def get_recognition_result(task_id: str, include_svg: bool = Query(True)):
         # 预览 SVG 可达数 MB：解析阶段前端用不到，
         # 轮询反复传输会把页面拖卡，仅在终态且显式请求时返回
         task = {**task, "preview_svg": "", "preview_svg_hd": ""}
+    elif not task.get("preview_svg"):
+        # 服务重启后重字段已外置压缩存储，这里按需回填
+        task["preview_svg"] = load_task_artifact(task_id, "preview_svg") or ""
+        task["preview_svg_hd"] = task.get("preview_svg_hd") or load_task_artifact(task_id, "preview_svg_hd") or ""
 
     return TaskStatusResponse(taskId=task_id, **task)
 

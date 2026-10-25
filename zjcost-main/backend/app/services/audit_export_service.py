@@ -115,12 +115,12 @@ def export_audit_report_pdf(
         
         for log in logs[:200]:  # Cap at 200 rows for PDF readability
             row = [
-                log.created_at.strftime("%m-%d %H:%M") if log.created_at else "—",
-                str(getattr(log, "user_id", "") or "系统"),
-                str(getattr(log, "action", "") or "")[:20],
-                str(getattr(log, "target_type", "") or "")[:15],
-                str(getattr(log, "old_value", "") or "")[:30],
-                str(getattr(log, "new_value", "") or "")[:30],
+                log.timestamp.strftime("%m-%d %H:%M") if log.timestamp else "—",
+                str(log.actor or "系统"),
+                str(log.action or "")[:20],
+                str(log.resource_type or "")[:15],
+                str(log.before_json or "")[:30],
+                str(log.after_json or "")[:30],
             ]
             table_data.append(row)
         

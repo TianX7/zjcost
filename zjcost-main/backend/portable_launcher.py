@@ -634,6 +634,10 @@ def request_window_close() -> None:
     global _WINDOW_CLOSE_REQUESTED_AT
     if _env_enabled("ZJCOST_KEEP_SERVER_ON_WINDOW_CLOSE"):
         return
+    # 开发模式（uvicorn 独立启动）没有 launcher 托管服务实例，
+    # 关闭浏览器标签不应把后端一起关掉，否则再打开页面全是 500
+    if globals().get("_SERVER") is None and not getattr(sys, "frozen", False):
+        return
     now = time.monotonic()
     _WINDOW_CLOSE_REQUESTED_AT = now
     _WINDOW_CLOSE_CANCEL_REQUESTED.clear()

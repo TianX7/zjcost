@@ -35,7 +35,7 @@ router = APIRouter(tags=["valuation-management"])
 # 旧版（已废止）：GB 50500-2013 / GB 50854-2013
 # 现行最新版本：GB/T 50500-2024 / GB/T 50854-2024（2025-09-01 实施）
 # ─────────────────────────────────────────────────────────────────────────────
-_DEFAULT_STANDARD_CODE = "GB/T 50500-2024"
+_DEFAULT_STANDARD_CODE = "GB/T50500-2024"
 _DEFAULT_STANDARD_NAME = "建设工程工程量清单计价标准"
 _DEFAULT_EFFECTIVE_DATE = "2025-09-01"
 
@@ -56,6 +56,11 @@ STANDARD_TRANSITIONS = [
         "effective_date": "2025-09-01",
     },
 ]
+
+
+def _normalize_standard_code(code: str) -> str:
+    """标准编号按忽略空白的口径比较（GB/T50500-2024 与 GB/T 50500-2024 视为同一版本）。"""
+    return "".join(str(code or "").split())
 
 
 def _must_get_project(project_id: int, db: Session) -> Project:
@@ -131,7 +136,7 @@ def update_valuation_config(
     _must_get_project(project_id, db)
     config = _get_or_create_config(project_id, db)
 
-    if config.locked_at and config.standard_code != payload.standard_code:
+    if config.locked_at and _normalize_standard_code(config.standard_code) != _normalize_standard_code(payload.standard_code):
         raise HTTPException(status_code=400, detail="当前项目计价标准已锁定，不能切换口径")
 
     config.standard_code = payload.standard_code

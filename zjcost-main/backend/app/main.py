@@ -5,6 +5,7 @@ import importlib
 import logging
 import os
 import sys
+import threading
 import time
 import sqlite3
 from pathlib import Path
@@ -29,7 +30,12 @@ limiter = Limiter(key_func=get_remote_address)
 from app.api.routes.auth import require_route_access
 from app.db.base import Base
 from app.services.auto_backup_service import create_backup, start_backup_timer
-from app.services.task_store import mark_stale_processing_failed
+from app.services.task_store import (
+    compact_sqlite_database,
+    delete_expired_background_tasks,
+    mark_stale_processing_failed,
+    offload_legacy_heavy_payloads,
+)
 from app.db.session import engine
 
 # Import models so SQLAlchemy is aware of them for metadata.create_all
@@ -325,21 +331,24 @@ def _ensure_old_material_quota_seed() -> None:
             ).fetchone()[0]
             if existing:
                 return
-            main_cols = {row[1] for row in conn.execute("PRAGMA table_info(quota_items)")}
+            main_info = conn.execute("PRAGMA table_info(quota_items)").fetchall()
+            main_cols = {row[1] for row in main_info}
             seed_cols = [row[1] for row in seed_conn.execute("PRAGMA table_info(quota_items)")]
             shared = [col for col in seed_cols if col in main_cols]
             if not shared:
                 return
-            collist = ", ".join(f'"{col}"' for col in shared)
+            fill_cols = _missing_not_null_defaults(main_info, shared)
+            insert_cols = shared + list(fill_cols)
+            collist = ", ".join(f'"{col}"' for col in insert_cols)
             rows = seed_conn.execute(
-                f"SELECT {collist} FROM quota_items WHERE discipline = '旧材料'"
+                f"SELECT {', '.join(f'\"{col}\"' for col in shared)} FROM quota_items WHERE discipline = '旧材料'"
             ).fetchall()
             if not rows:
                 return
-            placeholders = ", ".join("?" for _ in shared)
+            placeholders = ", ".join("?" for _ in insert_cols)
             cur = conn.executemany(
                 f"INSERT OR IGNORE INTO quota_items ({collist}) VALUES ({placeholders})",
-                rows,
+                [tuple(row) + tuple(fill_cols.values()) for row in rows],
             )
             conn.commit()
             logger.info("旧材利用定额：从内置种子补齐 %d 条", cur.rowcount)
@@ -347,13 +356,30 @@ def _ensure_old_material_quota_seed() -> None:
         logger.exception("旧材利用定额补齐失败")
 
 
+def _missing_not_null_defaults(table_info: list, provided_cols: list[str]) -> dict[str, object]:
+    """种子库缺少、但主库 NOT NULL 且无默认值的列，按列类型补中性默认值。
+
+    旧版便携种子（缺少 clean_price 等后加列）直接拷贝会触发
+    IntegrityError，导致整张参考表恢复失败、启动时定额库为空。
+    """
+    fills: dict[str, object] = {}
+    for row in table_info:
+        name, decl_type, notnull, default = row[1], row[2], row[3], row[4]
+        if name in provided_cols or not notnull or default is not None:
+            continue
+        t = (decl_type or "").upper()
+        numeric = any(k in t for k in ("INT", "REAL", "FLOA", "DOUB", "NUM", "DEC"))
+        fills[name] = 0.0 if numeric else ""
+    return fills
+
+
 def _copy_table_rows_from_seed(db_path: Path, seed_path: Path, table: str) -> int:
     """Copy all rows for one reference table from the portable seed database."""
     with sqlite3.connect(db_path) as conn, sqlite3.connect(seed_path) as seed_conn:
         conn.execute("PRAGMA foreign_keys=OFF")
-        main_cols = [row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()]
-        seed_info = seed_conn.execute(f"PRAGMA table_info({table})").fetchall()
-        seed_cols = [row[1] for row in seed_info]
+        main_info = conn.execute(f"PRAGMA table_info({table})").fetchall()
+        main_cols = [row[1] for row in main_info]
+        seed_cols = [row[1] for row in seed_conn.execute(f"PRAGMA table_info({table})").fetchall()]
         shared_cols = [col for col in seed_cols if col in main_cols]
         if not shared_cols:
             return 0
@@ -364,12 +390,14 @@ def _copy_table_rows_from_seed(db_path: Path, seed_path: Path, table: str) -> in
         if not seed_rows:
             return 0
 
-        placeholders = ", ".join("?" for _ in shared_cols)
-        quoted_cols = ", ".join(f'"{col}"' for col in shared_cols)
+        fill_cols = _missing_not_null_defaults(main_info, shared_cols)
+        insert_cols = shared_cols + list(fill_cols)
+        placeholders = ", ".join("?" for _ in insert_cols)
+        quoted_cols = ", ".join(f'"{col}"' for col in insert_cols)
         conn.execute(f"DELETE FROM {table}")
         conn.executemany(
             f"INSERT INTO {table} ({quoted_cols}) VALUES ({placeholders})",
-            [tuple(row) for row in seed_rows],
+            [tuple(row) + tuple(fill_cols.values()) for row in seed_rows],
         )
         try:
             conn.execute("DELETE FROM sqlite_sequence WHERE name = ?", (table,))
@@ -428,8 +456,14 @@ def _ensure_core_quota_extensions(db_path: Path) -> int:
             """
             INSERT INTO quota_items (
                 quota_code, discipline, name, unit, labor_qty, material_qty, machine_qty,
-                work_content, applicable_scope, chapter, version, base_price, has_resource_details
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                work_content, applicable_scope, chapter, version, base_price, has_resource_details,
+                recycle_price, process_price, transport_price,
+                clean_price, cut_price, polish_price, drill_price,
+                recycle_source, recycle_supplier, process_source, transport_source, transport_distance,
+                acquisition_method, origin_note, heritage_site, relic_level, repair_part,
+                condition_grade, batch_no, inspection_report_no
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0,
+                      '', '', '', '', '', '', '', '', '', '', '', '', '')
             """,
             to_insert,
         )
@@ -512,6 +546,19 @@ app.state.restore_reference_seed_data = restore_reference_seed_data
 
 
 
+def _run_task_store_maintenance() -> None:
+    """启动后台维护：清理过期任务、外置历史重数据、回收库空间，最后做一次备份。"""
+    try:
+        delete_expired_background_tasks("drawing_recognition", 7 * 24 * 3600)
+        delete_expired_background_tasks("ifc_parse", 7 * 24 * 3600)
+        offload_legacy_heavy_payloads("drawing_recognition")
+        compact_sqlite_database()
+    except Exception:
+        logger.exception("后台任务库维护失败")
+    finally:
+        create_backup()  # auto-backup on startup
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     # MVP/dev convenience. Use Alembic for ongoing migrations.
@@ -529,7 +576,9 @@ async def _lifespan(app: FastAPI):
     # 上一进程遗留的"进行中"后台任务已无工作线程，启动时统一标记为失败
     mark_stale_processing_failed("drawing_recognition", "服务重启导致任务中断，请重新上传图纸")
     mark_stale_processing_failed("ifc_parse", "服务重启导致任务中断，请重新上传 IFC 模型")
-    create_backup()  # auto-backup on startup
+    # 历史任务里的数 MB 预览数据会长期占用库空间，放到后台迁移与回收，
+    # 不阻塞服务启动；备份在维护完成后再做，避免复制膨胀的库文件
+    threading.Thread(target=_run_task_store_maintenance, name="task-store-maintenance", daemon=True).start()
     start_backup_timer()  # periodic backup if configured
     from app.api.routes.drawing_recognition import start_embed_sweeper, stop_embed_sweeper
 

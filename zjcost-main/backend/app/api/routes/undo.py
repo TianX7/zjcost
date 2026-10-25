@@ -26,6 +26,7 @@ class UndoRestoreResponse(BaseModel):
     label: str
     restored_items: int
     restored_bindings: int
+    skipped_bindings: int = 0
     snapshot_time: str | None = None
 
 
@@ -55,5 +56,5 @@ def restore_undo_snapshot(
     """Restore project state from an undo snapshot."""
     result = restore_from_snapshot(project_id, snapshot_id, db)
     if "error" in result:
-        raise HTTPException(status_code=404, detail=result["error"])
+        raise HTTPException(status_code=result.get("status", 400), detail=result["error"])
     return result

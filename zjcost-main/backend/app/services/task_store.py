@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import atexit
+import gzip
+import hashlib
 import json
 import logging
+import os
 import queue
 import threading
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 from app.db.session import session_scope
 from app.models.background_task import BackgroundTask
+from sqlalchemy import func, or_
 
 logger = logging.getLogger(__name__)
 _store_lock = threading.Lock()
@@ -17,6 +22,14 @@ _write_queue: queue.Queue[tuple[str, str, dict[str, Any]]] = queue.Queue(maxsize
 _worker_started = False
 _worker_lock = threading.Lock()
 _worker_thread: threading.Thread | None = None
+
+# 图纸解析的重字段（SVG/高清渲染 base64/几何坐标）单张可达数 MB。
+# 全部塞进 background_tasks.payload_json 会让 SQLite 库膨胀到数百 MB，
+# 每次启动备份再复制 10 份；这里改为压缩后落盘，库里只留轻量状态。
+_HEAVY_PAYLOAD_KEYS = ("preview_svg", "preview_svg_hd", "cad_raster", "cad_geometry")
+_DATA_DIR = Path(os.getenv("ZJCOST_DATA_DIR", str(Path(__file__).resolve().parents[2]))).resolve()
+_ARTIFACT_DIR = _DATA_DIR / "task_artifacts"
+_ARTIFACT_HASHES: dict[str, str] = {}
 
 
 def _shutdown_worker() -> None:
@@ -45,6 +58,76 @@ def _public_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in payload.items() if not key.startswith("_")}
 
 
+def _artifact_file(task_id: str) -> Path:
+    safe = "".join(ch for ch in task_id if ch.isalnum() or ch in "-_")[:80] or "task"
+    return _ARTIFACT_DIR / f"{safe}.json.gz"
+
+
+def _split_heavy(payload: dict[str, Any]) -> dict[str, Any]:
+    """摘出重字段，只返回非空的那些。"""
+    heavy = {key: payload.pop(key) for key in _HEAVY_PAYLOAD_KEYS if payload.get(key)}
+    return heavy
+
+
+def _save_artifacts(task_id: str, heavy: dict[str, Any]) -> None:
+    """把重字段压缩落盘；内容未变化时跳过，避免进度刷新反复写大文件。
+
+    与已有文件合并而不是覆盖：渲染图/几何是分通道异步到达的，
+    覆盖会让先到的数据丢失。
+    """
+    if not heavy:
+        return
+    path = _artifact_file(task_id)
+    merged: dict[str, Any] = {}
+    if path.exists():
+        try:
+            with gzip.open(path, "rt", encoding="utf-8") as fh:
+                merged = json.load(fh)
+        except Exception:
+            merged = {}
+    merged.update(heavy)
+    raw = json.dumps(merged, ensure_ascii=False, default=_json_default).encode("utf-8")
+    digest = hashlib.sha1(raw).hexdigest()
+    if _ARTIFACT_HASHES.get(task_id) == digest:
+        return
+    try:
+        _ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
+        target = path
+        tmp = target.with_suffix(".json.gz.tmp")
+        with gzip.open(tmp, "wb", compresslevel=6) as fh:
+            fh.write(raw)
+        os.replace(tmp, target)
+        _ARTIFACT_HASHES[task_id] = digest
+    except Exception as exc:  # pragma: no cover - 落盘失败不应影响任务查询
+        logger.warning("Failed to persist task artifacts %s: %s", task_id, exc)
+
+
+def load_task_artifact(task_id: str, key: str) -> Any:
+    """读取外置重字段，用于服务重启后仍能查看渲染图/几何数据。"""
+    path = _artifact_file(task_id)
+    if not path.exists():
+        return None
+    try:
+        with gzip.open(path, "rt", encoding="utf-8") as fh:
+            return json.load(fh).get(key)
+    except Exception as exc:  # pragma: no cover
+        logger.warning("Failed to load task artifact %s: %s", task_id, exc)
+        return None
+
+
+def update_task_artifact(task_id: str, values: dict[str, Any]) -> None:
+    """把通过进度通道到达的重数据并入外置文件（重启后仍可查看）。"""
+    _save_artifacts(task_id, {key: value for key, value in values.items() if value})
+
+
+def _delete_artifact(task_id: str) -> None:
+    _ARTIFACT_HASHES.pop(task_id, None)
+    try:
+        _artifact_file(task_id).unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
 def save_background_task(task_id: str, task_type: str, payload: dict[str, Any]) -> None:
     _ensure_worker_started()
     try:
@@ -55,6 +138,8 @@ def save_background_task(task_id: str, task_type: str, payload: dict[str, Any]) 
 
 def _save_background_task_sync(task_id: str, task_type: str, payload: dict[str, Any]) -> None:
     safe_payload = _public_payload(payload)
+    # 重字段先摘除并落盘，库内只保留轻量快照
+    _save_artifacts(task_id, _split_heavy(safe_payload))
     status = str(safe_payload.get("status") or "processing")
     payload_json = json.dumps(safe_payload, ensure_ascii=False, default=_json_default)
     now = datetime.now(timezone.utc)
@@ -117,8 +202,10 @@ def load_background_task(task_id: str, task_type: str | None = None) -> dict[str
         return payload
 
 
-def delete_expired_background_tasks(task_type: str, ttl_seconds: int) -> None:
+def delete_expired_background_tasks(task_type: str, ttl_seconds: int) -> int:
+    """删除过期任务及其外置重数据文件，返回删除条数。"""
     cutoff = datetime.now(timezone.utc) - timedelta(seconds=max(1, ttl_seconds))
+    deleted = 0
     try:
         with _store_lock:
             with session_scope() as db:
@@ -130,8 +217,86 @@ def delete_expired_background_tasks(task_type: str, ttl_seconds: int) -> None:
                 )
                 for row in rows:
                     db.delete(row)
+                    _delete_artifact(row.id)
+                    deleted += 1
     except Exception as exc:  # pragma: no cover
         logger.warning("Failed to delete expired background tasks: %s", exc)
+    return deleted
+
+
+def offload_legacy_heavy_payloads(task_type: str, batch_size: int = 50) -> int:
+    """一次性把历史任务里的 SVG/渲染图/几何数据迁到外置文件。
+
+    旧版本把数 MB 的预览数据直接写进 payload_json，主库因此膨胀到数百 MB。
+    迁移后库内只留轻量状态，历史任务仍可查看预览。
+    """
+    migrated = 0
+    try:
+        while True:
+            with _store_lock:
+                with session_scope() as db:
+                    rows = (
+                        db.query(BackgroundTask)
+                        .filter(BackgroundTask.task_type == task_type)
+                        .filter(func.length(BackgroundTask.payload_json) > 200_000)
+                        .filter(or_(
+                            BackgroundTask.payload_json.like('%"preview_svg": "<svg%'),
+                            BackgroundTask.payload_json.like('%"preview_svg_hd": "<svg%'),
+                            BackgroundTask.payload_json.like('%"cad_raster": {%'),
+                            BackgroundTask.payload_json.like('%"cad_geometry": {%'),
+                        ))
+                        .limit(batch_size)
+                        .all()
+                    )
+                    if not rows:
+                        break
+                    batch_migrated = 0
+                    for row in rows:
+                        try:
+                            payload = json.loads(row.payload_json or "{}")
+                        except json.JSONDecodeError:
+                            payload = {}
+                        heavy = _split_heavy(payload)
+                        if heavy:
+                            _save_artifacts(row.id, heavy)
+                            batch_migrated += 1
+                        row.payload_json = json.dumps(payload, ensure_ascii=False, default=_json_default)
+                        migrated += 1
+            if len(rows) < batch_size or batch_migrated == 0:
+                break
+    except Exception as exc:  # pragma: no cover
+        logger.warning("Failed to offload heavy background task payloads: %s", exc)
+    if migrated:
+        logger.info("Offloaded heavy payloads for %d background task(s)", migrated)
+    return migrated
+
+
+def compact_sqlite_database() -> None:
+    """重数据清理后回收空闲页（VACUUM），把库文件缩回正常大小。"""
+    from app.db.session import engine
+
+    if "sqlite" not in str(engine.url):
+        return
+    raw = None
+    try:
+        raw = engine.raw_connection()
+        dbapi = getattr(raw, "driver_connection", None)
+        if dbapi is None:
+            dbapi = raw.connection
+        dbapi.isolation_level = None  # VACUUM 必须在自动提交模式下执行
+        cur = dbapi.cursor()
+        cur.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        freelist = cur.execute("PRAGMA freelist_count").fetchone()[0] or 0
+        page_size = cur.execute("PRAGMA page_size").fetchone()[0] or 4096
+        if int(freelist) * int(page_size) < 20 * 1024 * 1024:
+            return
+        cur.execute("VACUUM")
+        logger.info("SQLite VACUUM done, reclaimed ~%.1f MB", int(freelist) * int(page_size) / 1048576)
+    except Exception as exc:  # pragma: no cover
+        logger.warning("SQLite compaction failed: %s", exc)
+    finally:
+        if raw is not None:
+            raw.close()
 
 
 def mark_stale_processing_failed(task_type: str, message: str) -> int:

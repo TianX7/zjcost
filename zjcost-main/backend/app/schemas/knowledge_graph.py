@@ -1,5 +1,7 @@
 """Pydantic schemas for knowledge graph features: tags, links, notes, and graph data."""
 
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -16,7 +18,7 @@ class TagOut(BaseModel):
     name: str
     color: str
     category: str
-    created_at: str
+    created_at: datetime | None = None
 
 
 class EntityTagCreate(BaseModel):
@@ -61,7 +63,7 @@ class KnowledgeLinkOut(BaseModel):
     link_type: str
     label: str
     note: str
-    created_at: str
+    created_at: datetime | None = None
 
 
 # ── Knowledge Notes ──────────────────────────────────────────────────────────
@@ -84,8 +86,8 @@ class KnowledgeNoteOut(BaseModel):
     entity_id: int
     title: str
     content: str
-    created_at: str
-    updated_at: str
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 # ── Graph Data ───────────────────────────────────────────────────────────────

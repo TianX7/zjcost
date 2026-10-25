@@ -139,7 +139,11 @@ def test_drawing_upload_returns_recognition_before_slow_valuation(client, monkey
     fake_queue.put(("result", canned_result))
 
     class _FakeProcess:
+        """模拟 subprocess.Popen 的最小接口（生产代码用 poll/returncode）。"""
+        returncode = 0
         exitcode = 0
+        def poll(self):
+            return 0
         def is_alive(self):
             return False
         def join(self, timeout=None):

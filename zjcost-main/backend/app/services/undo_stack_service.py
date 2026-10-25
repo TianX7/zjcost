@@ -11,11 +11,13 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.snapshot import Snapshot
 from app.models.boq_item import BoqItem
 from app.models.line_item_quota_binding import LineItemQuotaBinding
+from app.models.quota_item import QuotaItem
 
 
 # Maximum undo depth per project
@@ -63,13 +65,20 @@ def restore_from_snapshot(
     ).first()
     
     if not snap:
-        return {"error": "Snapshot not found"}
+        return {"error": "Snapshot not found", "status": 404}
     
     data = json.loads(snap.data_json)
     line_data = data.get("lines", [])
     
+    # 快照里的 bindings 只记录了 quota_code，恢复时需要反查当前的定额主键
+    code_to_quota_id = {
+        code: quota_id
+        for quota_id, code in db.query(QuotaItem.id, QuotaItem.quota_code).all()
+    }
+    
     restored_items = 0
     restored_bindings = 0
+    skipped_bindings = 0
     
     for line in line_data:
         boq_id = line.get("boq_item_id")
@@ -77,37 +86,56 @@ def restore_from_snapshot(
             continue
         
         # Restore BOQ item fields
-        boq = db.query(BoqItem).filter(BoqItem.id == boq_id).first()
+        boq = (
+            db.query(BoqItem)
+            .filter(BoqItem.id == boq_id, BoqItem.project_id == project_id)
+            .first()
+        )
         if boq:
-            for field in ("name", "description", "unit", "quantity", "specialty", "chapter"):
+            for field in ("code", "name", "unit", "quantity"):
                 if field in line:
                     setattr(boq, field, line[field])
             restored_items += 1
         
         # Restore bindings from snapshot
-        bindings_data = line.get("bindings", [])
-        if bindings_data:
+        if "bindings" in line:
             # Remove current bindings for this BOQ item
             db.query(LineItemQuotaBinding).filter(
                 LineItemQuotaBinding.boq_item_id == boq_id
             ).delete()
             
-            for bd in bindings_data:
+            seen_quota_ids: set[int] = set()
+            for bd in line.get("bindings") or []:
+                quota_item_id = bd.get("quota_item_id") or code_to_quota_id.get(bd.get("quota_code"))
+                if not quota_item_id:
+                    # 定额已被删除或编码不存在，跳过该绑定而不是让整次恢复失败
+                    skipped_bindings += 1
+                    continue
+                if quota_item_id in seen_quota_ids:
+                    # 同一清单项重复绑定同一定额会触发唯一约束
+                    skipped_bindings += 1
+                    continue
+                seen_quota_ids.add(quota_item_id)
                 new_binding = LineItemQuotaBinding(
                     boq_item_id=boq_id,
-                    quota_item_id=bd.get("quota_item_id"),
+                    quota_item_id=quota_item_id,
                     coefficient=bd.get("coefficient", 1.0),
                 )
                 db.add(new_binding)
                 restored_bindings += 1
     
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        return {"error": f"恢复失败：数据冲突（{exc.orig}）", "status": 409}
     
     return {
         "snapshot_id": snapshot_id,
         "label": snap.label,
         "restored_items": restored_items,
         "restored_bindings": restored_bindings,
+        "skipped_bindings": skipped_bindings,
         "snapshot_time": snap.created_at.isoformat() if snap.created_at else None,
     }
 

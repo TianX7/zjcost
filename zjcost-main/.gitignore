@@ -34,6 +34,7 @@ venv/
 
 # Data & backups (runtime generated)
 backend/data/
+backend/task_artifacts/
 backups/
 
 # Logs
