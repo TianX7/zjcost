@@ -1,0 +1,327 @@
+/* ─────────────────────────────────────────────────────────────
+   全站统一动效层（科技感）
+   - 路由切换：页面淡入上浮 + 顶部扫描光带
+   - 组件交互：卡片悬浮辉光、主按钮聚光、输入框聚焦光晕、标签/Tab 微位移
+   - 所有动效遵循 prefers-reduced-motion
+   ───────────────────────────────────────────────────────────── */
+
+:root {
+  --zj-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --zj-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --zj-dur-fast: 160ms;
+  --zj-dur-base: 280ms;
+  --zj-dur-slow: 480ms;
+}
+
+/* ── 路由切换 ─────────────────────────────────────────────── */
+
+.page-transition {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: zj-page-enter var(--zj-dur-slow) var(--zj-ease-out) both;
+}
+
+/* 顶部扫描光带：每次进入页面扫过一次 */
+.page-transition::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -40%;
+  width: 42%;
+  height: 2px;
+  z-index: 6;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(125, 233, 255, 0.9), rgba(61, 139, 255, 0.6), transparent);
+  filter: drop-shadow(0 0 6px rgba(125, 233, 255, 0.75));
+  animation: zj-route-scan 720ms var(--zj-ease-out) both;
+}
+
+@keyframes zj-page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.996);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes zj-route-scan {
+  0% {
+    left: -40%;
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    left: 100%;
+    opacity: 0;
+  }
+}
+
+/* ── 页头标题 ─────────────────────────────────────────────── */
+
+.workspace-title-in {
+  animation: zj-title-enter 520ms var(--zj-ease-out) both;
+}
+
+.workspace-title-in h2 {
+  position: relative;
+  display: inline-block;
+}
+
+.workspace-title-in h2::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -4px;
+  width: 100%;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(125, 233, 255, 0.9), rgba(61, 139, 255, 0.25), transparent);
+  transform-origin: left center;
+  animation: zj-title-underline 760ms var(--zj-ease-out) both;
+}
+
+@keyframes zj-title-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes zj-title-underline {
+  from {
+    transform: scaleX(0);
+    opacity: 0;
+  }
+  to {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+}
+
+/* ── 页面内容：依次入场 ─────────────────────────────────── */
+
+.page-transition .page-container > * {
+  animation: zj-rise-in 480ms var(--zj-ease-out) both;
+}
+
+.page-transition .page-container > *:nth-child(2) { animation-delay: 60ms; }
+.page-transition .page-container > *:nth-child(3) { animation-delay: 120ms; }
+.page-transition .page-container > *:nth-child(4) { animation-delay: 180ms; }
+.page-transition .page-container > *:nth-child(5) { animation-delay: 240ms; }
+.page-transition .page-container > *:nth-child(n + 6) { animation-delay: 300ms; }
+
+.page-transition .ant-statistic-content-value {
+  animation: zj-value-in 560ms var(--zj-ease-out) both;
+}
+
+@keyframes zj-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes zj-value-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+/* ── 卡片：悬浮上浮 + 边缘辉光 ───────────────────────────── */
+
+.app-main .ant-card {
+  transition:
+    transform var(--zj-dur-base) var(--zj-ease-out),
+    box-shadow var(--zj-dur-base) var(--zj-ease-out),
+    border-color var(--zj-dur-base) var(--zj-ease-out);
+}
+
+.app-main .ant-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(125, 233, 255, 0.22);
+  box-shadow:
+    0 14px 34px rgba(2, 10, 24, 0.45),
+    0 0 0 1px rgba(125, 233, 255, 0.12),
+    0 0 26px rgba(61, 139, 255, 0.12);
+}
+
+/* ── 按钮：主按钮聚光、按下回弹 ─────────────────────────── */
+
+.ant-btn {
+  transition:
+    transform var(--zj-dur-fast) var(--zj-ease-out),
+    box-shadow var(--zj-dur-base) var(--zj-ease-out),
+    border-color var(--zj-dur-base) var(--zj-ease-out);
+}
+
+.ant-btn:active {
+  transform: scale(0.98);
+}
+
+.ant-btn-primary:not(:disabled):hover {
+  box-shadow:
+    0 0 18px rgba(61, 139, 255, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+/* ── 输入类控件：聚焦光晕 ───────────────────────────────── */
+
+.ant-input:focus,
+.ant-input-focused,
+.ant-input-affix-wrapper-focused,
+.ant-select-focused .ant-select-selector,
+.ant-picker-focused,
+.ant-input-number-focused {
+  box-shadow:
+    0 0 0 1px rgba(61, 139, 255, 0.55),
+    0 0 18px rgba(61, 139, 255, 0.18) !important;
+  transition: box-shadow var(--zj-dur-base) var(--zj-ease-out);
+}
+
+/* ── Tabs：悬浮微位移 + 指示条辉光 ──────────────────────── */
+
+.app-main .ant-tabs-tab {
+  transition: color var(--zj-dur-fast) ease, transform var(--zj-dur-fast) var(--zj-ease-out);
+}
+
+.app-main .ant-tabs-tab:hover {
+  transform: translateY(-1px);
+}
+
+.app-main .ant-tabs-ink-bar {
+  box-shadow: 0 0 10px rgba(77, 212, 255, 0.85), 0 0 22px rgba(61, 139, 255, 0.35);
+}
+
+/* ── 标签：悬浮辉光 ─────────────────────────────────────── */
+
+.app-main .ant-tag {
+  transition:
+    transform var(--zj-dur-fast) var(--zj-ease-out),
+    box-shadow var(--zj-dur-fast) var(--zj-ease-out),
+    border-color var(--zj-dur-fast) var(--zj-ease-out);
+}
+
+.app-main .ant-tag:hover {
+  transform: translateY(-1px);
+  border-color: rgba(125, 233, 255, 0.45);
+  box-shadow: 0 0 12px rgba(61, 139, 255, 0.22);
+}
+
+/* ── 分段控制器 / 折叠面板：过渡统一 ────────────────────── */
+
+.app-main .ant-segmented-item,
+.app-main .ant-collapse-header,
+.app-main .ant-list-item {
+  transition:
+    background var(--zj-dur-fast) ease,
+    color var(--zj-dur-fast) ease,
+    transform var(--zj-dur-fast) var(--zj-ease-out);
+}
+
+/* ── 表格行：进入高亮过渡 ───────────────────────────────── */
+
+.app-main .ant-table-tbody > tr > td {
+  transition: background var(--zj-dur-fast) ease;
+}
+
+.app-main .ant-table-tbody > tr:hover > td {
+  background: rgba(61, 139, 255, 0.07);
+}
+
+/* ── 侧边导航：悬浮滑动 + 选中辉光 ─────────────────────── */
+
+.sidebar-nav-item,
+.sidebar-tree-item,
+.sidebar-tree-leaf {
+  transition:
+    background var(--zj-dur-fast) ease,
+    color var(--zj-dur-fast) ease,
+    transform var(--zj-dur-fast) var(--zj-ease-out),
+    box-shadow var(--zj-dur-base) var(--zj-ease-out) !important;
+}
+
+.sidebar-nav-item:hover,
+.sidebar-tree-item:hover {
+  transform: translateX(2px);
+}
+
+.sidebar-nav-item.active {
+  box-shadow: inset 0 0 24px rgba(34, 162, 242, 0.10);
+}
+
+.sidebar-nav-item.active::before {
+  box-shadow: 0 0 10px rgba(34, 162, 242, 0.85), 0 0 20px rgba(34, 162, 242, 0.4);
+}
+
+/* ── 浮层：弹窗与抽屉边缘辉光 ───────────────────────────── */
+
+.ant-modal-content,
+.ant-drawer-content {
+  box-shadow:
+    0 30px 90px rgba(2, 10, 24, 0.6),
+    0 0 0 1px rgba(125, 233, 255, 0.10),
+    0 0 40px rgba(61, 139, 255, 0.10) !important;
+}
+
+/* ── 数值：等宽数字，避免跳动 ───────────────────────────── */
+
+.app-main .ant-statistic-content-value,
+.app-main .dash-hero-metric-value,
+.app-main .dash-kpi-value {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 低动态偏好：关闭装饰性动效 ─────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .page-transition,
+  .page-transition::before,
+  .page-transition .page-container > *,
+  .page-transition .ant-statistic-content-value,
+  .workspace-title-in,
+  .workspace-title-in h2::after {
+    animation: none !important;
+  }
+
+  .app-main .ant-card,
+  .app-main .ant-tabs-tab,
+  .app-main .ant-tag,
+  .app-main .ant-segmented-item,
+  .app-main .ant-collapse-header,
+  .app-main .ant-list-item,
+  .app-main .ant-table-tbody > tr > td,
+  .ant-btn {
+    transition: none !important;
+  }
+
+  .app-main .ant-card:hover,
+  .app-main .ant-tabs-tab:hover,
+  .app-main .ant-tag:hover,
+  .ant-btn:active {
+    transform: none !important;
+  }
+}

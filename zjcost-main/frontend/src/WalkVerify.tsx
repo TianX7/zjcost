@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button, ConfigProvider, Input, Progress, Space, Tag, Typography, message, theme } from "antd";
-import { ArrowLeftOutlined, CheckCircleOutlined, CloudUploadOutlined, DeleteOutlined, HistoryOutlined, HomeOutlined, ReloadOutlined, WarningOutlined } from "@ant-design/icons";
+import { ArrowLeftOutlined, CheckCircleOutlined, CloseOutlined, CloudUploadOutlined, DeleteOutlined, HistoryOutlined, HomeOutlined, ReloadOutlined, WarningOutlined } from "@ant-design/icons";
 import { api, type IfcElement, type IfcTaskStatus, type WalkReviewRecord } from "./api";
 import Ifc3DViewer, { type Element3D } from "./components/Ifc3DViewer";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { useTourMode } from "./tourMode";
 
 const WALK_TASK_POLL_LIMIT = 120;
 const WALK_TASK_POLL_INTERVAL_MS = 1000;
@@ -504,6 +505,7 @@ function pickDisplayElements(status: IfcTaskStatus): Element3D[] {
 
 export default function WalkVerify() {
   const navigate = useNavigate();
+  const { tourMode, setTourMode } = useTourMode();
   const fileRef = useRef<HTMLInputElement>(null);
   const [sceneElements, setSceneElements] = useState<Element3D[]>([]);
   const [sceneTitle, setSceneTitle] = useState("IFC 建筑漫游");
@@ -529,7 +531,8 @@ export default function WalkVerify() {
 
   // 真实加载进度：按 fetch 流式下载字节数 / 解析 / 构建三个阶段推进
   const loadModel = useCallback(async () => {
-    loadAbortRef.current?.abort();
+    // StrictMode 会重复执行挂载 effect：复用进行中的请求，避免 abort 造成 net::ERR_ABORTED
+    if (loadAbortRef.current) return;
     const controller = new AbortController();
     loadAbortRef.current = controller;
 
@@ -663,7 +666,6 @@ export default function WalkVerify() {
 
   useEffect(() => () => {
     stopPoll();
-    loadAbortRef.current?.abort();
     if (exitTimerRef.current) clearTimeout(exitTimerRef.current);
   }, [stopPoll]);
 
@@ -687,6 +689,12 @@ export default function WalkVerify() {
       navigate("/dashboard");
     }, 220);
   }, [navigate, exiting]);
+
+  // 全屏漫游页没有顶栏和导览面板，这里给讲解者一个明确的退出入口
+  const exitTour = useCallback(() => {
+    setTourMode(false);
+    goHome();
+  }, [setTourMode, goHome]);
 
   const loadReviews = useCallback(async () => {
     try {
@@ -776,6 +784,9 @@ export default function WalkVerify() {
           </div>
 
           <div className="walk-header-actions" style={{ display: "flex", gap: 8 }}>
+            {tourMode && (
+              <Button size="small" icon={<CloseOutlined />} onClick={exitTour}>退出导览</Button>
+            )}
             <Button size="small" icon={<ArrowLeftOutlined />} onClick={goBack}>返回</Button>
             <Button size="small" icon={<HomeOutlined />} onClick={goHome}>工作台</Button>
           </div>

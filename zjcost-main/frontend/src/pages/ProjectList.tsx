@@ -17,13 +17,14 @@ import {
   Table,
   Tag,
   Tooltip,
-  Typography,
   message,
 } from "antd";
 import { AppstoreOutlined, CopyOutlined, DeleteOutlined, FolderAddOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, TableOutlined } from "@ant-design/icons";
+import Panel from "../components/Panel";
 import type { Project, ProjectCreateData, ProjectListParams } from "../api";
 import { api } from "../api";
 import { createSampleProject } from "../sampleProject";
+import "../styles/business-screen.css";
 
 const STATUS_OPTIONS = [
   { value: "", label: "全部状态" },
@@ -123,7 +124,7 @@ export default function ProjectList() {
   const [region, setRegion] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(12);
-  const [view, setView] = useState<"card" | "table">("card");
+  const [view, setView] = useState<"card" | "table">("table");
   const [modalOpen, setModalOpen] = useState(false);
   const [creatingSample, setCreatingTour] = useState(false);
   const [form] = Form.useForm<ProjectCreateData>();
@@ -131,14 +132,16 @@ export default function ProjectList() {
   // KPI 口径说明：总数来自服务端 total；其余为本页统计，避免把 10 条当全部
   const summary = useMemo(() => {
     const active = items.filter((item) => item.status !== "archived").length;
+    const ongoing = items.filter((item) => item.status === "ongoing").length;
     const archived = items.filter((item) => item.status === "archived").length;
     const completed = items.filter((item) => item.status === "completed").length;
     const budgetTotal = items.reduce((sum, item) => sum + Number(item.budget ?? 0), 0);
-    return { active, archived, completed, budgetTotal };
+    return { active, ongoing, archived, completed, budgetTotal };
   }, [items]);
 
   const animTotal = useCountUp(total);
   const animActive = useCountUp(summary.active);
+  const animOngoing = useCountUp(summary.ongoing);
   const animBudget = useCountUp(Math.round(summary.budgetTotal));
   const animArchived = useCountUp(summary.archived);
 
@@ -194,102 +197,99 @@ export default function ProjectList() {
   };
 
   return (
-    <div className="page-container pl-page">
-      <div className="pl-header">
-        <div>
-          <Typography.Title level={3} style={{ marginBottom: 4 }}>项目台账</Typography.Title>
-          <Typography.Text type="secondary">集中管理工程项目、计价规范、预算口径和全过程成果入口。</Typography.Text>
+    <div className="page-container pl-page bs-screen-page">
+      <div className="bs-summary-strip">
+        <div className="bs-summary-item is-cyan">
+          <span className="bs-summary-label">项目总数</span>
+          <strong className="bs-summary-value num">{animTotal}</strong>
+          <span className="bs-summary-hint">{animActive} 个活跃 · {animArchived} 个归档</span>
         </div>
-        <Space wrap>
-          <Button icon={<FolderAddOutlined />} loading={creatingSample} onClick={startSample}>示例项目</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>新建项目</Button>
-        </Space>
-      </div>
-
-      <div className="pl-kpi-strip">
-        <div className="pl-kpi-item">
-          <span className="pl-kpi-icon blue"><span className="material-symbols-outlined">folder_open</span></span>
-          <div>
-            <strong className="num">{animTotal}</strong>
-            <em>项目总数</em>
-          </div>
-          <span className="pl-kpi-sub">{animActive} 活跃</span>
+        <div className="bs-summary-item is-green">
+          <span className="bs-summary-label">在建项目</span>
+          <strong className="bs-summary-value num">{animOngoing}</strong>
+          <span className="bs-summary-hint">本页 {items.length} 项</span>
         </div>
-        <div className="pl-kpi-item">
-          <span className="pl-kpi-icon green"><span className="material-symbols-outlined">check_circle</span></span>
-          <div>
-            <strong className="num">{summary.completed}</strong>
-            <em>已完工（本页）</em>
-          </div>
-          <span className="pl-kpi-sub">本页 {items.length} 项</span>
+        <div className="bs-summary-item is-green">
+          <span className="bs-summary-label">已完工</span>
+          <strong className="bs-summary-value num">{summary.completed}</strong>
+          <span className="bs-summary-hint">本页统计</span>
         </div>
-        <div className="pl-kpi-item">
-          <span className="pl-kpi-icon amber"><span className="material-symbols-outlined">request_quote</span></span>
-          <div>
-            <strong className="num">{money(animBudget)}</strong>
-            <em>预算合计（本页）</em>
-          </div>
-          <span className="pl-kpi-sub">仅统计当前页</span>
-        </div>
-        <div className="pl-kpi-item">
-          <span className="pl-kpi-icon purple"><span className="material-symbols-outlined">archive</span></span>
-          <div>
-            <strong className="num">{animArchived}</strong>
-            <em>已归档（本页）</em>
-          </div>
-          <span className="pl-kpi-sub">归档后只读</span>
+        <div className="bs-summary-item is-amber">
+          <span className="bs-summary-label">预算合计</span>
+          <strong className="bs-summary-value num">{money(animBudget)}</strong>
+          <span className="bs-summary-hint">仅统计当前页</span>
         </div>
       </div>
 
-      <div className="pl-toolbar">
-        <Space wrap>
-          <Input
-            allowClear
-            prefix={<SearchOutlined />}
-            placeholder="搜索项目名称"
-            value={query}
-            onChange={(event) => { setQuery(event.target.value); setPage(1); }}
-            style={{ width: 220 }}
-          />
-          <Select value={status} options={STATUS_OPTIONS} onChange={(value) => { setStatus(value); setPage(1); }} style={{ width: 130 }} placeholder="状态" />
-          <Select
-            value={projectType || undefined}
-            options={[{ value: "", label: "全部类型" }, ...PROJECT_TYPE_OPTIONS]}
-            onChange={(value) => { setProjectType(value); setPage(1); }}
-            style={{ width: 140 }}
-            placeholder="工程类型"
-            allowClear
-          />
-          <Select
-            value={region || undefined}
-            options={[{ value: "", label: "全部地区" }, ...REGION_OPTIONS]}
-            onChange={(value) => { setRegion(value ?? ""); setPage(1); }}
-            style={{ width: 130 }}
-            placeholder="地区"
-            showSearch
-            optionFilterProp="label"
-            allowClear
-          />
-          <Button icon={<ReloadOutlined />} loading={loading} onClick={load}>刷新</Button>
-        </Space>
-        <Segmented
-          value={view}
-          onChange={(value) => setView(value as "card" | "table")}
-          options={[
-            { label: "卡片", value: "card", icon: <AppstoreOutlined /> },
-            { label: "表格", value: "table", icon: <TableOutlined /> },
-          ]}
-        />
-      </div>
+      <div className="bs-two-col side-left">
+        <Panel
+          title="筛选条件"
+          icon="filter_list"
+          extra={<Button type="text" size="small" icon={<ReloadOutlined />} loading={loading} onClick={load}>刷新</Button>}
+        >
+          <div className="bs-filter">
+            <label className="bs-field">
+              <span className="bs-field-label">项目名称</span>
+              <Input
+                allowClear
+                prefix={<SearchOutlined />}
+                placeholder="搜索项目名称"
+                value={query}
+                onChange={(event) => { setQuery(event.target.value); setPage(1); }}
+              />
+            </label>
+            <label className="bs-field">
+              <span className="bs-field-label">项目状态</span>
+              <Select value={status} options={STATUS_OPTIONS} onChange={(value) => { setStatus(value); setPage(1); }} />
+            </label>
+            <label className="bs-field">
+              <span className="bs-field-label">工程类型</span>
+              <Select
+                value={projectType || undefined}
+                options={[{ value: "", label: "全部类型" }, ...PROJECT_TYPE_OPTIONS]}
+                onChange={(value) => { setProjectType(value); setPage(1); }}
+                placeholder="工程类型"
+                allowClear
+              />
+            </label>
+            <label className="bs-field">
+              <span className="bs-field-label">所属地区</span>
+              <Select
+                value={region || undefined}
+                options={[{ value: "", label: "全部地区" }, ...REGION_OPTIONS]}
+                onChange={(value) => { setRegion(value ?? ""); setPage(1); }}
+                placeholder="地区"
+                showSearch
+                optionFilterProp="label"
+                allowClear
+              />
+            </label>
+          </div>
+        </Panel>
 
+        <Panel
+          title="项目清单"
+          icon="table_rows"
+          extra={
+            <Space size={8} wrap>
+              <Segmented
+                value={view}
+                onChange={(value) => setView(value as "card" | "table")}
+                options={[
+                  { label: "卡片", value: "card", icon: <AppstoreOutlined /> },
+                  { label: "表格", value: "table", icon: <TableOutlined /> },
+                ]}
+              />
+              <Button icon={<FolderAddOutlined />} loading={creatingSample} onClick={startSample}>示例项目</Button>
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>新建项目</Button>
+            </Space>
+          }
+          flush={view === "table"}
+          bodyClassName={view === "table" ? "bs-panel-table" : undefined}
+        >
       {items.length === 0 ? (
         <div className="pl-empty">
-          <Empty description="项目已清空。可以新建项目，也可以用示例项目检查图纸、IFC、计价和审计流程。">
-            <Space wrap>
-              <Button type="primary" onClick={() => setModalOpen(true)}>新建项目</Button>
-              <Button loading={creatingSample} onClick={startSample}>创建示例项目</Button>
-            </Space>
-          </Empty>
+          <Empty description="项目已清空。可以新建项目，也可以用示例项目检查图纸、IFC、计价和审计流程。" />
         </div>
       ) : view === "card" ? (
         <div className="pl-card-grid">
@@ -358,14 +358,16 @@ export default function ProjectList() {
           loading={loading}
           dataSource={items}
           pagination={false}
+          scroll={{ x: 1080 }}
           onRow={(project) => ({ onClick: () => navigate(`/projects/${project.id}`) })}
           columns={[
             {
               title: "项目名称", dataIndex: "name", key: "name", ellipsis: true,
               render: (value: string, project: Project) => (
-                <Button type="link" style={{ padding: 0, height: "auto" }} onClick={(e) => { e.stopPropagation(); navigate(`/projects/${project.id}`); }}>
-                  {value}
-                </Button>
+                <div>
+                  <span style={{ fontWeight: 600 }}>{value}</span>
+                  <span className="bs-cell-sub">{project.description?.trim() || "点击行进入项目"}</span>
+                </div>
               ),
             },
             { title: "类型", dataIndex: "project_type", key: "project_type", width: 110, render: (v: string) => v ?? "-" },
@@ -385,10 +387,9 @@ export default function ProjectList() {
               sorter: (a: Project, b: Project) => String(a.updated_at ?? "").localeCompare(String(b.updated_at ?? "")),
             },
             {
-              title: "操作", key: "actions", width: 200, fixed: "right",
+              title: "操作", key: "actions", width: 160, fixed: "right",
               render: (_: unknown, project: Project) => (
                 <Space onClick={(e) => e.stopPropagation()}>
-                  <Button size="small" onClick={() => navigate(`/projects/${project.id}`)}>打开</Button>
                   <Button size="small" icon={<CopyOutlined />} onClick={async () => { await api.duplicateProject(project.id); await load(); }} />
                   <Popconfirm title="确认归档？归档后只读。" onConfirm={async () => { await api.archiveProject(project.id); await load(); }}>
                     <Button size="small">归档</Button>
@@ -404,7 +405,7 @@ export default function ProjectList() {
       )}
 
       {total > 0 && (
-        <div className="pl-pagination">
+        <div className="pl-pagination bs-panel-foot">
           <span>共 {total} 个项目</span>
           <Pagination
             size="small"
@@ -418,6 +419,8 @@ export default function ProjectList() {
           />
         </div>
       )}
+        </Panel>
+      </div>
 
       <Modal
         title="新建项目"

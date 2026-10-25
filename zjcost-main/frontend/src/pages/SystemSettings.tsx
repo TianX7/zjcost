@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Button, Empty, Form, Input, InputNumber, Modal, Popconfirm, Select, Table, Tabs, Tag, message } from "antd";
+import { Button, Empty, Form, Input, InputNumber, Modal, Popconfirm, Select, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { CalculatorOutlined, CheckCircleOutlined, CloudSyncOutlined, DeleteOutlined, DesktopOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SafetyOutlined } from "@ant-design/icons";
+import { CheckCircleOutlined, CloudSyncOutlined, DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import type { PriceSourceInfo, Project, RulePackage, RulePackageCreate, SystemCheckItem } from "../api";
 import { api } from "../api";
-import PageHeader from "../components/PageHeader";
+import Panel from "../components/Panel";
+import "../styles/resource-screen.css";
 import TaskCenter from "./TaskCenter";
 
 // 费率 → 百分比展示
@@ -17,8 +17,19 @@ function pct(rate: number | null | undefined, digits = 2) {
 // 未绑定规则包时的默认费率（与后端 DEFAULT_FEE_CONFIG 一致）
 const DEFAULT_RATES = { management_rate: 0.08, profit_rate: 0.05, regulatory_rate: 0.03, tax_rate: 0.09 };
 
+type SettingsSection = "fees" | "system" | "prices" | "tasks";
+
+// 设置导航分组
+const SETTINGS_NAV: { key: SettingsSection; icon: string; label: string; desc: string }[] = [
+  { key: "fees", icon: "calculate", label: "计费参数", desc: "规则包 · 费率快照" },
+  { key: "system", icon: "monitor_heart", label: "系统检查", desc: "依赖与配置自检" },
+  { key: "prices", icon: "cloud_sync", label: "价格调度", desc: "抓取任务 · 价格来源" },
+  { key: "tasks", icon: "dashboard", label: "作业监控", desc: "后台任务与队列" },
+];
+
+
 export default function SystemSettings() {
-  const navigate = useNavigate();
+  const [activeSection, setActiveSection] = useState<SettingsSection>("fees");
   const [systemChecks, setSystemChecks] = useState<SystemCheckItem[]>([]);
   const [priceSources, setPriceSources] = useState<PriceSourceInfo[]>([]);
   const [loading, setLoading] = useState(false);
@@ -178,206 +189,217 @@ export default function SystemSettings() {
   );
 
   return (
-    <div className="page-container">
-      <PageHeader
-        icon="tune"
-        title="系统配置参数"
-        subtitle="管理计费规则包、价格调度与作业监控，统一维护造价计算的费率与数据来源。"
-      />
-
-      {/* KPI 指标卡 */}
-      <div className="kpi-grid">
-        <div className="kpi-card">
-          <span className="material-symbols-outlined kpi-card-icon">tune</span>
-          <div className="kpi-card-body">
-            <span className="kpi-card-label">规则包</span>
-            <span className="kpi-card-value">{rules.length}<span className="kpi-card-suffix">个</span></span>
+    <div className="page-container res-page">
+      {/* 摘要指标带 */}
+      <div className="screen-metrics">
+        <div className="screen-metric">
+          <span className="material-symbols-outlined screen-metric-icon">tune</span>
+          <div className="screen-metric-body">
+            <span className="screen-metric-label">规则包</span>
+            <span className="screen-metric-value">
+              {rules.length}
+              <span className="screen-metric-unit">个</span>
+            </span>
           </div>
         </div>
-        <div className="kpi-card">
-          <span className="material-symbols-outlined kpi-card-icon">link</span>
-          <div className="kpi-card-body">
-            <span className="kpi-card-label">已绑定项目</span>
-            <span className="kpi-card-value">{projects.filter((p) => p.rule_package_id).length}<span className="kpi-card-suffix">/{projects.length || 0}</span></span>
+        <div className="screen-metric">
+          <span className="material-symbols-outlined screen-metric-icon">link</span>
+          <div className="screen-metric-body">
+            <span className="screen-metric-label">已绑定项目</span>
+            <span className="screen-metric-value">
+              {projects.filter((p) => p.rule_package_id).length}
+              <span className="screen-metric-unit">/{projects.length || 0}</span>
+            </span>
           </div>
         </div>
-        <div className="kpi-card">
-          <span className="material-symbols-outlined kpi-card-icon">verified</span>
-          <div className="kpi-card-body">
-            <span className="kpi-card-label">系统检查项</span>
-            <span className="kpi-card-value">{systemChecks.length}<span className="kpi-card-suffix">项</span></span>
+        <div className="screen-metric is-amber">
+          <span className="material-symbols-outlined screen-metric-icon">verified</span>
+          <div className="screen-metric-body">
+            <span className="screen-metric-label">系统检查项</span>
+            <span className="screen-metric-value">
+              {systemChecks.length}
+              <span className="screen-metric-unit">项</span>
+            </span>
           </div>
         </div>
-        <div className="kpi-card">
-          <span className="material-symbols-outlined kpi-card-icon">trending_up</span>
-          <div className="kpi-card-body">
-            <span className="kpi-card-label">可用价格源</span>
-            <span className="kpi-card-value">{priceSources.filter((source) => source.available).length}<span className="kpi-card-suffix">/{priceSources.length || 0}</span></span>
+        <div className="screen-metric">
+          <span className="material-symbols-outlined screen-metric-icon">trending_up</span>
+          <div className="screen-metric-body">
+            <span className="screen-metric-label">可用价格源</span>
+            <span className="screen-metric-value">
+              {priceSources.filter((source) => source.available).length}
+              <span className="screen-metric-unit">/{priceSources.length || 0}</span>
+            </span>
           </div>
         </div>
       </div>
 
-      <Tabs
-        items={[
-          {
-            key: "fees",
-            label: <span><CalculatorOutlined /> 计费参数</span>,
-            children: (
-              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                <div className="content-card">
-                  <div className="content-card-head">
-                    <h3 className="content-card-title"><span className="material-symbols-outlined">tune</span>规则包</h3>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <Button icon={<ReloadOutlined />} loading={rulesLoading} onClick={loadRules}>刷新</Button>
-                      <Button type="primary" icon={<PlusOutlined />} onClick={openCreateRule}>新建规则包</Button>
-                    </div>
-                  </div>
-                  <div className="content-card-body flush">
-                    <Table
-                      rowKey="id"
-                      size="small"
-                      loading={rulesLoading}
-                      dataSource={rules}
-                      pagination={false}
-                      locale={{ emptyText: <Empty description="暂无规则包。计费默认使用管理费率 8% / 利润率 5% / 规费 3% / 增值税 9%，建议新建规则包并按项目绑定。" /> }}
-                      columns={[
-                        { title: "名称", dataIndex: "name", width: 150, ellipsis: true },
-                        { title: "地区", dataIndex: "region", width: 90, render: (v: string) => v || "-" },
-                        { title: "管理费率", dataIndex: "management_rate", width: 100, align: "right", render: (v: number) => pct(v) },
-                        { title: "利润率", dataIndex: "profit_rate", width: 90, align: "right", render: (v: number) => pct(v) },
-                        { title: "规费费率", dataIndex: "regulatory_rate", width: 100, align: "right", render: (v: number) => pct(v) },
-                        { title: "增值税率", dataIndex: "tax_rate", width: 100, align: "right", render: (v: number) => pct(v) },
-                        { title: "舍入规则", dataIndex: "rounding_rule", width: 120, render: (v: string) => v || "-" },
-                        { title: "版本", dataIndex: "version", width: 70 },
-                        {
-                          title: "已绑定项目",
-                          key: "usage",
-                          width: 110,
-                          align: "center",
-                          render: (_: unknown, row) => (
-                            <Tag color={(ruleUsage.get(row.id) ?? 0) > 0 ? "green" : "default"}>{ruleUsage.get(row.id) ?? 0} 个</Tag>
-                          ),
-                        },
-                        {
-                          title: "操作",
-                          key: "actions",
-                          width: 110,
-                          render: (_: unknown, row) => (
-                            <span style={{ display: "inline-flex", gap: 6 }}>
-                              <Button size="small" icon={<EditOutlined />} onClick={() => openEditRule(row)}>编辑</Button>
-                              <Popconfirm
-                                title="删除规则包"
-                                description={(ruleUsage.get(row.id) ?? 0) > 0 ? `该包已被 ${ruleUsage.get(row.id)} 个项目绑定，删除后将解绑并回默认费率。` : "确认删除该规则包？"}
-                                okText="删除"
-                                cancelText="取消"
-                                okButtonProps={{ danger: true }}
-                                onConfirm={() => deleteRule(row)}
-                              >
-                                <Button size="small" danger icon={<DeleteOutlined />} />
-                              </Popconfirm>
-                            </span>
-                          ),
-                        },
-                      ]}
-                    />
-                  </div>
-                </div>
+      <div className="res-settings">
+        {/* 左设置导航 */}
+        <Panel title="设置导航" icon="tune" className="res-side" bodyClassName="res-side-body">
+          {SETTINGS_NAV.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              className={`res-nav-item${activeSection === item.key ? " active" : ""}`}
+              onClick={() => setActiveSection(item.key)}
+            >
+              <span className="material-symbols-outlined">{item.icon}</span>
+              <span className="res-nav-text">
+                <span className="res-nav-label">{item.label}</span>
+                <span className="res-nav-desc">{item.desc}</span>
+              </span>
+            </button>
+          ))}
+          <p className="res-note">
+            费率与规则包修改后即时联动项目计价；价格调度任务在后台运行，可在「作业监控」查看执行记录。
+          </p>
+        </Panel>
 
-                <div className="content-card">
-                  <div className="content-card-head">
-                    <h3 className="content-card-title"><span className="material-symbols-outlined">link</span>项目费率快照（联动计价）</h3>
-                  </div>
-                  <div className="content-card-body flush">
-                    <Table
-                      rowKey="id"
-                      size="small"
-                      loading={rulesLoading}
-                      dataSource={projectRateSnapshot}
-                      pagination={false}
-                      scroll={{ x: 1080 }}
-                      locale={{ emptyText: <Empty description="暂无项目。创建项目后即可绑定规则包并参与计价。" /> }}
-                      columns={[
-                        { title: "项目名称", dataIndex: "name", width: 180, ellipsis: true, fixed: "left" },
-                        { title: "地区", dataIndex: "region", width: 90, render: (v: string) => v || "-" },
-                        {
-                          title: "当前规则包",
-                          key: "rule",
-                          width: 150,
-                          render: (_: unknown, row: (typeof projectRateSnapshot)[number]) =>
-                            row.rule ? <Tag color="blue">{row.rule.name}</Tag> : <Tag>默认费率</Tag>,
-                        },
-                        { title: "管理费率", key: "m", width: 95, align: "right", render: (_: unknown, row: (typeof projectRateSnapshot)[number]) => pct(row.rule?.management_rate ?? DEFAULT_RATES.management_rate) },
-                        { title: "利润率", key: "p", width: 85, align: "right", render: (_: unknown, row: (typeof projectRateSnapshot)[number]) => pct(row.rule?.profit_rate ?? DEFAULT_RATES.profit_rate) },
-                        { title: "规费费率", key: "r", width: 95, align: "right", render: (_: unknown, row: (typeof projectRateSnapshot)[number]) => pct(row.rule?.regulatory_rate ?? DEFAULT_RATES.regulatory_rate) },
-                        { title: "增值税率", key: "t", width: 95, align: "right", render: (_: unknown, row: (typeof projectRateSnapshot)[number]) => pct(row.rule?.tax_rate ?? DEFAULT_RATES.tax_rate) },
-                        {
-                          title: "绑定规则包",
-                          key: "bind",
-                          width: 220,
-                          fixed: "right",
-                          render: (_: unknown, row: (typeof projectRateSnapshot)[number]) => {
-                            const selectedId = bindSelection[row.id] ?? row.rule_package_id;
-                            return (
-                              <div style={{ display: "flex", gap: 6 }}>
-                                <Select
-                                  size="small"
-                                  placeholder="选择规则包"
-                                  style={{ minWidth: 130, flex: 1 }}
-                                  value={selectedId ?? undefined}
-                                  options={rules.map((r) => ({ value: r.id, label: r.name }))}
-                                  disabled={rules.length === 0}
-                                  onChange={(value) => setBindSelection((prev) => ({ ...prev, [row.id]: value }))}
-                                />
-                                <Button
-                                  size="small"
-                                  type="primary"
-                                  loading={bindLoadingId === row.id}
-                                  disabled={rules.length === 0 || selectedId == null || selectedId === row.rule_package_id}
-                                  onClick={() => selectedId != null && bindRule(row.id, selectedId)}
-                                >
-                                  绑定
-                                </Button>
-                              </div>
-                            );
-                          },
-                        },
-                      ]}
-                    />
-                  </div>
-                </div>
-              </div>
-            ),
-          },
-          {
-            key: "system",
-            label: <span><SafetyOutlined /> 系统检查</span>,
-            children: (
-              <div className="content-card">
-                <div className="content-card-head">
-                  <h3 className="content-card-title"><span className="material-symbols-outlined">monitor_heart</span>系统健康检查</h3>
-                </div>
-                <div className="content-card-body flush">
-                  <Table rowKey="key" size="small" columns={checkColumns} dataSource={systemChecks} pagination={false} locale={{ emptyText: <Empty description="暂无检查项数据。" /> }} />
-                </div>
-              </div>
-            ),
-          },
-          {
-            key: "prices",
-            label: <span><CloudSyncOutlined /> 价格调度</span>,
-            children: (
-              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                <div className="price-scheduler-cards">
-                  <div className="price-scheduler-card">
+        {/* 右设置面板 */}
+        <div className="res-settings-content">
+          {activeSection === "fees" && (
+            <>
+              <Panel
+                title="规则包"
+                icon="tune"
+                flush
+                extra={
+                  <span style={{ display: "inline-flex", gap: 8 }}>
+                    <Button icon={<ReloadOutlined />} loading={rulesLoading} onClick={loadRules}>刷新</Button>
+                    <Button type="primary" icon={<PlusOutlined />} onClick={openCreateRule}>新建规则包</Button>
+                  </span>
+                }
+              >
+                <Table
+                  rowKey="id"
+                  size="small"
+                  loading={rulesLoading}
+                  dataSource={rules}
+                  pagination={false}
+                  locale={{ emptyText: <Empty description="暂无规则包。计费默认使用管理费率 8% / 利润率 5% / 规费 3% / 增值税 9%，建议新建规则包并按项目绑定。" /> }}
+                  columns={[
+                    { title: "名称", dataIndex: "name", width: 150, ellipsis: true },
+                    { title: "地区", dataIndex: "region", width: 90, render: (v: string) => v || "-" },
+                    { title: "管理费率", dataIndex: "management_rate", width: 100, align: "right", render: (v: number) => pct(v) },
+                    { title: "利润率", dataIndex: "profit_rate", width: 90, align: "right", render: (v: number) => pct(v) },
+                    { title: "规费费率", dataIndex: "regulatory_rate", width: 100, align: "right", render: (v: number) => pct(v) },
+                    { title: "增值税率", dataIndex: "tax_rate", width: 100, align: "right", render: (v: number) => pct(v) },
+                    { title: "舍入规则", dataIndex: "rounding_rule", width: 120, render: (v: string) => v || "-" },
+                    { title: "版本", dataIndex: "version", width: 70 },
+                    {
+                      title: "已绑定项目",
+                      key: "usage",
+                      width: 110,
+                      align: "center",
+                      render: (_: unknown, row) => (
+                        <Tag color={(ruleUsage.get(row.id) ?? 0) > 0 ? "green" : "default"}>{ruleUsage.get(row.id) ?? 0} 个</Tag>
+                      ),
+                    },
+                    {
+                      title: "操作",
+                      key: "actions",
+                      width: 110,
+                      render: (_: unknown, row) => (
+                        <span style={{ display: "inline-flex", gap: 6 }}>
+                          <Button size="small" icon={<EditOutlined />} onClick={() => openEditRule(row)}>编辑</Button>
+                          <Popconfirm
+                            title="删除规则包"
+                            description={(ruleUsage.get(row.id) ?? 0) > 0 ? `该包已被 ${ruleUsage.get(row.id)} 个项目绑定，删除后将解绑并回默认费率。` : "确认删除该规则包？"}
+                            okText="删除"
+                            cancelText="取消"
+                            okButtonProps={{ danger: true }}
+                            onConfirm={() => deleteRule(row)}
+                          >
+                            <Button size="small" danger icon={<DeleteOutlined />} />
+                          </Popconfirm>
+                        </span>
+                      ),
+                    },
+                  ]}
+                />
+              </Panel>
+
+              <Panel title="项目费率快照（联动计价）" icon="link" flush>
+                <Table
+                  rowKey="id"
+                  size="small"
+                  loading={rulesLoading}
+                  dataSource={projectRateSnapshot}
+                  pagination={false}
+                  scroll={{ x: 1080 }}
+                  locale={{ emptyText: <Empty description="暂无项目。创建项目后即可绑定规则包并参与计价。" /> }}
+                  columns={[
+                    { title: "项目名称", dataIndex: "name", width: 180, ellipsis: true, fixed: "left" },
+                    { title: "地区", dataIndex: "region", width: 90, render: (v: string) => v || "-" },
+                    {
+                      title: "当前规则包",
+                      key: "rule",
+                      width: 150,
+                      render: (_: unknown, row: (typeof projectRateSnapshot)[number]) =>
+                        row.rule ? <Tag color="blue">{row.rule.name}</Tag> : <Tag>默认费率</Tag>,
+                    },
+                    { title: "管理费率", key: "m", width: 95, align: "right", render: (_: unknown, row: (typeof projectRateSnapshot)[number]) => pct(row.rule?.management_rate ?? DEFAULT_RATES.management_rate) },
+                    { title: "利润率", key: "p", width: 85, align: "right", render: (_: unknown, row: (typeof projectRateSnapshot)[number]) => pct(row.rule?.profit_rate ?? DEFAULT_RATES.profit_rate) },
+                    { title: "规费费率", key: "r", width: 95, align: "right", render: (_: unknown, row: (typeof projectRateSnapshot)[number]) => pct(row.rule?.regulatory_rate ?? DEFAULT_RATES.regulatory_rate) },
+                    { title: "增值税率", key: "t", width: 95, align: "right", render: (_: unknown, row: (typeof projectRateSnapshot)[number]) => pct(row.rule?.tax_rate ?? DEFAULT_RATES.tax_rate) },
+                    {
+                      title: "绑定规则包",
+                      key: "bind",
+                      width: 220,
+                      fixed: "right",
+                      render: (_: unknown, row: (typeof projectRateSnapshot)[number]) => {
+                        const selectedId = bindSelection[row.id] ?? row.rule_package_id;
+                        return (
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <Select
+                              size="small"
+                              placeholder="选择规则包"
+                              style={{ minWidth: 130, flex: 1 }}
+                              value={selectedId ?? undefined}
+                              options={rules.map((r) => ({ value: r.id, label: r.name }))}
+                              disabled={rules.length === 0}
+                              onChange={(value) => setBindSelection((prev) => ({ ...prev, [row.id]: value }))}
+                            />
+                            <Button
+                              size="small"
+                              type="primary"
+                              loading={bindLoadingId === row.id}
+                              disabled={rules.length === 0 || selectedId == null || selectedId === row.rule_package_id}
+                              onClick={() => selectedId != null && bindRule(row.id, selectedId)}
+                            >
+                              绑定
+                            </Button>
+                          </div>
+                        );
+                      },
+                    },
+                  ]}
+                />
+              </Panel>
+            </>
+          )}
+
+          {activeSection === "system" && (
+            <Panel title="系统健康检查" icon="monitor_heart" flush>
+              <Table rowKey="key" size="small" columns={checkColumns} dataSource={systemChecks} pagination={false} locale={{ emptyText: <Empty description="暂无检查项数据。" /> }} />
+            </Panel>
+          )}
+
+          {activeSection === "prices" && (
+            <>
+              <Panel title="调度任务" icon="schedule">
+                <div className="res-scheduler-grid">
+                  <div className="res-scheduler-card">
                     <span className="material-symbols-outlined">cloud_sync</span>
-                    <span className="price-scheduler-card-title">测试抓取</span>
-                    <span className="price-scheduler-card-desc">立即执行一次价格抓取，验证采集源是否可用。</span>
+                    <span className="res-scheduler-title">测试抓取</span>
+                    <span className="res-scheduler-desc">立即执行一次价格抓取，验证采集源是否可用。</span>
                     <Button type="primary" icon={<CloudSyncOutlined />} loading={fetchingPrices} onClick={fetchPrices}>执行抓取</Button>
                   </div>
-                  <div className="price-scheduler-card">
+                  <div className="res-scheduler-card">
                     <span className="material-symbols-outlined">schedule</span>
-                    <span className="price-scheduler-card-title">每日定时调度</span>
-                    <span className="price-scheduler-card-desc">启动 24 小时周期自动抓取，保持价格库最新。</span>
+                    <span className="res-scheduler-title">每日定时调度</span>
+                    <span className="res-scheduler-desc">启动 24 小时周期自动抓取，保持价格库最新。</span>
                     <Button loading={schedulerBusy === "start"} onClick={async () => {
                       setSchedulerBusy("start");
                       try { await api.startPriceScheduler(24); message.success("价格抓取调度已启动"); }
@@ -385,10 +407,10 @@ export default function SystemSettings() {
                       finally { setSchedulerBusy(null); }
                     }}>启动调度</Button>
                   </div>
-                  <div className="price-scheduler-card">
+                  <div className="res-scheduler-card">
                     <span className="material-symbols-outlined">pause_circle</span>
-                    <span className="price-scheduler-card-title">停止调度</span>
-                    <span className="price-scheduler-card-desc">停止后台定时抓取任务，保留已采集的价格数据。</span>
+                    <span className="res-scheduler-title">停止调度</span>
+                    <span className="res-scheduler-desc">停止后台定时抓取任务，保留已采集的价格数据。</span>
                     <Button loading={schedulerBusy === "stop"} onClick={async () => {
                       setSchedulerBusy("stop");
                       try { await api.stopPriceScheduler(); message.success("价格抓取调度已停止"); }
@@ -396,52 +418,38 @@ export default function SystemSettings() {
                       finally { setSchedulerBusy(null); }
                     }}>停止调度</Button>
                   </div>
-                  <div className="price-scheduler-card">
-                    <span className="material-symbols-outlined">database</span>
-                    <span className="price-scheduler-card-title">数据资源</span>
-                    <span className="price-scheduler-card-desc">前往数据资源页面管理定额库、工料机和市场价详情。</span>
-                    <Button onClick={() => navigate("/data-resources")}>进入数据资源</Button>
-                  </div>
                 </div>
-                <div className="content-card">
-                  <div className="content-card-head">
-                    <h3 className="content-card-title"><span className="material-symbols-outlined">trending_up</span>价格来源</h3>
-                  </div>
-                  <div className="content-card-body flush">
-                    <Table
-                      rowKey="source_name"
-                      size="small"
-                      loading={loading}
-                      dataSource={priceSources}
-                      pagination={false}
-                      scroll={{ x: 760 }}
-                      locale={{ emptyText: <Empty description="暂无价格来源。请在「数据资源」页配置采集源。" /> }}
-                      columns={[
-                        { title: "来源", dataIndex: "display_name" },
-                        { title: "标识", dataIndex: "source_name" },
-                        { title: "可用", dataIndex: "available", render: (value: boolean) => value ? <Tag color="green" icon={<CheckCircleOutlined />}>可用</Tag> : <Tag color="red">不可用</Tag> },
-                        { title: "已抓取", dataIndex: "total_prices_fetched" },
-                        { title: "最近成功", dataIndex: "last_success_at", render: (value: string | null) => value || "-" },
-                        { title: "错误", dataIndex: "error", render: (value: string | null) => value || "-" },
-                      ]}
-                    />
-                  </div>
-                </div>
-              </div>
-            ),
-          },
-          {
-            key: "tasks",
-            label: (
-              <span>
-                <DesktopOutlined />
-                作业监控
-              </span>
-            ),
-            children: <TaskCenter />,
-          },
-        ]}
-      />
+              </Panel>
+
+              <Panel title="价格来源" icon="trending_up" flush>
+                <Table
+                  rowKey="source_name"
+                  size="small"
+                  loading={loading}
+                  dataSource={priceSources}
+                  pagination={false}
+                  scroll={{ x: 760 }}
+                  locale={{ emptyText: <Empty description="暂无价格来源。请在「数据资源」页配置采集源。" /> }}
+                  columns={[
+                    { title: "来源", dataIndex: "display_name" },
+                    { title: "标识", dataIndex: "source_name" },
+                    { title: "可用", dataIndex: "available", render: (value: boolean) => value ? <Tag color="green" icon={<CheckCircleOutlined />}>可用</Tag> : <Tag color="red">不可用</Tag> },
+                    { title: "已抓取", dataIndex: "total_prices_fetched" },
+                    { title: "最近成功", dataIndex: "last_success_at", render: (value: string | null) => value || "-" },
+                    { title: "错误", dataIndex: "error", render: (value: string | null) => value || "-" },
+                  ]}
+                />
+              </Panel>
+            </>
+          )}
+
+          {activeSection === "tasks" && (
+            <Panel title="作业监控" icon="dashboard" flush bodyClassName="res-embed">
+              <TaskCenter />
+            </Panel>
+          )}
+        </div>
+      </div>
 
       {/* 新建 / 编辑规则包 */}
       <Modal

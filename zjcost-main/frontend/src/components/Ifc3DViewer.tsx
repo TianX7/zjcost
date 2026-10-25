@@ -644,23 +644,51 @@ function museumMaterialProfile(element: Element3D, kind: ProceduralTextureKind):
 
   }
 
-  // 女儿墙：棕色仿古砌筑，配合凹凸垛口造型
+  // 女儿墙随外墙色系，略深一档，配合凹凸垛口造型
   if (text.includes("女儿墙") || text.includes("parapet")) {
 
-    return { color: 0x7d4f30, texture: "wall", roughness: 0.8, metalness: 0.02, bumpScale: 0.03 };
+    return { color: 0xa9a294, texture: "wall", roughness: 0.82, metalness: 0.03, bumpScale: 0.03 };
+
+  }
+
+  // 按 IFC 类型给出数字孪生配色：暖灰外墙 / 浅灰内墙 / 楼板 / 屋面 / 玻璃 / 钢结构
+  if (kind === "glass") {
+
+    return { color: 0x7fb8d8, texture: kind, roughness: 0.14, metalness: 0.08, opacityFactor: 0.42 };
 
   }
 
   if (kind === "wall") {
 
-    // 博物馆外立面：统一棕色装饰建材
-    return { color: 0x8a5736, texture: kind, roughness: 0.72, metalness: 0.03, bumpScale: 0.02 };
+    const isExterior = /外墙|外立面|external|exterior|facade/.test(text);
+
+    return isExterior
+      ? { color: 0xb9b2a4, texture: kind, roughness: 0.8, metalness: 0.03, bumpScale: 0.02 }
+      : { color: 0xd6d2c8, texture: kind, roughness: 0.78, metalness: 0.02, bumpScale: 0.018 };
 
   }
 
   if (kind === "roof") {
 
-    return { color: 0x6e4a30, texture: kind, roughness: 0.7, metalness: 0.03, bumpScale: 0.02 };
+    return { color: 0x7c7f85, texture: kind, roughness: 0.62, metalness: 0.18, bumpScale: 0.016 };
+
+  }
+
+  if (kind === "floor") {
+
+    return { color: 0xcfcbc0, texture: kind, roughness: 0.58, metalness: 0.04, bumpScale: 0.012 };
+
+  }
+
+  if (kind === "metal" || kind === "duct" || /钢构|钢结构|steel/.test(text)) {
+
+    return { color: 0x8a9199, texture: "metal", roughness: 0.32, metalness: 0.55, bumpScale: 0.01 };
+
+  }
+
+  if (kind === "concrete") {
+
+    return { color: 0xb1aca2, texture: kind, roughness: 0.84, metalness: 0.03, bumpScale: 0.018 };
 
   }
 
@@ -8367,6 +8395,9 @@ export default function Ifc3DViewer({
 
   const showcaseActiveRef = useRef(false);
 
+  // 导览漫游页首次加载自动进入上帝视角（只触发一次，退出后不被场景重建拉回）
+  const autoShowcaseAppliedRef = useRef(false);
+
   // 施工模拟动画结束后是否已开启自动环绕展示（构建完成后自动放大旋转）
   const buildCompleteRef = useRef(false);
 
@@ -8749,7 +8780,7 @@ export default function Ifc3DViewer({
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
 
     renderer.setPixelRatio(pixelRatio);
-    renderer.toneMappingExposure = isWalkMode ? 0.94 : 1.02;
+    renderer.toneMappingExposure = isWalkMode ? 1.06 : 1.08;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.shadowMap.enabled = shadowsEnabled;
     renderer.info.autoReset = false;
@@ -8808,7 +8839,9 @@ export default function Ifc3DViewer({
 
 
 
-    scene.background = new THREE.Color(isWalkMode ? 0x8fc7ee : 0x0a1a33);
+    // 深蓝夜空背景：与雾同色，避免远景出现大片空白
+    const SKY_BACKGROUND_COLOR = 0x0d1f3c;
+    scene.background = new THREE.Color(SKY_BACKGROUND_COLOR);
 
     const roomEnvironment = new RoomEnvironment();
 
@@ -8832,13 +8865,14 @@ export default function Ifc3DViewer({
 
     });
 
-    scene.add(new THREE.AmbientLight(0xe8f2ff, isWalkMode ? 0.48 : 1.05));
+    scene.add(new THREE.AmbientLight(0xe8f2ff, isWalkMode ? 0.28 : 0.36));
 
-    scene.add(new THREE.HemisphereLight(0xbfdfff, 0x59624f, isWalkMode ? 0.78 : 0.58));
+    // 天空青蓝 / 地面暖灰：让建筑体块有上亮下暗的层次，避免“纸盒”平光
+    scene.add(new THREE.HemisphereLight(0xbfdfff, 0x8a7d6c, isWalkMode ? 0.7 : 0.55));
 
 
 
-    const keyLight = new THREE.DirectionalLight(isWalkMode ? 0xfff4dd : 0xf4f8ff, isWalkMode ? 1.18 : 1.45);
+    const keyLight = new THREE.DirectionalLight(isWalkMode ? 0xfff4dd : 0xf4f8ff, isWalkMode ? 1.42 : 1.45);
 
     keyLight.position.set(isWalkMode ? -70 : 40, useZUp ? -100 : 60, useZUp ? 88 : 50);
 
@@ -8868,13 +8902,11 @@ export default function Ifc3DViewer({
 
     if (isWalkMode && !largePreview) {
 
-      const warmFill = new THREE.DirectionalLight(0xdcecff, qualityMode === "performance" ? 0.22 : 0.32);
+      const warmFill = new THREE.DirectionalLight(0xdcecff, qualityMode === "performance" ? 0.18 : 0.24);
 
       warmFill.position.set(60, 80, 30);
 
       scene.add(warmFill);
-
-      scene.fog = new THREE.FogExp2(0x9dc6e8, 0.0009);
 
     }
 
@@ -9283,7 +9315,7 @@ export default function Ifc3DViewer({
 
           metalness: profile.metalness,
 
-          envMapIntensity: profile.texture === "glass" ? 1.8 : profile.texture === "metal" || profile.texture === "duct" ? 1.6 : 1.1,
+          envMapIntensity: profile.texture === "glass" ? 1.8 : profile.texture === "metal" || profile.texture === "duct" ? 1.6 : 1.3,
 
           side: THREE.DoubleSide,
 
@@ -9365,7 +9397,7 @@ export default function Ifc3DViewer({
 
           metalness: profile.metalness,
 
-          envMapIntensity: profile.texture === "glass" ? 1.5 : profile.texture === "metal" || profile.texture === "duct" ? 1.25 : 0.7,
+          envMapIntensity: profile.texture === "glass" ? 1.5 : profile.texture === "metal" || profile.texture === "duct" ? 1.25 : 0.95,
 
           side: THREE.DoubleSide,
 
@@ -9707,6 +9739,18 @@ export default function Ifc3DViewer({
 
     const radius = Math.max(size.x, size.y, size.z, 10);
 
+    // 统一取景参数：整体包围盒球半径 → 相机距离 / 俯角 / 雾距，全部按模型自适应。
+    const frameRadius = bounds.isEmpty() ? radius * 0.5 : Math.max(size.length() * 0.5, radius * 0.35);
+    const fitElevation = THREE.MathUtils.degToRad(32);
+    const fitDistance = frameRadius * 1.65;
+
+    // 与背景同色的距离雾：近处保留建筑细节，远景收进深蓝，避免空旷
+    scene.fog = new THREE.Fog(
+      SKY_BACKGROUND_COLOR,
+      Math.max(fitDistance * 1.1, 60),
+      Math.max(fitDistance * 4.2, 260),
+    );
+
     const groundZ = getWalkGroundZ(sceneItems, bounds);
 
     if (shadowsEnabled && !bounds.isEmpty()) {
@@ -9785,26 +9829,28 @@ export default function Ifc3DViewer({
     })();
     const primaryHallValid = !!primaryHall;
 
-    // 上帝视角：相机绕主展馆中心自动环绕，展示全馆布局。
-    // 半径/高度取主展馆自身跨度；若用全局模型包围盒，相机会被推到离馆很远的位置。
-    const showcaseCenter = primaryHallValid && primaryHall
-      ? new THREE.Vector3(primaryHall.center.x, primaryHall.center.y, primaryHall.center.z)
-      : walkMassCenter.clone();
-    const showcaseSpan = primaryHallValid && primaryHall
-      ? Math.max(
-          primaryHall.bounds.max.x - primaryHall.bounds.min.x,
-          primaryHall.bounds.max.y - primaryHall.bounds.min.y,
-          10,
-        )
-      : Math.max(
-          bounds.max.x - bounds.min.x,
-          bounds.max.y - bounds.min.y,
-          bounds.max.z - bounds.min.z,
-          10,
-        );
-    const showcaseRadius = Math.max(showcaseSpan * 0.85, 16);
-    const showcaseHeight = Math.max(showcaseSpan * 0.7, 13);
-    let showcaseAngle = 0;
+    // 上帝视角取景：漫游页优先对准主展馆本体（整场地包围盒会把镜头拉得太远，
+    // 建筑只占画面中心一小块），其余页面仍按整体包围盒取景。
+    const showcaseHallBounds = isWalkMode && primaryHallValid && primaryHall ? primaryHall.bounds : null;
+    const showcaseHallSize = new THREE.Vector3();
+    const showcaseHallCenter = new THREE.Vector3();
+    if (showcaseHallBounds) {
+      showcaseHallBounds.getSize(showcaseHallSize);
+      showcaseHallBounds.getCenter(showcaseHallCenter);
+    }
+    const showcaseFocusRadius = showcaseHallBounds
+      ? Math.max(Math.hypot(showcaseHallSize.x, showcaseHallSize.y) * 0.52, showcaseHallSize.z * 0.7, 6)
+      : frameRadius;
+    const showcaseCenter = showcaseHallBounds
+      ? showcaseHallCenter
+      : bounds.isEmpty()
+        ? walkMassCenter.clone()
+        : center.clone();
+    const showcaseElevation = THREE.MathUtils.degToRad(24);
+    const showcaseFitDistance = showcaseFocusRadius * 1.45;
+    const showcaseRadius = Math.max(showcaseFitDistance * Math.cos(showcaseElevation), 10);
+    const showcaseHeight = Math.max(showcaseFitDistance * Math.sin(showcaseElevation), 8);
+    let showcaseAngle = Math.PI * 0.25;
     // 上帝视角轨道参数：滚轮缩放半径（远近）、拖拽调整环绕角与相机高度，均带平滑逼近
     let showcaseRadiusCurrent = showcaseRadius;
     let showcaseRadiusTarget = showcaseRadius;
@@ -9813,15 +9859,17 @@ export default function Ifc3DViewer({
     let showcaseDragging = false;
     let showcaseLastX = 0;
     let showcaseLastY = 0;
-    const showcaseRadiusMin = Math.max(showcaseSpan * 0.3, 7);
-    const showcaseRadiusMax = Math.max(showcaseSpan * 2.6, 60);
-    const showcaseHeightMin = Math.max(showcaseSpan * 0.16, 4);
-    const showcaseHeightMax = Math.max(showcaseSpan * 1.7, 40);
+    const showcaseRadiusMin = Math.max(showcaseRadius * 0.6, 7);
+    const showcaseRadiusMax = Math.max(showcaseRadius * 2.4, 60);
+    const showcaseHeightMin = Math.max(showcaseHeight * 0.45, 4);
+    const showcaseHeightMax = Math.max(showcaseHeight * 2.2, 40);
     let showcaseSavedCameraState: {
       position: THREE.Vector3;
       lookAt: THREE.Vector3;
       up: THREE.Vector3;
       controlsTarget: THREE.Vector3;
+      near: number;
+      far: number;
     } | null = null;
 
     const enterShowcase = () => {
@@ -9835,7 +9883,7 @@ export default function Ifc3DViewer({
       setWalkPointerLocked(false);
       showcaseActiveRef.current = true;
       controls.enabled = false;
-      showcaseAngle = 0;
+      showcaseAngle = Math.PI * 0.25;
       showcaseRadiusCurrent = showcaseRadius;
       showcaseRadiusTarget = showcaseRadius;
       showcaseHeightCurrent = showcaseHeight;
@@ -9845,7 +9893,13 @@ export default function Ifc3DViewer({
         lookAt: controls.target.clone(),
         up: camera.up.clone(),
         controlsTarget: controls.target.clone(),
+        near: camera.near,
+        far: camera.far,
       };
+      // 全景视角按包围盒半径自适应 near/far，避免远景地面/铺装层 z-fighting
+      camera.near = Math.max(fitDistance * 0.02, 0.1);
+      camera.far = Math.max(fitDistance * 10, 2000);
+      camera.updateProjectionMatrix();
       if (isWalkMode && walkState) {
         walkState.cameraLookAt.copy(showcaseCenter);
         walkState.cameraPrimed = true;
@@ -9864,6 +9918,9 @@ export default function Ifc3DViewer({
         camera.up.copy(showcaseSavedCameraState.up);
         controls.target.copy(showcaseSavedCameraState.controlsTarget);
         camera.lookAt(showcaseSavedCameraState.lookAt);
+        camera.near = showcaseSavedCameraState.near;
+        camera.far = showcaseSavedCameraState.far;
+        camera.updateProjectionMatrix();
         showcaseSavedCameraState = null;
       }
       if (isWalkMode && walkState) {
@@ -9977,9 +10034,10 @@ export default function Ifc3DViewer({
 
     if (isWalkMode) {
 
-      const walkGroundSize = clamp(Math.max(size.x, size.y) + walkPadding * 2.2, 28, 320);
+      // 地面铺满取景视野，边缘收进与背景同色的雾里，避免出现“浮空岛”
+      const walkGroundSize = clamp(Math.max(size.x, size.y) * 2.6 + walkPadding * 2.2, 60, 600);
 
-      const groundRepeat = 18;
+      const groundRepeat = clamp(Math.round(walkGroundSize / 8), 18, 48);
 
       const groundGeometry = new THREE.PlaneGeometry(walkGroundSize, walkGroundSize);
 
@@ -9993,23 +10051,24 @@ export default function Ifc3DViewer({
 
       }
 
-      const groundPack = !largePreview ? createAAATexturePack("ground") : undefined;
+      const groundPack = !largePreview ? createAAATexturePack("floor") : undefined;
 
-      const grassColor = new THREE.Color(0x6b7a5b);
+      // 深青灰低对比混凝土地面：承接建筑投影，避免场景“悬空”
+      const groundColor = new THREE.Color(0x8c9694);
 
       const groundMaterial = new THREE.MeshStandardMaterial({
 
-        color: grassColor,
+        color: groundColor,
 
         map: groundPack?.map,
 
         normalMap: groundPack?.normalMap,
 
-        normalScale: new THREE.Vector2(1.2, 1.2),
+        normalScale: new THREE.Vector2(0.9, 0.9),
 
-        roughness: 0.96,
+        roughness: 0.94,
 
-        metalness: 0.02,
+        metalness: 0.03,
 
       });
 
@@ -12108,34 +12167,35 @@ export default function Ifc3DViewer({
 
     if (!isWalkMode) {
 
+      // 默认取景：建筑群外部 3/4 视角，32° 俯角，距离 = 包围盒球半径 × 1.65
+      const fitHorizontal = fitDistance * Math.cos(fitElevation);
+      const fitAzimuth = Math.PI * 0.25;
+      const fitX = Math.cos(fitAzimuth);
+      const fitY = Math.sin(fitAzimuth);
       if (useZUp) {
-
         camera.position.set(
-
-          center.x + radius * 1.6,
-
-          center.y - radius * 1.6,
-
-          center.z + radius * 1.2,
-
+          center.x + fitHorizontal * fitX,
+          center.y + fitHorizontal * fitY,
+          center.z + fitDistance * Math.sin(fitElevation),
         );
-
       } else {
-
         camera.position.set(
-
-          center.x + radius * 1.6,
-
-          center.y + radius * 1.2,
-
-          center.z + radius * 1.6,
-
+          center.x + fitHorizontal * fitX,
+          center.y + fitDistance * Math.sin(fitElevation),
+          center.z + fitHorizontal * fitY,
         );
-
       }
-
+      camera.near = Math.max(frameRadius * 0.002, 0.05);
+      camera.far = Math.max(frameRadius * 24, 2000);
+      camera.updateProjectionMatrix();
       camera.lookAt(center);
 
+    }
+
+    // 导览漫游页（WalkVerify）默认先给整体斜俯视全景；Esc / “退出上帝视角”即可恢复第一人称漫游
+    if (isWalkMode && presentationMode && !autoShowcaseAppliedRef.current) {
+      autoShowcaseAppliedRef.current = true;
+      enterShowcase();
     }
 
 

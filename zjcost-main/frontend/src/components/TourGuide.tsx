@@ -68,8 +68,14 @@ export default function TourGuide() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [state.active, state.running]);
 
-  // 路由同步：激活时跳转到当前步骤的路由
+  // 路由同步：激活 / 切换步骤时跳转；首次挂载不跳，
+  // 否则从全屏漫游页返回时会被立刻拉回，表现为“退不出来”
+  const routeSyncReady = useRef(false);
   useEffect(() => {
+    if (!routeSyncReady.current) {
+      routeSyncReady.current = true;
+      return;
+    }
     if (state.active && currentStep && location.pathname !== currentStep.route) {
       navigate(currentStep.route);
     }

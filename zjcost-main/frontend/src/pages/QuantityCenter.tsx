@@ -1,9 +1,10 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Alert, Button, Empty, Input, Modal, Select, Space, Spin, Table, Tag, Typography, message } from "antd";
+import { Button, Empty, Input, Modal, Select, Space, Table, Tag, Typography, message } from "antd";
 import { DownloadOutlined, EditOutlined, ReloadOutlined } from "@ant-design/icons";
-import PageHeader from "../components/PageHeader";
+import Panel from "../components/Panel";
 import { api, type CalcSummary, type LineCalcResult, type Project } from "../api";
+import "../styles/business-screen.css";
 
 /**
  * 《房屋建筑与装饰工程工程量计算标准》GB/T 50854-2024 附录标准分项类目。
@@ -165,159 +166,189 @@ export default function QuantityCenter() {
     URL.revokeObjectURL(url);
   };
 
-  return (
-    <div className="page-container qc-root">
-      <PageHeader
-        icon="square_foot"
-        title="算量中心"
-        subtitle="工程量数据按《房屋建筑与装饰工程工程量计算标准》GB/T 50854-2024 与《通用安装工程工程量计算标准》GB/T 50856-2024（给排水、电气、暖通、消防等安装专业）标准分项归集。"
-      />
+  const unmatchedAmount = buckets.unmatched.reduce((sum, line) => sum + (line.total ?? 0), 0);
+  const topCategories = [...buckets.rows].sort((a, b) => (b.amount ?? 0) - (a.amount ?? 0)).slice(0, 3);
+  const coverage = buckets.totalItems > 0 ? Math.round((buckets.matched / buckets.totalItems) * 100) : 0;
 
-      <div className="qc-toolbar">
-        <Space wrap>
-          <span className="qc-toolbar-label"><span className="material-symbols-outlined">account_tree</span>归集项目</span>
-          {projects.length > 0 ? (
-            <Select
-              className="qc-project-select"
-              value={projectId ?? undefined}
-              onChange={setProjectId}
-              options={projects.map((p) => ({ value: p.id, label: p.name }))}
-              style={{ minWidth: 260 }}
-              showSearch
-              optionFilterProp="label"
-              placeholder="选择项目"
-            />
-          ) : (
-            <Tag color="blue">暂无项目，展示标准类目框架</Tag>
-          )}
-          {summary && <Tag color="blue">清单 {buckets.totalItems} 项 · 造价合计 {fmtMoney(summary.grand_total)}</Tag>}
-        </Space>
-        <Space wrap>
-          <Button icon={<ReloadOutlined />} loading={loading} onClick={reload}>刷新</Button>
-          <Button icon={<DownloadOutlined />} disabled={!summary} onClick={exportCsv}>导出 CSV</Button>
-        </Space>
+  return (
+    <div className="page-container qc-root bs-screen-page">
+      <div className="bs-summary-strip">
+        <div className="bs-summary-item is-cyan">
+          <span className="bs-summary-label">清单总数</span>
+          <strong className="bs-summary-value num">{buckets.totalItems}</strong>
+          <span className="bs-summary-hint">当前归集项目</span>
+        </div>
+        <div className="bs-summary-item is-green">
+          <span className="bs-summary-label">已归集</span>
+          <strong className="bs-summary-value num">{buckets.matched}</strong>
+          <span className="bs-summary-hint">命中 GB 50854 / 50856 分类段</span>
+        </div>
+        <div className={`bs-summary-item ${buckets.unmatched.length > 0 ? "is-red" : "is-green"}`}>
+          <span className="bs-summary-label">未落入分类</span>
+          <strong className="bs-summary-value num">{buckets.unmatched.length}</strong>
+          <span className="bs-summary-hint">需补齐国标编码</span>
+        </div>
+        <div className="bs-summary-item is-amber">
+          <span className="bs-summary-label">造价合计</span>
+          <strong className="bs-summary-value num">{summary ? fmtMoney(summary.grand_total) : "-"}</strong>
+          <span className="bs-summary-hint">随重新计价更新</span>
+        </div>
+        <div className="bs-summary-item is-cyan">
+          <span className="bs-summary-label">归集项目</span>
+          <strong className="bs-summary-value">{projectName || "未选择"}</strong>
+          <span className="bs-summary-hint">共 {projects.length} 个可选项目</span>
+        </div>
       </div>
 
-      {summary && (
-        <div className="kpi-grid">
-          <div className="kpi-card">
-            <span className="material-symbols-outlined kpi-card-icon">list_alt</span>
-            <div className="kpi-card-body">
-              <span className="kpi-card-label">清单总数</span>
-              <span className="kpi-card-value num">{buckets.totalItems}</span>
-            </div>
-          </div>
-          <div className="kpi-card">
-            <span className="material-symbols-outlined kpi-card-icon" style={{ color: "#22c55e", background: "rgba(34,197,94,0.12)", borderColor: "rgba(34,197,94,0.2)" }}>check_circle</span>
-            <div className="kpi-card-body">
-              <span className="kpi-card-label">已归集</span>
-              <span className="kpi-card-value num">{buckets.matched}</span>
-            </div>
-          </div>
-          <div className="kpi-card">
-            <span
-              className="material-symbols-outlined kpi-card-icon"
-              style={buckets.unmatched.length > 0
-                ? { color: "#f87171", background: "rgba(248,113,113,0.12)", borderColor: "rgba(248,113,113,0.2)" }
-                : undefined}
-            >
-              warning
-            </span>
-            <div className="kpi-card-body">
-              <span className="kpi-card-label">未落入分类</span>
-              <span className="kpi-card-value num" style={buckets.unmatched.length > 0 ? { color: "#f87171" } : undefined}>
-                {buckets.unmatched.length}
-              </span>
-            </div>
-          </div>
-          <div className="kpi-card">
-            <span className="material-symbols-outlined kpi-card-icon">payments</span>
-            <div className="kpi-card-body">
-              <span className="kpi-card-label">造价合计</span>
-              <span className="kpi-card-value num">{fmtMoney(summary.grand_total)}</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {summary && allUnmatched && (
-        <Alert
-          type="warning"
-          showIcon
-          message="编码未按国标分类段填写，无法归集"
-          description="当前项目清单编码均未命中 GB 50854 / GB 50856 分类段，各分类如实显示为 0。请为清单补齐国标编码后自动归位，切勿按占比估算。"
-        />
-      )}
-
-      <Spin spinning={loading}>
-        <div className="qc-category-grid">
-          {buckets.rows.map((cat, idx) => {
-            const ratio = totalAmount > 0 ? Math.round(((cat.amount ?? 0) / totalAmount) * 100) : 0;
-            return (
-              <button
-                key={cat.key}
-                type="button"
-                className="qc-category-card qc-clickable"
-                style={{ animationDelay: `${Math.min(idx, 11) * 0.05}s` }}
-                onClick={openBoq}
-                title={projectId != null ? "点击进入项目清单" : cat.name}
-                disabled={projectId == null}
-              >
-                <div className="qc-category-head">
-                  <span className="material-symbols-outlined qc-category-icon">{cat.icon}</span>
-                  <div>
-                    <h3>{cat.name}</h3>
-                    <p className="qc-category-standard">{cat.standard} · {cat.codeRange}</p>
-                  </div>
+      <div className="bs-two-col">
+        <div className="bs-col-stack">
+          <Panel
+            title="标准分项归集"
+            icon="square_foot"
+            extra={<span>GB/T 50854-2024 · GB/T 50856-2024</span>}
+            flush
+            bodyClassName="bs-panel-table"
+          >
+            {summary && allUnmatched && (
+              <div className="bs-panel-inset">
+                <div className="bs-alert warn">
+                  <span className="material-symbols-outlined">warning</span>
+                  <span>编码未按国标分类段填写，无法归集。当前项目清单编码均未命中 GB 50854 / GB 50856 分类段，各分类如实显示为 0，请补齐国标编码后自动归位。</span>
                 </div>
-                <div className="qc-category-stats">
-                  <div><em>清单项</em><strong className="num">{cat.count}</strong></div>
-                  <div><em>金额</em><strong className="num">{fmtMoney(cat.amount)}</strong></div>
-                  <div><em>占比</em><strong className="num">{ratio}%</strong></div>
-                </div>
-                <div className="qc-category-meter">
-                  <span style={{ width: `${Math.max(ratio, cat.count > 0 ? 3 : 0)}%` }} />
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </Spin>
-
-      {buckets.unmatched.length > 0 && (
-        <div className="content-card">
-          <div className="content-card-head">
-            <h3 className="content-card-title"><span className="material-symbols-outlined">warning</span>未落入分类的清单（{buckets.unmatched.length} 项）</h3>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>疑似编码归类段未按国标填写。就地修正编码即可自动归位，金额随重新计价更新。</Typography.Text>
-          </div>
-          <div className="content-card-body flush">
+              </div>
+            )}
             <Table
-              rowKey="boq_item_id"
+              rowKey="key"
               size="small"
-              dataSource={buckets.unmatched}
-              pagination={{ pageSize: 8, showTotal: (t) => `共 ${t} 项` }}
-              scroll={{ x: 560 }}
+              loading={loading}
+              dataSource={buckets.rows}
+              pagination={false}
+              scroll={{ x: 720 }}
+              locale={{
+                emptyText: (
+                  <Empty description="暂无工程量数据，可先在图纸识别或 BIM 算量页生成清单" />
+                ),
+              }}
               columns={[
-                { title: "编码", dataIndex: "boq_code", width: 130, ellipsis: true },
-                { title: "名称", dataIndex: "boq_name", ellipsis: true },
-                { title: "合价", dataIndex: "total", width: 140, align: "right", render: (v: number) => <span className="num">{fmtMoney(v ?? 0)}</span> },
                 {
-                  title: "操作",
-                  key: "actions",
-                  width: 120,
-                  render: (_, row) => (
-                    <Button size="small" icon={<EditOutlined />} onClick={() => openEditCode(row)}>修编码</Button>
+                  title: "标准分项",
+                  dataIndex: "name",
+                  render: (value: string, cat) => (
+                    <div>
+                      <Button type="link" style={{ padding: 0, height: "auto" }} disabled={projectId == null} onClick={openBoq}>
+                        {value}
+                      </Button>
+                      <span className="bs-cell-sub">{cat.standard}</span>
+                    </div>
                   ),
+                },
+                { title: "编码范围", dataIndex: "codeRange", width: 190 },
+                { title: "清单项", dataIndex: "count", width: 90, align: "right", render: (value: number) => <span className="num">{value}</span> },
+                { title: "金额", dataIndex: "amount", width: 140, align: "right", render: (value: number) => <span className="num">{fmtMoney(value)}</span> },
+                {
+                  title: "占比",
+                  key: "ratio",
+                  width: 150,
+                  render: (_, cat) => {
+                    const ratio = totalAmount > 0 ? Math.round(((cat.amount ?? 0) / totalAmount) * 100) : 0;
+                    return (
+                      <div className="bs-ratio">
+                        <span className="num">{ratio}%</span>
+                        <div className="qc-category-meter">
+                          <span style={{ width: `${Math.max(ratio, cat.count > 0 ? 3 : 0)}%` }} />
+                        </div>
+                      </div>
+                    );
+                  },
                 },
               ]}
             />
-          </div>
-        </div>
-      )}
+          </Panel>
 
-      {!summary && !loading && projects.length === 0 && (
-        <Empty description="暂无工程量数据，可先在图纸识别或 BIM 算量页生成清单" />
-      )}
+          {buckets.unmatched.length > 0 && (
+            <Panel
+              title={`未落入分类的清单（${buckets.unmatched.length} 项）`}
+              icon="warning"
+              extra={<span>疑似编码归类段未按国标填写</span>}
+              flush
+              bodyClassName="bs-panel-table"
+            >
+              <Table
+                rowKey="boq_item_id"
+                size="small"
+                dataSource={buckets.unmatched}
+                pagination={{ pageSize: 8, showTotal: (t) => `共 ${t} 项` }}
+                scroll={{ x: 560 }}
+                columns={[
+                  { title: "编码", dataIndex: "boq_code", width: 130, ellipsis: true },
+                  { title: "名称", dataIndex: "boq_name", ellipsis: true },
+                  { title: "合价", dataIndex: "total", width: 140, align: "right", render: (v: number) => <span className="num">{fmtMoney(v ?? 0)}</span> },
+                  {
+                    title: "操作",
+                    key: "actions",
+                    width: 120,
+                    render: (_, row) => (
+                      <Button size="small" icon={<EditOutlined />} onClick={() => openEditCode(row)}>修编码</Button>
+                    ),
+                  },
+                ]}
+              />
+            </Panel>
+          )}
+        </div>
+
+        <div className="bs-col-stack">
+          <Panel title="项目与导入" icon="account_tree">
+            <div className="bs-filter">
+              <label className="bs-field">
+                <span className="bs-field-label">归集项目</span>
+                {projects.length > 0 ? (
+                  <Select
+                    className="qc-project-select"
+                    value={projectId ?? undefined}
+                    onChange={setProjectId}
+                    options={projects.map((p) => ({ value: p.id, label: p.name }))}
+                    showSearch
+                    optionFilterProp="label"
+                    placeholder="选择项目"
+                  />
+                ) : (
+                  <Tag color="blue">暂无项目，展示标准类目框架</Tag>
+                )}
+              </label>
+            </div>
+            <Space wrap style={{ marginTop: 12 }}>
+              <Button icon={<ReloadOutlined />} loading={loading} onClick={reload}>刷新</Button>
+              <Button icon={<DownloadOutlined />} disabled={!summary} onClick={exportCsv}>导出 CSV</Button>
+            </Space>
+            <p className="bs-section-note" style={{ marginTop: 10 }}>
+              工程量按 GB/T 50854-2024 与 GB/T 50856-2024 标准分项归集，配套安装专业给排水、电气、暖通与消防。
+            </p>
+          </Panel>
+
+          <Panel title="归集汇总" icon="summarize">
+            <div className="bs-kv-list">
+              <div className="bs-kv-row"><span>归集覆盖率</span><strong>{coverage}%</strong></div>
+              <div className="bs-kv-row"><span>已归集金额</span><strong className="num">{fmtMoney(totalAmount)}</strong></div>
+              <div className="bs-kv-row"><span>未落入金额</span><strong className="num">{fmtMoney(unmatchedAmount)}</strong></div>
+            </div>
+            <div className="bs-kv-list" style={{ marginTop: 8 }}>
+              {topCategories.map((cat) => {
+                const ratio = totalAmount > 0 ? Math.round(((cat.amount ?? 0) / totalAmount) * 100) : 0;
+                return (
+                  <div className="bs-kv-row" key={cat.key}>
+                    <span>{cat.name}</span>
+                    <strong>{fmtMoney(cat.amount)} · {ratio}%</strong>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="bs-section-note" style={{ marginTop: 10 }}>
+              未落入分类的清单不计入标准分项金额，修正编码后金额随重新计价更新。
+            </p>
+          </Panel>
+        </div>
+      </div>
 
       {/* 就地修编码 Modal */}
       <Modal

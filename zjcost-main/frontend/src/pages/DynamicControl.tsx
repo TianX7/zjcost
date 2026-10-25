@@ -4,7 +4,8 @@ import type { ColumnsType } from "antd/es/table";
 import * as d3 from "d3";
 import type { CalcSummary, Project, RiskSimulationRecord } from "../api";
 import { api } from "../api";
-import PageHeader from "../components/PageHeader";
+import Panel from "../components/Panel";
+import "../styles/business-screen.css";
 
 // 元 → 万元
 function wan(value: number | null | undefined, digits = 1) {
@@ -126,87 +127,10 @@ const RISK_WITH_ACTION = [0.3, 0.34, 0.38, 0.40, 0.42, 0.44, 0.45, 0.44, 0.43, 0
 
 /* ── 通用小组件 ──────────────────────────────────────────── */
 
-function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color: string }) {
-  return (
-    <div className="content-card" style={{ flex: 1, minWidth: 160 }}>
-      <div className="content-card-body" style={{ padding: "16px 20px" }}>
-        <div style={{ fontSize: 13, color: "#94a3b8" }}>{label}</div>
-        <div style={{ fontSize: 28, fontWeight: 700, color, marginTop: 4 }}>{value}</div>
-        {sub && <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>{sub}</div>}
-      </div>
-    </div>
-  );
-}
-
-function SectionTitle({ children }: { children: ReactNode }) {
-  return <h3 style={{ margin: "4px 0 12px", fontSize: 15, color: "#e2e8f0" }}>{children}</h3>;
-}
-
-/* ── ① 模型关联 Tab ─────────────────────────────────────── */
-
-function LinkTab() {
-  const mappingCols: ColumnsType<MappingRow> = [
-    { title: "模型构件编码", dataIndex: "modelCode", width: 130, render: (v: string) => <Tag color="blue">{v}</Tag> },
-    { title: "进度作业编码", dataIndex: "scheduleCode", width: 130, render: (v: string) => <Tag color="purple">{v}</Tag> },
-    { title: "造价定额编码", dataIndex: "costCode", width: 130, render: (v: string) => <Tag color="cyan">{v}</Tag> },
-    { title: "合同清单编码", dataIndex: "contractCode", width: 130, render: (v: string) => <Tag color="orange">{v}</Tag> },
-    { title: "统一清单编码", dataIndex: "boqCode", width: 140, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
-    { title: "清单项目名称", dataIndex: "boqName" },
-  ];
-  return (
-    <div>
-      <SectionTitle>四源接入</SectionTitle>
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 20 }}>
-        {DATA_SOURCES.map((s) => (
-          <div key={s.name} className="content-card" style={{ flex: 1, minWidth: 230 }}>
-            <div className="content-card-body" style={{ padding: "14px 16px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span className="material-symbols-outlined" style={{ fontSize: 22, color: s.color }}>{s.icon}</span>
-                <div>
-                  <div style={{ fontWeight: 600 }}>{s.name}</div>
-                  <div style={{ fontSize: 12, color: "#94a3b8" }}>{s.format}</div>
-                </div>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, fontSize: 12 }}>
-                <span style={{ color: "#94a3b8" }}>{s.origin}</span>
-                <Tag color="green">{s.status}</Tag>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-      <SectionTitle>清单编码映射（自研转换接口，四源打通 · 实时同步）</SectionTitle>
-      <div className="content-card">
-        <div className="content-card-body flush">
-          <Table
-            rowKey="key"
-            columns={mappingCols}
-            dataSource={MAPPING_ROWS}
-            pagination={false}
-            size="small"
-          />
-        </div>
-      </div>
-      <p style={{ fontSize: 12, color: "#94a3b8", marginTop: 10 }}>
-        进度计划为 MS Project 格式、结算为 Excel 格式，格式不统一；转换接口为自研，
-        将模型、进度、造价、合同编码统一映射为清单编码，实现四源实时同步。
-      </p>
-    </div>
-  );
-}
-
-/* ── ② 月度对比 Tab（接入真实计价结果） ─────────────────── */
-
-interface CompareTabProps {
-  project?: Project;
-  summary?: CalcSummary | null;
-  loading?: boolean;
-}
-
-function CompareTab({ project, summary, loading }: CompareTabProps) {
+/* 月度费用趋势（万元）：d3 分组柱状图 + 容器宽度自适应 */
+function MonthlyTrendChart() {
   const chartRef = useRef<HTMLDivElement>(null);
 
-  // 月度柱状图
   useEffect(() => {
     const el = chartRef.current;
     if (!el) return;
@@ -269,6 +193,101 @@ function CompareTab({ project, summary, loading }: CompareTabProps) {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  return <div className="bs-chart" ref={chartRef} />;
+}
+
+/* ── ① 模型关联 Tab ─────────────────────────────────────── */
+
+function LinkTab() {
+  const mappingCols: ColumnsType<MappingRow> = [
+    { title: "模型构件编码", dataIndex: "modelCode", width: 130, render: (v: string) => <Tag color="blue">{v}</Tag> },
+    { title: "进度作业编码", dataIndex: "scheduleCode", width: 130, render: (v: string) => <Tag color="purple">{v}</Tag> },
+    { title: "造价定额编码", dataIndex: "costCode", width: 130, render: (v: string) => <Tag color="cyan">{v}</Tag> },
+    { title: "合同清单编码", dataIndex: "contractCode", width: 130, render: (v: string) => <Tag color="orange">{v}</Tag> },
+    { title: "统一清单编码", dataIndex: "boqCode", width: 140, render: (v: string) => <Tag color="geekblue">{v}</Tag> },
+    { title: "清单项目名称", dataIndex: "boqName" },
+  ];
+  return (
+    <div className="bs-two-col">
+      <div className="bs-col-stack">
+        <Panel
+          title="四源接入"
+          icon="hub"
+          extra={<Tag color="green">实时同步</Tag>}
+        >
+          <div className="bs-source-grid">
+            {DATA_SOURCES.map((s) => (
+              <div key={s.name} className="bs-source-item">
+                <div className="bs-source-head">
+                  <span className="material-symbols-outlined" style={{ color: s.color }}>{s.icon}</span>
+                  <span>{s.name}</span>
+                </div>
+                <div className="bs-source-meta">
+                  <span>{s.format}</span>
+                  <Tag color="green">{s.status}</Tag>
+                </div>
+                <div className="bs-source-meta">
+                  <span>{s.origin}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="bs-section-note" style={{ marginTop: 10 }}>
+            进度计划为 MS Project 格式、结算为 Excel 格式，格式不统一；转换接口为自研，将模型、进度、造价、合同编码统一映射为清单编码，实现四源实时同步。
+          </p>
+        </Panel>
+
+        <Panel
+          title="清单编码映射"
+          icon="alt_route"
+          extra={<span>四源打通 · 实时同步</span>}
+          flush
+          bodyClassName="bs-panel-table"
+        >
+          <Table
+            rowKey="key"
+            columns={mappingCols}
+            dataSource={MAPPING_ROWS}
+            pagination={false}
+            size="small"
+            scroll={{ x: 860 }}
+          />
+        </Panel>
+      </div>
+
+      <div className="bs-col-stack">
+        <Panel title="同步状态" icon="sync">
+          <div className="bs-kv-list">
+            {DATA_SOURCES.map((s) => (
+              <div className="bs-kv-row" key={s.name}>
+                <span>{s.name}</span>
+                <strong><Tag color="green">{s.status}</Tag></strong>
+              </div>
+            ))}
+            <div className="bs-kv-row"><span>映射清单行</span><strong className="num">{MAPPING_ROWS.length}</strong></div>
+          </div>
+        </Panel>
+        <Panel title="关联预警" icon="notification_important">
+          <div className="bs-alert warn">
+            <span className="material-symbols-outlined">warning</span>
+            <span>四源编码需保持一致，编码断链将导致月度产值与清单归集无法对齐。</span>
+          </div>
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+/* ── ② 月度对比 Tab（接入真实计价结果） ─────────────────── */
+
+interface CompareTabProps {
+  project?: Project;
+  summary?: CalcSummary | null;
+  loading?: boolean;
+}
+
+function CompareTab({ project, summary, loading }: CompareTabProps) {
   // 真实计价构成（万元口径）
   const feeRows = useMemo(() => {
     if (!summary) return [];
@@ -323,65 +342,15 @@ function CompareTab({ project, summary, loading }: CompareTabProps) {
   ];
 
   return (
-    <div>
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-        <StatCard
-          label={budgetMissing ? "参考预算（万元）" : "项目预算（万元）"}
-          value={project ? (budgetMissing ? `${wan(budget)}（参考）` : wan(budget)) : "-"}
-          color="#2dd4bf"
-        />
-        <StatCard label="计价合计（万元）" value={summary ? wan(actual) : "-"} color="#2dd4bf" />
-        <StatCard
-          label="综合偏差率"
-          value={hasData ? `${totalDev > 0 ? "+" : ""}${totalDev.toFixed(1)}%` : "-"}
-          sub={budgetMissing ? "预算未设置，按计价 95% 估算参考偏差" : "（计价 vs 预算，预警阈值 +3%）"}
-          color={hasData && totalDev > 3 ? "#fbbf24" : "#2dd4bf"}
-        />
-      </div>
-
-      {budgetMissing && (
-        <div
-          style={{
-            background: "rgba(56, 189, 248, 0.08)",
-            border: "1px solid rgba(56, 189, 248, 0.35)",
-            borderRadius: 8,
-            padding: "12px 16px",
-            marginBottom: 16,
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-          }}
+    <div className="bs-col-stack">
+      <div className="bs-two-col">
+        <Panel
+          title="计价费用构成"
+          icon="donut_large"
+          extra={<span>联动真实计价结果</span>}
+          flush
+          bodyClassName="bs-panel-table"
         >
-          <span className="material-symbols-outlined" style={{ color: "#38bdf8" }}>info</span>
-          <span style={{ fontSize: 13, color: "#7dd3fc" }}>
-            项目「{project?.name}」尚未设置预算，当前显示为参考估算值。如需真实偏差分析，请在项目台账中编辑项目预算。
-          </span>
-        </div>
-      )}
-
-      {hasData && totalDev > 3 && !budgetMissing && (
-        <div
-          style={{
-            background: "rgba(251, 191, 36, 0.08)",
-            border: "1px solid rgba(251, 191, 36, 0.35)",
-            borderRadius: 8,
-            padding: "12px 16px",
-            marginBottom: 16,
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-          }}
-        >
-          <span className="material-symbols-outlined" style={{ color: "#fbbf24" }}>warning</span>
-          <span style={{ fontSize: 13, color: "#fde68a" }}>
-            <b>黄色预警</b>：项目「{project?.name}」计价合计超出预算 {totalDev.toFixed(1)}%（阈值 3%），建议核查偏差成本项并补充应对措施。
-          </span>
-        </div>
-      )}
-
-      <SectionTitle>计价费用构成（联动真实计价结果）</SectionTitle>
-      <div className="content-card">
-        <div className="content-card-body flush">
           <Table
             rowKey="label"
             loading={loading}
@@ -389,21 +358,52 @@ function CompareTab({ project, summary, loading }: CompareTabProps) {
             dataSource={feeRows}
             pagination={false}
             size="small"
+            scroll={{ x: 620 }}
             locale={{
               emptyText: (
                 <Empty description={project ? "该项目尚未计价或暂无合计数据。请先在「计价与复核」中执行计价。" : "请先在上方选择联动项目。"} />
               ),
             }}
           />
+        </Panel>
+
+        <div className="bs-col-stack">
+          <Panel title="偏差诊断" icon="monitoring">
+            <div className="bs-kv-list">
+              <div className="bs-kv-row">
+                <span>{budgetMissing ? "参考预算（万元）" : "项目预算（万元）"}</span>
+                <strong className="num">{project ? (budgetMissing ? `${wan(budget)}（参考）` : wan(budget)) : "-"}</strong>
+              </div>
+              <div className="bs-kv-row"><span>计价合计（万元）</span><strong className="num">{summary ? wan(actual) : "-"}</strong></div>
+              <div className="bs-kv-row">
+                <span>综合偏差率</span>
+                <strong className="num" style={{ color: hasData && totalDev > 3 ? "#fcd34d" : undefined }}>
+                  {hasData ? `${totalDev > 0 ? "+" : ""}${totalDev.toFixed(1)}%` : "-"}
+                </strong>
+              </div>
+              <div className="bs-kv-row"><span>预警阈值</span><strong>+3%</strong></div>
+            </div>
+
+            {budgetMissing && (
+              <div className="bs-alert" style={{ marginTop: 10 }}>
+                <span className="material-symbols-outlined">info</span>
+                <span>项目「{project?.name}」尚未设置预算，当前显示为参考估算值。如需真实偏差分析，请在项目台账中编辑项目预算。</span>
+              </div>
+            )}
+
+            {hasData && totalDev > 3 && !budgetMissing && (
+              <div className="bs-alert warn" style={{ marginTop: 10 }}>
+                <span className="material-symbols-outlined">warning</span>
+                <span><b>黄色预警</b>：项目「{project?.name}」计价合计超出预算 {totalDev.toFixed(1)}%（阈值 3%），建议核查偏差成本项并补充应对措施。</span>
+              </div>
+            )}
+          </Panel>
         </div>
       </div>
 
-      <SectionTitle>月度费用趋势（万元）</SectionTitle>
-      <div className="content-card">
-        <div className="content-card-body" style={{ padding: "12px 16px" }}>
-          <div ref={chartRef} style={{ width: "100%" }} />
-        </div>
-      </div>
+      <Panel title="月度费用趋势（万元）" icon="bar_chart" extra={<span>直接费 · 管理费 · 利润 · 规费 · 增值税</span>}>
+        <MonthlyTrendChart />
+      </Panel>
     </div>
   );
 }
@@ -484,24 +484,52 @@ function PayTab({ project }: PayTabProps) {
     },
   ];
   return (
-    <div>
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-        <StatCard label="支付审核准确率" value={`${stats.accuracy.toFixed(1)}%`} sub="AI 校验 vs 人工复核" color="#2dd4bf" />
-        <StatCard label="累计校验笔数" value={`${stats.total} 笔`} sub="每笔支付前自动校验" color="#2dd4bf" />
-        <StatCard label="自动放行" value={`${stats.pass} 笔`} sub="确认无误才放行" color="#2dd4bf" />
-        <StatCard label="驳回复核" value={`${stats.reject} 笔`} sub="工程量完成度不足" color="#f87171" />
+    <div className="bs-two-col">
+      <Panel
+        title="AI 支付校验记录"
+        icon="verified"
+        extra={<span>全程留痕 · 可追溯</span>}
+        flush
+        bodyClassName="bs-panel-table"
+      >
+        <Table rowKey="key" loading={loading} columns={cols} dataSource={rows} pagination={false} size="small" scroll={{ x: 940 }} />
+      </Panel>
+
+      <div className="bs-col-stack">
+        <Panel title="校验指标" icon="analytics">
+          <div className="bs-metric-row">
+            <div className="bs-metric">
+              <span className="bs-metric-label">支付审核准确率</span>
+              <strong className="bs-metric-value is-green num">{stats.accuracy.toFixed(1)}%</strong>
+              <span className="bs-metric-hint">AI 校验 vs 人工复核</span>
+            </div>
+            <div className="bs-metric">
+              <span className="bs-metric-label">累计校验笔数</span>
+              <strong className="bs-metric-value num">{stats.total} 笔</strong>
+              <span className="bs-metric-hint">每笔支付前自动校验</span>
+            </div>
+            <div className="bs-metric">
+              <span className="bs-metric-label">自动放行</span>
+              <strong className="bs-metric-value is-green num">{stats.pass} 笔</strong>
+              <span className="bs-metric-hint">确认无误才放行</span>
+            </div>
+            <div className="bs-metric">
+              <span className="bs-metric-label">驳回复核</span>
+              <strong className="bs-metric-value is-red num">{stats.reject} 笔</strong>
+              <span className="bs-metric-hint">工程量完成度不足</span>
+            </div>
+          </div>
+        </Panel>
+
+        <Panel title="校验口径" icon="rule">
+          <p className="bs-section-note">
+            每笔支付前，AI 依据 BIM 模型进度与现场数据自动校验工程量完成度，核定值 ≥ 申报值才放行；差异超阈值即驳回复核，全部记录写入审计流水。
+          </p>
+          <p className="bs-section-note" style={{ marginTop: 8 }}>
+            {project && rows.length > 0 && rows[0].key.startsWith("cert-") ? "当前展示为该项目真实支付证书数据。" : "当前展示为多阶段演示数据；项目录入支付证书后将自动切换为真实数据。"}
+          </p>
+        </Panel>
       </div>
-      <SectionTitle>AI 支付校验记录（全程留痕，可追溯）</SectionTitle>
-      <div className="content-card">
-        <div className="content-card-body flush">
-          <Table rowKey="key" loading={loading} columns={cols} dataSource={rows} pagination={false} size="small" />
-        </div>
-      </div>
-      <p style={{ fontSize: 12, color: "#94a3b8", marginTop: 10 }}>
-        每笔支付前，AI 依据 BIM 模型进度与现场数据自动校验工程量完成度，核定值 ≥ 申报值才放行；
-        差异超阈值即驳回复核，全部记录写入审计流水。
-        {project && rows.length > 0 && rows[0].key.startsWith("cert-") ? " 当前展示为该项目真实支付证书数据。" : " 当前展示为多阶段演示数据；项目录入支付证书后将自动切换为真实数据。"}
-      </p>
     </div>
   );
 }
@@ -822,37 +850,34 @@ function RiskSimulator({ simDays, onSimDaysChange }: { simDays: number; onSimDay
   ];
 
   return (
-    <div className="content-card" style={{ marginBottom: 16 }}>
-      <div className="content-card-body">
-        <h3 className="content-card-title" style={{ marginBottom: 12 }}>
-          <span className="material-symbols-outlined">psychology</span>风险预演（输入前瞻参数 → 出风险评估）
-        </h3>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14 }}>
-          <div>
-            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>天气窗口</div>
-            <Select value={weather} onChange={setWeather} style={{ width: 200 }} options={Object.entries(WEATHER_META).map(([v, m]) => ({ value: v, label: m.label }))} />
-          </div>
-          <div>
-            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>建材市场价</div>
-            <Select value={price} onChange={setPrice} style={{ width: 180 }} options={Object.entries(PRICE_META).map(([v, m]) => ({ value: v, label: m.label }))} />
-          </div>
-          <div>
-            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>施工进度</div>
-            <Select value={schedule} onChange={setSchedule} style={{ width: 180 }} options={Object.entries(SCHEDULE_META).map(([v, m]) => ({ value: v, label: m.label }))} />
-          </div>
-          <div>
-            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>模拟窗口（天）</div>
+    <div className="bs-col-stack">
+        <div className="bs-filter">
+          <label className="bs-field">
+            <span className="bs-field-label">天气窗口</span>
+            <Select value={weather} onChange={setWeather} options={Object.entries(WEATHER_META).map(([v, m]) => ({ value: v, label: m.label }))} />
+          </label>
+          <label className="bs-field">
+            <span className="bs-field-label">建材市场价</span>
+            <Select value={price} onChange={setPrice} options={Object.entries(PRICE_META).map(([v, m]) => ({ value: v, label: m.label }))} />
+          </label>
+          <label className="bs-field">
+            <span className="bs-field-label">施工进度</span>
+            <Select value={schedule} onChange={setSchedule} options={Object.entries(SCHEDULE_META).map(([v, m]) => ({ value: v, label: m.label }))} />
+          </label>
+          <label className="bs-field">
+            <span className="bs-field-label">模拟窗口（天）</span>
             <InputNumber
               min={1}
               max={90}
               value={simDays}
               onChange={(v) => onSimDaysChange(v ?? 14)}
-              style={{ width: 100 }}
+              style={{ width: "100%" }}
               addonAfter="天"
             />
-          </div>
+          </label>
           <Button
             type="primary"
+            block
             icon={<span className="material-symbols-outlined" style={{ fontSize: 16, verticalAlign: -3 }}>play_arrow</span>}
             loading={saving}
             onClick={() => void handleRun()}
@@ -862,86 +887,69 @@ function RiskSimulator({ simDays, onSimDaysChange }: { simDays: number; onSimDay
         </div>
 
         {simulated ? (
-          <>
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
-              <div className="content-card" style={{ flex: 1, minWidth: 170 }}>
-                <div className="content-card-body" style={{ padding: "14px 18px" }}>
-                  <div style={{ fontSize: 13, color: "#94a3b8" }}>风险评级</div>
-                  <div style={{ marginTop: 4 }}>
-                    <Tag color={severity.color} style={{ fontSize: 15, padding: "2px 10px" }}>{severity.label}</Tag>
-                  </div>
-                  <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>基线偏差 {result.base.toFixed(1)}% + 不利因子累计</div>
-                </div>
+          <div className="bs-col-stack">
+            <div className="bs-metric-row">
+              <div className="bs-metric">
+                <span className="bs-metric-label">风险评级</span>
+                <strong className="bs-metric-value" style={{ color: severity.text }}>
+                  <Tag color={severity.color}>{severity.label}</Tag>
+                </strong>
+                <span className="bs-metric-hint">基线偏差 {result.base.toFixed(1)}% + 不利因子累计</span>
               </div>
-              <div className="content-card" style={{ flex: 1, minWidth: 170 }}>
-                <div className="content-card-body" style={{ padding: "14px 18px" }}>
-                  <div style={{ fontSize: 13, color: "#94a3b8" }}>预演偏差峰值（不应对）</div>
-                  <div style={{ fontSize: 26, fontWeight: 700, color: severity.text, marginTop: 4 }}>{result.peak.toFixed(2)}%</div>
-                  <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
-                    {result.peak >= 0.7 ? "已突破预警线 0.7%" : result.peak >= 0.5 ? "贴近预警线 0.5%" : "低于预警线 0.5%"}
-                  </div>
-                </div>
+              <div className="bs-metric">
+                <span className="bs-metric-label">预演偏差峰值（不应对）</span>
+                <strong className="bs-metric-value" style={{ color: severity.text }}>{result.peak.toFixed(2)}%</strong>
+                <span className="bs-metric-hint">
+                  {result.peak >= 0.7 ? "已突破预警线 0.7%" : result.peak >= 0.5 ? "贴近预警线 0.5%" : "低于预警线 0.5%"}
+                </span>
               </div>
-              <div className="content-card" style={{ flex: 1, minWidth: 170 }}>
-                <div className="content-card-body" style={{ padding: "14px 18px" }}>
-                  <div style={{ fontSize: 13, color: "#94a3b8" }}>采取应对后</div>
-                  <div style={{ fontSize: 26, fontWeight: 700, color: "#34d399", marginTop: 4 }}>{result.after.toFixed(2)}%</div>
-                  <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>{result.after < 0.5 ? "压回阈值 0.5% 以内" : "仍偏高，需加大干预"}</div>
-                </div>
+              <div className="bs-metric">
+                <span className="bs-metric-label">采取应对后</span>
+                <strong className="bs-metric-value is-green">{result.after.toFixed(2)}%</strong>
+                <span className="bs-metric-hint">{result.after < 0.5 ? "压回阈值 0.5% 以内" : "仍偏高，需加大干预"}</span>
               </div>
             </div>
 
             {result.touched.length > 0 && (
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {result.touched.map((t) => <Tag key={t} color="orange">{t}</Tag>)}
               </div>
             )}
 
             {result.advice.length > 0 && (
-              <div
-                style={{
-                  background: "rgba(255,193,7,0.07)",
-                  border: "1px solid rgba(255,193,7,0.28)",
-                  borderRadius: 8,
-                  padding: "10px 14px",
-                  display: "flex",
-                  gap: 10,
-                  alignItems: "flex-start",
-                }}
-              >
-                <span className="material-symbols-outlined" style={{ color: "#fbbf24", fontSize: 18 }}>tips_and_updates</span>
+              <div className="bs-alert warn">
+                <span className="material-symbols-outlined">tips_and_updates</span>
                 <div>
-                  <div style={{ fontSize: 12, color: "#fde68a", marginBottom: 4 }}>系统应对建议（提前 {simDays} 天预警）</div>
-              <ul style={{ margin: 0, paddingLeft: 18, color: "#e2e8f0", fontSize: 13, lineHeight: 1.8 }}>
-                {result.advice.map((a) => <li key={a}>{a}</li>)}
-              </ul>
-            </div>
+                  <div style={{ fontSize: 12, marginBottom: 4 }}>系统应对建议（提前 {simDays} 天预警）</div>
+                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.8 }}>
+                    {result.advice.map((a) => <li key={a}>{a}</li>)}
+                  </ul>
+                </div>
+              </div>
+            )}
           </div>
-        )}
-          </>
         ) : (
-          <div style={{ textAlign: "center", padding: "24px 0", color: "#64748b", fontSize: 13 }}>
-            选择参数后点击「开始模拟」查看预测结果
+          <div className="bs-alert">
+            <span className="material-symbols-outlined">info</span>
+            <span>选择参数后点击「开始模拟」查看预测结果。</span>
           </div>
         )}
 
-        {/* 模拟历史留痕 */}
-        <div style={{ marginTop: 16, borderTop: "1px solid rgba(148,163,184,0.2)", paddingTop: 12 }}>
+        <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
             <span className="material-symbols-outlined" style={{ fontSize: 16, color: "#94a3b8" }}>history</span>
-            <span style={{ fontSize: 13, fontWeight: 600 }}>模拟历史（留痕 {history.length} 条）</span>
-            <span style={{ fontSize: 12, color: "#64748b" }}>每次「开始模拟」都会落库保存，供后续回看与追溯</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0" }}>模拟历史（留痕 {history.length} 条）</span>
           </div>
           <Table
             rowKey="id"
             size="small"
             pagination={false}
+            scroll={{ x: 780 }}
             dataSource={history}
             columns={historyColumns}
             locale={{ emptyText: <Empty description="暂无历史模拟记录">点击「开始模拟」后自动保存</Empty> }}
           />
         </div>
-      </div>
     </div>
   );
 }
@@ -949,34 +957,50 @@ function RiskSimulator({ simDays, onSimDaysChange }: { simDays: number; onSimDay
 function RiskTab() {
   const [simDays, setSimDays] = useState(14);
   return (
-    <div>
-      <RiskSimulator simDays={simDays} onSimDaysChange={setSimDays} />
-      <SectionTitle>四维数据接入</SectionTitle>
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-        {RISK_DIMENSIONS.map((d) => (
-          <div key={d.name} className="content-card" style={{ flex: 1, minWidth: 210 }}>
-            <div className="content-card-body" style={{ padding: "12px 16px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span className="material-symbols-outlined" style={{ fontSize: 20, color: d.color }}>{d.icon}</span>
-                <span style={{ fontWeight: 600 }}>{d.name}</span>
-              </div>
-              <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 6 }}>{d.detail}</div>
+    <div className="bs-col-stack">
+      <div className="bs-two-col">
+        <Panel
+          title="风险预演"
+          icon="psychology"
+          extra={<Tag color="blue">提前 {simDays} 天预警</Tag>}
+        >
+          <RiskSimulator simDays={simDays} onSimDaysChange={setSimDays} />
+        </Panel>
+
+        <div className="bs-col-stack">
+          <Panel title="四维数据接入" icon="dataset">
+            <div className="bs-source-grid">
+              {RISK_DIMENSIONS.map((d) => (
+                <div key={d.name} className="bs-source-item">
+                  <div className="bs-source-head">
+                    <span className="material-symbols-outlined" style={{ color: d.color }}>{d.icon}</span>
+                    <span>{d.name}</span>
+                  </div>
+                  <div className="bs-source-meta"><span>{d.detail}</span></div>
+                </div>
+              ))}
             </div>
-          </div>
-        ))}
-      </div>
-      <SectionTitle>成本偏差模拟图（未来 {simDays} 天）</SectionTitle>
-      <div className="content-card">
-        <div className="content-card-body" style={{ padding: 16 }}>
-          <RiskChart simDays={simDays} />
-          <div style={{ display: "flex", gap: 28, justifyContent: "center", marginTop: 10, fontSize: 13, color: "#cbd5e1", flexWrap: "wrap" }}>
-            <span><i style={{ display: "inline-block", width: 18, height: 3, background: "#f87171", marginRight: 6, verticalAlign: "middle", borderRadius: 2 }} />不采取应对措施</span>
-            <span><i style={{ display: "inline-block", width: 18, height: 3, background: "#34d399", marginRight: 6, verticalAlign: "middle", borderRadius: 2 }} />室外作业调整到室内</span>
-            <span><i style={{ display: "inline-block", width: 18, height: 3, background: "rgba(249,115,22,0.45)", marginRight: 6, verticalAlign: "middle", borderRadius: 2 }} />沙尘暴窗口</span>
-            <span><i style={{ display: "inline-block", width: 18, height: 3, background: "rgba(56,189,248,0.65)", marginRight: 6, verticalAlign: "middle", borderRadius: 2 }} />应对介入</span>
-          </div>
+          </Panel>
+
+          <Panel title="预警口径" icon="notification_important">
+            <div className="bs-kv-list">
+              <div className="bs-kv-row"><span>黄色预警</span><strong>偏差 ≥ 0.5%</strong></div>
+              <div className="bs-kv-row"><span>红色预警</span><strong>偏差 ≥ 0.7%</strong></div>
+              <div className="bs-kv-row"><span>处置目标</span><strong>压回 0.5% 以内</strong></div>
+            </div>
+          </Panel>
         </div>
       </div>
+
+      <Panel title={`成本偏差模拟图（未来 ${simDays} 天）`} icon="show_chart">
+        <RiskChart simDays={simDays} />
+        <div style={{ display: "flex", gap: 28, justifyContent: "center", marginTop: 10, fontSize: 13, color: "#cbd5e1", flexWrap: "wrap" }}>
+          <span><i style={{ display: "inline-block", width: 18, height: 3, background: "#f87171", marginRight: 6, verticalAlign: "middle", borderRadius: 2 }} />不采取应对措施</span>
+          <span><i style={{ display: "inline-block", width: 18, height: 3, background: "#34d399", marginRight: 6, verticalAlign: "middle", borderRadius: 2 }} />室外作业调整到室内</span>
+          <span><i style={{ display: "inline-block", width: 18, height: 3, background: "rgba(249,115,22,0.45)", marginRight: 6, verticalAlign: "middle", borderRadius: 2 }} />沙尘暴窗口</span>
+          <span><i style={{ display: "inline-block", width: 18, height: 3, background: "rgba(56,189,248,0.65)", marginRight: 6, verticalAlign: "middle", borderRadius: 2 }} />应对介入</span>
+        </div>
+      </Panel>
     </div>
   );
 }
@@ -1054,68 +1078,38 @@ function EvaluateTab({ project, summary, loading }: CompareTabProps) {
   ];
 
   return (
-    <div>
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-        <StatCard
-          label={budgetMissing ? "参考预算（万元）" : "项目预算（万元）"}
-          value={project ? (budgetMissing ? `${wan(budget)}（参考）` : wan(budget)) : "-"}
-          color="#34d399"
-        />
-        <StatCard label="计价合计（万元）" value={summary ? wan(grand) : "-"} color="#34d399" />
-        <StatCard
-          label="综合偏差"
-          value={hasData ? `${overallDev > 0 ? "+" : ""}${overallDev.toFixed(1)}%` : "-"}
-          sub={budgetMissing ? "预算未设置，按计价 95% 估算参考偏差" : "（计价 vs 预算，阈值 5%）"}
-          color={hasData && Math.abs(overallDev) > 5 ? "#f87171" : "#2dd4bf"}
-        />
-      </div>
-      <SectionTitle>三值对比（预算 / AI 预测 / 实际计价）</SectionTitle>
-      <div className="content-card">
-        <div className="content-card-body flush">
-          <Table
-            rowKey="key"
-            loading={loading}
-            columns={cols}
-            dataSource={evalRows}
-            pagination={false}
-            size="small"
-            locale={{
-              emptyText: (
-                <Empty description={project ? "该项目暂无计价数据，无法生成后评估。请先在「计价与复核」中执行计价。" : "请先在上方选择联动项目。"} />
-              ),
-            }}
-          />
-        </div>
-      </div>
-      <div
-        style={{
-          background: "rgba(52, 211, 153, 0.08)",
-          border: "1px solid rgba(52, 211, 153, 0.35)",
-          borderRadius: 8,
-          padding: "12px 16px",
-          marginTop: 16,
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-        }}
-      >
-        <span className="material-symbols-outlined" style={{ color: "#34d399" }}>verified</span>
-        <span style={{ fontSize: 13, color: "#a7f3d0" }}>
-          {hasData
-            ? `项目「${project?.name}」后评估：${budgetMissing ? "参考预算" : "预算"} ${wan(budget)} 万元、AI 计价 ${wan(grand)} 万元，综合偏差 ${overallDev > 0 ? "+" : ""}${overallDev.toFixed(1)}%。${budgetMissing ? "当前预算未设置，偏差为参考估算。" : ""}评估数据沉淀后反哺企业造价指标库。`
-            : "后评估接入真实计价结果：选定联动项目后，以「预算 → AI 计价」为三值口径生成对比。评估数据沉淀后反哺企业造价指标库。"}
-        </span>
-      </div>
+    <div className="bs-col-stack">
+      <div className="bs-two-col">
+        <div className="bs-col-stack">
+          <Panel
+            title="三值对比（预算 / AI 预测 / 实际计价）"
+            icon="balance"
+            extra={<Tag color={hasData && Math.abs(overallDev) > 5 ? "red" : "green"}>阈值 5%</Tag>}
+            flush
+            bodyClassName="bs-panel-table"
+          >
+            <Table
+              rowKey="key"
+              loading={loading}
+              columns={cols}
+              dataSource={evalRows}
+              pagination={false}
+              size="small"
+              scroll={{ x: 720 }}
+              locale={{
+                emptyText: (
+                  <Empty description={project ? "该项目暂无计价数据，无法生成后评估。请先在「计价与复核」中执行计价。" : "请先在上方选择联动项目。"} />
+                ),
+              }}
+            />
+          </Panel>
 
-      {/* 运维期 AI 后评估：预算 / AI 预测 / 实际值 三值对比 */}
-      <div style={{ marginTop: 20 }}>
-        <SectionTitle>运维期 AI 后评估（预算 / AI 预测 / 实际值）</SectionTitle>
-        <div className="content-card">
-          <div className="content-card-body flush">
+          <Panel title="运维期 AI 后评估" icon="savings" extra={<span>预算 / AI 预测 / 实际值</span>} flush bodyClassName="bs-panel-table">
             <Table
               rowKey="key"
               size="small"
               pagination={false}
+              scroll={{ x: 620 }}
               dataSource={OPERATION_METRICS}
               columns={[
                 { title: "评估指标", dataIndex: "metric", width: 140 },
@@ -1138,24 +1132,40 @@ function EvaluateTab({ project, summary, loading }: CompareTabProps) {
                 },
               ]}
             />
-          </div>
+          </Panel>
         </div>
-        <div
-          style={{
-            background: "rgba(52, 211, 153, 0.08)",
-            border: "1px solid rgba(52, 211, 153, 0.35)",
-            borderRadius: 8,
-            padding: "12px 16px",
-            marginTop: 16,
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-          }}
-        >
-          <span className="material-symbols-outlined" style={{ color: "#34d399" }}>savings</span>
-          <span style={{ fontSize: 13, color: "#a7f3d0" }}>
-            运维期三值对比：年运维成本偏差 2.3%、光伏发电量偏差 2.5%，均在 3% 以内——模型可靠性得到验证。评估数据沉淀后反哺企业造价指标库。
-          </span>
+
+        <div className="bs-col-stack">
+          <Panel title="后评估结论" icon="verified">
+            <div className="bs-kv-list">
+              <div className="bs-kv-row">
+                <span>{budgetMissing ? "参考预算（万元）" : "项目预算（万元）"}</span>
+                <strong className="num">{project ? (budgetMissing ? `${wan(budget)}（参考）` : wan(budget)) : "-"}</strong>
+              </div>
+              <div className="bs-kv-row"><span>计价合计（万元）</span><strong className="num">{summary ? wan(grand) : "-"}</strong></div>
+              <div className="bs-kv-row">
+                <span>综合偏差</span>
+                <strong className="num" style={{ color: hasData && Math.abs(overallDev) > 5 ? "#fca5a5" : undefined }}>
+                  {hasData ? `${overallDev > 0 ? "+" : ""}${overallDev.toFixed(1)}%` : "-"}
+                </strong>
+              </div>
+            </div>
+            <div className="bs-alert ok" style={{ marginTop: 10 }}>
+              <span className="material-symbols-outlined">verified</span>
+              <span>
+                {hasData
+                  ? `项目「${project?.name}」后评估：${budgetMissing ? "参考预算" : "预算"} ${wan(budget)} 万元、AI 计价 ${wan(grand)} 万元，综合偏差 ${overallDev > 0 ? "+" : ""}${overallDev.toFixed(1)}%。${budgetMissing ? "当前预算未设置，偏差为参考估算。" : ""}评估数据沉淀后反哺企业造价指标库。`
+                  : "后评估接入真实计价结果：选定联动项目后，以「预算 → AI 计价」为三值口径生成对比。评估数据沉淀后反哺企业造价指标库。"}
+              </span>
+            </div>
+          </Panel>
+
+          <Panel title="运维期结论" icon="insights">
+            <div className="bs-alert ok">
+              <span className="material-symbols-outlined">savings</span>
+              <span>运维期三值对比：年运维成本偏差 2.3%、光伏发电量偏差 2.5%，均在 3% 以内，模型可靠性得到验证。评估数据沉淀后反哺企业造价指标库。</span>
+            </div>
+          </Panel>
         </div>
       </div>
     </div>
@@ -1204,32 +1214,40 @@ export default function DynamicControl() {
     void loadSummary(projectId);
   }, [projectId]);
 
-  return (
-    <div className="page-container">
-      <PageHeader
-        icon="monitoring"
-        title="动态管控"
-        subtitle="从造价到运维的下半场闭环：四源关联 → 月度对比 → 进度审核 → 风险模拟 → 后评估，一个平台管住全生命周期。"
-      />
+  const budget = Number(project?.budget ?? 0);
+  const grand = Number(summary?.grand_total ?? 0);
+  const deviation = budget > 0 && grand > 0 ? ((grand - budget) / budget) * 100 : null;
 
-      {/* 联动项目筛选栏：选定项目后，月度对比 / 后评估接入真实计价结果 */}
-      <div className="filter-bar">
-        <Select
-          placeholder="选择联动项目"
-          value={projectId}
-          loading={loadingProjects}
-          onChange={setProjectId}
-          options={projects.map((p) => ({ value: p.id, label: p.name }))}
-          style={{ minWidth: 280 }}
-          showSearch
-          optionFilterProp="label"
-        />
-        <Button loading={loading} disabled={!projectId} onClick={() => loadSummary(projectId)}>刷新计价数据</Button>
-        {project && (
-          <Tag color="geekblue">
-            预算 ¥{project.budget && Number(project.budget) > 0 ? wan(project.budget, 0) : "未设置"} · 计价 ¥{summary ? wan(summary.grand_total, 0) : "-"}
-          </Tag>
-        )}
+  return (
+    <div className="page-container bs-screen-page">
+      <div className="bs-summary-strip">
+        <div className="bs-summary-item is-cyan">
+          <span className="bs-summary-label">联动项目</span>
+          <strong className="bs-summary-value">{project?.name ?? "未选择"}</strong>
+          <span className="bs-summary-hint">共 {projects.length} 个项目可选</span>
+        </div>
+        <div className="bs-summary-item is-amber">
+          <span className="bs-summary-label">项目预算（万元）</span>
+          <strong className="bs-summary-value num">{budget > 0 ? wan(budget) : "未设置"}</strong>
+          <span className="bs-summary-hint">以项目立项口径为准</span>
+        </div>
+        <div className="bs-summary-item is-cyan">
+          <span className="bs-summary-label">计价合计（万元）</span>
+          <strong className="bs-summary-value num">{summary ? wan(grand) : "-"}</strong>
+          <span className="bs-summary-hint">取项目计价汇总结果</span>
+        </div>
+        <div className={`bs-summary-item ${deviation != null && deviation > 3 ? "is-red" : "is-green"}`}>
+          <span className="bs-summary-label">综合偏差</span>
+          <strong className="bs-summary-value num">
+            {deviation == null ? "-" : `${deviation > 0 ? "+" : ""}${deviation.toFixed(1)}%`}
+          </strong>
+          <span className="bs-summary-hint">预警阈值 +3%</span>
+        </div>
+        <div className="bs-summary-item is-green">
+          <span className="bs-summary-label">管控阶段</span>
+          <strong className="bs-summary-value num">{STEPS.length}</strong>
+          <span className="bs-summary-hint">关联 → 对比 → 审核 → 预演 → 评估</span>
+        </div>
       </div>
 
       {/* 工作流步骤条 */}
@@ -1252,17 +1270,38 @@ export default function DynamicControl() {
         ))}
       </div>
 
-      <Tabs
-        activeKey={activeKey}
-        onChange={setActiveKey}
-        items={[
-          { key: "link", label: <span><span className="material-symbols-outlined" style={{ verticalAlign: "-4px", marginRight: 4 }}>hub</span>模型关联</span>, children: <LinkTab /> },
-          { key: "compare", label: <span><span className="material-symbols-outlined" style={{ verticalAlign: "-4px", marginRight: 4 }}>compare_arrows</span>月度对比</span>, children: <CompareTab project={project} summary={summary} loading={loading} /> },
-          { key: "pay", label: <span><span className="material-symbols-outlined" style={{ verticalAlign: "-4px", marginRight: 4 }}>fact_check</span>进度审核</span>, children: <PayTab project={project} /> },
-          { key: "risk", label: <span><span className="material-symbols-outlined" style={{ verticalAlign: "-4px", marginRight: 4 }}>storm</span>风险模拟</span>, children: <RiskTab /> },
-          { key: "evaluate", label: <span><span className="material-symbols-outlined" style={{ verticalAlign: "-4px", marginRight: 4 }}>balance</span>后评估</span>, children: <EvaluateTab project={project} summary={summary} loading={loading} /> },
-        ]}
-      />
+      <Panel
+        title="全生命周期看板"
+        icon="monitoring"
+        extra={
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <Select
+              placeholder="选择联动项目"
+              value={projectId}
+              loading={loadingProjects}
+              onChange={setProjectId}
+              options={projects.map((p) => ({ value: p.id, label: p.name }))}
+              style={{ minWidth: 220 }}
+              showSearch
+              optionFilterProp="label"
+            />
+            <Button loading={loading} disabled={!projectId} onClick={() => loadSummary(projectId)}>刷新计价数据</Button>
+          </div>
+        }
+      >
+        <Tabs
+          className="bs-tabs"
+          activeKey={activeKey}
+          onChange={setActiveKey}
+          items={[
+            { key: "link", label: <span><span className="material-symbols-outlined" style={{ verticalAlign: "-4px", marginRight: 4 }}>hub</span>模型关联</span>, children: <LinkTab /> },
+            { key: "compare", label: <span><span className="material-symbols-outlined" style={{ verticalAlign: "-4px", marginRight: 4 }}>compare_arrows</span>月度对比</span>, children: <CompareTab project={project} summary={summary} loading={loading} /> },
+            { key: "pay", label: <span><span className="material-symbols-outlined" style={{ verticalAlign: "-4px", marginRight: 4 }}>fact_check</span>进度审核</span>, children: <PayTab project={project} /> },
+            { key: "risk", label: <span><span className="material-symbols-outlined" style={{ verticalAlign: "-4px", marginRight: 4 }}>storm</span>风险模拟</span>, children: <RiskTab /> },
+            { key: "evaluate", label: <span><span className="material-symbols-outlined" style={{ verticalAlign: "-4px", marginRight: 4 }}>balance</span>后评估</span>, children: <EvaluateTab project={project} summary={summary} loading={loading} /> },
+          ]}
+        />
+      </Panel>
     </div>
   );
 }

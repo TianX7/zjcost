@@ -1,0 +1,537 @@
+/* ═══════════════════════════════════════════════════════════════
+   资源库 / 工具 / 设置页 — 数字孪生大屏视觉覆盖
+   摘要指标带 / 侧栏导航 / 主侧栅格 / 图纸与 BIM 工具栏和浮动面板
+   说明：依赖 bigscreen.css 的 --screen-* token 与 .screen-panel
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── 页面壳与摘要指标带 ───────────────────────────────────── */
+
+.res-page {
+  gap: var(--screen-gap);
+  padding: 16px 22px 22px;
+}
+
+.screen-metrics {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  gap: var(--screen-gap);
+}
+
+.screen-metric {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 11px 16px;
+  border: 1px solid var(--screen-border);
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(12, 36, 68, 0.72), rgba(10, 30, 58, 0.38));
+  box-shadow: inset 0 1px 0 rgba(148, 200, 255, 0.08);
+  overflow: hidden;
+}
+
+.screen-metric::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 20%;
+  bottom: 20%;
+  width: 2px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, transparent, var(--screen-cyan), transparent);
+  box-shadow: 0 0 10px rgba(77, 212, 255, 0.6);
+}
+
+.screen-metric-icon {
+  flex-shrink: 0;
+  font-size: 20px;
+  color: var(--screen-cyan);
+  opacity: 0.9;
+}
+
+.screen-metric-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.screen-metric-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--screen-muted);
+  white-space: nowrap;
+}
+
+.screen-metric-value {
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: #eaf8ff;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 0 16px rgba(77, 212, 255, 0.22);
+}
+
+.screen-metric-unit {
+  margin-left: 3px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--screen-muted);
+}
+
+.screen-metric.is-amber .screen-metric-icon,
+.screen-metric.is-amber .screen-metric-value {
+  color: var(--screen-amber);
+}
+
+/* 顶部工具栏内的紧凑形态 */
+.screen-metrics.is-compact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.screen-metrics.is-compact .screen-metric {
+  flex: 0 1 auto;
+  padding: 5px 11px;
+  gap: 8px;
+  border-radius: 8px;
+}
+
+.screen-metrics.is-compact .screen-metric::before {
+  top: 26%;
+  bottom: 26%;
+}
+
+.screen-metrics.is-compact .screen-metric-icon {
+  font-size: 16px;
+}
+
+.screen-metrics.is-compact .screen-metric-label {
+  font-size: 10px;
+}
+
+.screen-metrics.is-compact .screen-metric-value {
+  font-size: 15px;
+}
+
+/* ─── 左右分栏：左分类 + 右主区 ────────────────────────────── */
+
+.res-split {
+  display: grid;
+  grid-template-columns: minmax(212px, 244px) minmax(0, 1fr);
+  gap: var(--screen-gap);
+  align-items: start;
+}
+
+.res-side-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.res-main-body {
+  min-height: 0;
+}
+
+/* 侧栏分类 / 设置导航按钮 */
+.res-nav-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: rgba(10, 30, 58, 0.32);
+  color: var(--screen-muted);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.res-nav-item:hover {
+  color: var(--screen-text);
+  border-color: rgba(77, 212, 255, 0.24);
+  background: rgba(77, 212, 255, 0.08);
+}
+
+.res-nav-item .material-symbols-outlined {
+  font-size: 19px;
+  flex-shrink: 0;
+  color: var(--screen-muted);
+  transition: color 0.2s ease;
+}
+
+.res-nav-item.active {
+  color: #eaf8ff;
+  border-color: rgba(77, 212, 255, 0.38);
+  background: linear-gradient(120deg, rgba(77, 212, 255, 0.18), rgba(61, 139, 255, 0.06));
+  box-shadow: inset 0 0 18px rgba(77, 212, 255, 0.1);
+}
+
+.res-nav-item.active .material-symbols-outlined {
+  color: var(--screen-cyan);
+  text-shadow: 0 0 10px rgba(77, 212, 255, 0.6);
+}
+
+.res-nav-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.res-nav-label {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.res-nav-desc {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--screen-muted);
+  opacity: 0.8;
+}
+
+/* 左侧筛选堆叠 */
+.res-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.res-filter .ant-input-affix-wrapper,
+.res-filter .ant-select,
+.res-filter .ant-input-number,
+.res-filter .ant-upload-wrapper,
+.res-filter .ant-btn {
+  width: 100%;
+}
+
+.res-filter .ant-btn {
+  justify-content: flex-start;
+}
+
+.res-filter-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(96, 190, 255, 0.18);
+}
+
+.res-note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--screen-muted);
+}
+
+/* 嵌入子页面：去掉嵌套 page-container 的留白与滚动条 */
+.res-embed > .page-container {
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+  gap: 12px;
+  overflow: visible;
+}
+
+.res-embed .kpi-grid {
+  display: none;
+}
+
+.res-embed .page-header {
+  display: none;
+}
+
+.res-embed .content-card {
+  border-color: rgba(96, 190, 255, 0.14);
+  background: rgba(10, 30, 58, 0.32);
+}
+
+/* ─── 工具条 ──────────────────────────────────────────────── */
+
+.res-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border: 1px solid var(--screen-border);
+  border-radius: 10px;
+  background: linear-gradient(120deg, rgba(12, 36, 68, 0.6), rgba(10, 30, 58, 0.3));
+}
+
+.res-toolbar .res-toolbar-spacer {
+  flex: 1;
+}
+
+/* ─── 分析页：主表 + 侧栏构成 ──────────────────────────────── */
+
+.res-analysis {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 336px);
+  gap: var(--screen-gap);
+  align-items: start;
+}
+
+.res-analysis-main,
+.res-analysis-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--screen-gap);
+  min-width: 0;
+}
+
+/* 分析页栅格分区：主区左列，构成明细右列 */
+.res-analysis > .res-area-info { grid-column: 1; grid-row: 1; }
+.res-analysis > .res-area-bindings { grid-column: 1; grid-row: 2; }
+.res-analysis > .res-area-explain { grid-column: 1; grid-row: 3; }
+.res-analysis > .res-area-coeff { grid-column: 2; grid-row: 1; }
+.res-analysis > .res-area-fee { grid-column: 2; grid-row: 2; align-self: start; }
+
+/* 面板内统计网格 */
+.res-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 10px;
+}
+
+.res-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 12px;
+  border: 1px solid rgba(96, 190, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(10, 30, 58, 0.4);
+}
+
+.res-stat-label {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--screen-muted);
+}
+
+.res-stat-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--screen-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.res-stat-value.accent {
+  color: var(--screen-cyan);
+  text-shadow: 0 0 12px rgba(77, 212, 255, 0.35);
+}
+
+/* 调价系数操作行 */
+.res-coeff-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.res-coeff-current {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.res-coeff-current span {
+  font-size: 12px;
+  color: var(--screen-muted);
+}
+
+.res-coeff-current strong {
+  font-size: 26px;
+  line-height: 1;
+  color: #2dd4bf;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── 设置页：左导航 + 右面板 ──────────────────────────────── */
+
+.res-settings {
+  display: grid;
+  grid-template-columns: minmax(196px, 220px) minmax(0, 1fr);
+  gap: var(--screen-gap);
+  align-items: start;
+}
+
+.res-settings-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--screen-gap);
+  min-width: 0;
+}
+
+/* 价格调度三卡栅格（原四卡之一已移除重复入口） */
+.res-scheduler-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.res-scheduler-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid rgba(96, 190, 255, 0.16);
+  border-radius: 9px;
+  background: rgba(10, 30, 58, 0.4);
+}
+
+.res-scheduler-card .material-symbols-outlined {
+  font-size: 20px;
+  color: var(--screen-cyan);
+}
+
+.res-scheduler-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--screen-text);
+}
+
+.res-scheduler-desc {
+  flex: 1;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--screen-muted);
+}
+
+/* ─── 图纸 / BIM 顶部工具栏 ───────────────────────────────── */
+
+.dr-topbar,
+.ifc-topbar {
+  gap: 14px;
+  padding: 8px 18px;
+  background: linear-gradient(180deg, rgba(7, 24, 48, 0.94), rgba(5, 18, 38, 0.86));
+  border-bottom: 1px solid var(--screen-border);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+}
+
+.dr-topbar-metrics,
+.ifc-topbar-metrics {
+  justify-content: center;
+}
+
+.dr-topbar-actions,
+.ifc-topbar-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* ─── 图纸右侧结果面板 ────────────────────────────────────── */
+
+.dr-float-panel {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  overflow: hidden;
+}
+
+.dr-float-panel > .screen-panel {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+.dr-side-panel .screen-panel-body {
+  padding: 0;
+  overflow-y: auto;
+}
+
+.dr-side-panel .dr-float-panel-scroll {
+  flex: none;
+  padding: 12px;
+}
+
+.dr-side-panel .dr-zh-card {
+  background: rgba(8, 20, 40, 0.55);
+  border-color: rgba(96, 190, 255, 0.14);
+}
+
+/* ─── BIM 右侧结果面板 ────────────────────────────────────── */
+
+.ifc-float-panel {
+  gap: 0;
+  padding-right: 0;
+  overflow: hidden;
+}
+
+.ifc-float-panel > .screen-panel {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+.ifc-side-panel .screen-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  overflow-y: auto;
+}
+
+.ifc-side-panel .ifc-panel-card {
+  background: rgba(8, 20, 40, 0.55);
+  border-color: rgba(96, 190, 255, 0.14);
+}
+
+/* ─── 响应式 ──────────────────────────────────────────────── */
+
+@media (max-width: 1279px) {
+  .res-split,
+  .res-analysis,
+  .res-settings {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .res-analysis > .res-area-info,
+  .res-analysis > .res-area-bindings,
+  .res-analysis > .res-area-explain,
+  .res-analysis > .res-area-coeff,
+  .res-analysis > .res-area-fee {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .res-scheduler-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dr-topbar-metrics,
+  .ifc-topbar-metrics {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .res-page {
+    padding: 12px 14px 18px;
+  }
+
+  .res-scheduler-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

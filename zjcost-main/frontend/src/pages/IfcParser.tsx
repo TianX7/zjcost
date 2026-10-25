@@ -4,6 +4,8 @@ import { Button, Table, Tag, Upload, message } from "antd";
 import type { UploadProps } from "antd";
 import { CloudUploadOutlined, ClearOutlined, DownloadOutlined, FolderAddOutlined } from "@ant-design/icons";
 import { api, type IfcElement, type IfcTaskStatus } from "../api";
+import Panel from "../components/Panel";
+import "../styles/resource-screen.css";
 import Ifc3DViewer from "../components/Ifc3DViewer";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import ValuationReview from "../components/ValuationReview";
@@ -42,82 +44,168 @@ function toViewerElements(result: IfcTaskStatus | null): IfcElement[] {
   return full;
 }
 
-/** 等距投影线框体的三个可见面 + 底座（cx/cy 为原点地面角，w 深 d 进深 h 高） */
-function isoFaces(cx: number, cy: number, w: number, d: number, h: number) {
-  const X = (dx: number, dy: number) => cx + (dx - dy) * 0.866;
-  const Y = (dx: number, dy: number, dz: number) => cy + (dx + dy) * 0.5 - dz;
-  const pts = (list: Array<[number, number, number]>) =>
-    list.map(([dx, dy, dz]) => `${X(dx, dy).toFixed(1)},${Y(dx, dy, dz).toFixed(1)}`).join(" ");
-  return {
-    top: pts([[0, 0, h], [w, 0, h], [w, d, h], [0, d, h]]),
-    left: pts([[0, 0, h], [0, d, h], [0, d, 0], [0, 0, 0]]),
-    right: pts([[0, 0, h], [w, 0, h], [w, 0, 0], [0, 0, 0]]),
-    base: pts([[0, 0, 0], [w, 0, 0], [w, d, 0], [0, d, 0]]),
-  };
+/* ─── BIM 蓝图：等轴测幽灵建筑，楼层随解析进度生长 ─── */
+
+const ISO_R = 0.866;
+
+function isoProject(ox: number, oy: number, u: number, v: number, z: number) {
+  return [ox + (u - v) * ISO_R, oy + (u + v) * 0.5 - z] as const;
 }
 
-/** 单栋线框楼宇：高层带天线与信标呼吸灯 */
-function DecoBuilding({ cx, cy, w, d, h, delay }: { cx: number; cy: number; w: number; d: number; h: number; delay: number }) {
-  const f = isoFaces(cx, cy, w, d, h);
-  const ax = cx + ((w - d) / 2) * 0.866;
-  const ay = cy + ((w + d) / 2) * 0.5 - h;
+/** 等轴测多边形：给 z1 时生成侧面四边形，否则生成 z0 处的水平面 */
+function isoPolygon(ox: number, oy: number, pts: Array<[number, number]>, z0: number, z1?: number) {
+  const project = ([u, v]: [number, number], z: number) => {
+    const [x, y] = isoProject(ox, oy, u, v, z);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  };
+  if (z1 === undefined) return pts.map((point) => project(point, z0)).join(" ");
+  return [...pts.map((point) => project(point, z0)), ...pts.slice().reverse().map((point) => project(point, z1))].join(" ");
+}
+
+type IsoTowerProps = {
+  ox: number;
+  oy: number;
+  w: number;
+  d: number;
+  floors: number;
+  floorHeight: number;
+  progress: number;
+};
+
+/** 单栋楼：未点亮为虚线幽灵，进度越过该层阈值后实线点亮 */
+function IsoTower({ ox, oy, w, d, floors, floorHeight, progress }: IsoTowerProps) {
+  const height = floors * floorHeight;
+  const rightEdge: Array<[number, number]> = [[0, 0], [w, 0]];
+  const leftEdge: Array<[number, number]> = [[0, 0], [0, d]];
+  const roofRing: Array<[number, number]> = [[0, 0], [w, 0], [w, d], [0, d]];
+  const mullions = [
+    ...[w / 3, (w * 2) / 3].map((u) => ({ u, v: 0 })),
+    ...[d / 3, (d * 2) / 3].map((v) => ({ u: 0, v })),
+  ];
   return (
-    <g className="ifc-deco-b" style={{ animationDelay: `${delay}s` }}>
-      <polygon className="ifc-deco-base" points={f.base} />
-      <polygon points={f.left} />
-      <polygon points={f.right} />
-      <polygon className="ifc-deco-roof" points={f.top} />
-      {h >= 160 && (
-        <>
-          <line className="ifc-deco-antenna" x1={ax} y1={ay} x2={ax} y2={ay - 24} />
-          <circle className="ifc-deco-beacon" cx={ax} cy={ay - 28} r="3">
-            <animate attributeName="opacity" values="0.2;1;0.2" dur="2.2s" repeatCount="indefinite" />
-          </circle>
-        </>
-      )}
+    <g>
+      {Array.from({ length: floors }, (_, index) => {
+        const z0 = index * floorHeight;
+        const z1 = z0 + floorHeight;
+        const lit = progress > 0 && progress >= (index / floors) * 100;
+        const rightFace = isoPolygon(ox, oy, rightEdge, z0, z1);
+        const leftFace = isoPolygon(ox, oy, leftEdge, z0, z1);
+        return (
+          <g key={`floor-${index}`}>
+            <polygon className="ifc-x-face-ghost" points={rightFace} />
+            <polygon className="ifc-x-face-ghost" points={leftFace} />
+            <polygon className={`ifc-x-face-lit${lit ? " is-on" : ""}`} points={rightFace} />
+            <polygon className={`ifc-x-face-lit${lit ? " is-on" : ""}`} points={leftFace} />
+          </g>
+        );
+      })}
+      {mullions.map((line, index) => {
+        const [x1, y1] = isoProject(ox, oy, line.u, line.v, 0);
+        const [x2, y2] = isoProject(ox, oy, line.u, line.v, height);
+        return <line key={`mullion-${index}`} className="ifc-x-mullion" x1={x1} y1={y1} x2={x2} y2={y2} />;
+      })}
+      <g className={`ifc-x-roof${progress >= 95 ? " is-on" : ""}`}>
+        <polygon points={isoPolygon(ox, oy, roofRing, height)} />
+      </g>
     </g>
   );
 }
 
-/** 舞台四周装饰：轻量立体线框建筑群 + 电路连线 + 角标刻线 + 浮光点 */
-function IfcStageDeco() {
+/** 空态 / 构建态共用蓝图：场地轮廓 + 主楼副楼 + 尺寸标注与楼层刻度 */
+function IfcBlueprint({ progress, done }: { progress: number; done: boolean }) {
+  const main = { ox: 545, oy: 450, w: 250, d: 185, floors: 10, floorHeight: 24 };
+  const annex = { ox: 853, oy: 575, w: 135, d: 105, floors: 5, floorHeight: 20 };
+  const mainHeight = main.floors * main.floorHeight;
+  const [tickBaseX, tickBaseY] = isoProject(main.ox, main.oy, 0, main.d, 0);
+  const tickX = tickBaseX - 40;
+  const [frontX, frontY] = isoProject(main.ox, main.oy, 0, 0, 0);
+  const [rightX, rightY] = isoProject(main.ox, main.oy, main.w, 0, 0);
+  const [leftX, leftY] = isoProject(main.ox, main.oy, 0, main.d, 0);
+  const dimOffset = 32;
+  const rightMidX = (frontX + rightX) / 2;
+  const rightMidY = (frontY + rightY) / 2 + dimOffset + 14;
+  const leftMidX = (frontX + leftX) / 2;
+  const leftMidY = (frontY + leftY) / 2 + dimOffset + 14;
   return (
-    <div className="ifc-stage-deco" aria-hidden="true">
-      <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
-        {/* 左下建筑群 */}
-        <DecoBuilding cx={210} cy={760} w={120} d={90} h={150} delay={0} />
-        <DecoBuilding cx={360} cy={800} w={90} d={70} h={210} delay={0.9} />
-        <DecoBuilding cx={520} cy={830} w={140} d={100} h={90} delay={1.7} />
-        {/* 右侧建筑群 */}
-        <DecoBuilding cx={1430} cy={820} w={110} d={80} h={130} delay={0.4} />
-        <DecoBuilding cx={1300} cy={860} w={80} d={70} h={190} delay={1.2} />
-        {/* 上方悬浮小体块（填补顶部两角空缺） */}
-        <DecoBuilding cx={1490} cy={210} w={64} d={54} h={96} delay={2} />
-        <DecoBuilding cx={330} cy={200} w={56} d={48} h={74} delay={2.6} />
-        {/* 电路连线与节点 */}
-        <g className="ifc-deco-links">
-          <polyline points="540,846 720,846 720,872 1180,872 1180,838 1360,838" />
-          <polyline points="230,700 230,610 330,610" />
-          <circle cx="540" cy="846" r="3.5" />
-          <circle cx="720" cy="872" r="3.5" />
-          <circle cx="1180" cy="872" r="3.5" />
-          <circle cx="1360" cy="838" r="3.5" />
-          <circle cx="330" cy="610" r="3.5" />
+    <div className="ifc-x-blueprint" aria-hidden="true">
+      <svg viewBox="0 0 1200 880" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <linearGradient id="ifc-x-done-glow" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#4dd4ff" stopOpacity="0.26" />
+            <stop offset="55%" stopColor="#4dd4ff" stopOpacity="0.08" />
+            <stop offset="100%" stopColor="#4dd4ff" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+
+        {/* 场地轮廓与建筑基座 */}
+        <polygon className="ifc-x-site" points="600,365 1040,605 600,845 160,605" />
+        <polygon
+          className="ifc-x-pad"
+          points={isoPolygon(main.ox, main.oy, [[-18, -18], [main.w + 18, -18], [main.w + 18, main.d + 18], [-18, main.d + 18]], 0)}
+        />
+        <polygon
+          className="ifc-x-pad"
+          points={isoPolygon(annex.ox, annex.oy, [[-14, -14], [annex.w + 14, -14], [annex.w + 14, annex.d + 14], [-14, annex.d + 14]], 0)}
+        />
+
+        <IsoTower {...main} progress={progress} />
+        <IsoTower {...annex} progress={progress} />
+
+        {/* 左侧楼层刻度 */}
+        <g>
+          <line className="ifc-x-dim-line" x1={tickX} y1={tickBaseY - mainHeight} x2={tickX} y2={tickBaseY} />
+          {Array.from({ length: main.floors + 1 }, (_, level) => {
+            const y = tickBaseY - level * main.floorHeight;
+            return (
+              <g key={`tick-${level}`}>
+                <line className="ifc-x-floor-tick" x1={tickX - 6} y1={y} x2={tickX + 4} y2={y} />
+                {level > 0 && (
+                  <text className="ifc-x-floor-label" x={tickX - 11} y={y + 3} textAnchor="end" fontSize="10">
+                    {level}F
+                  </text>
+                )}
+              </g>
+            );
+          })}
         </g>
-        {/* 四角 HUD 刻线 */}
-        <g className="ifc-deco-corners">
-          <path d="M 24 64 L 24 24 L 64 24" />
-          <path d="M 1536 24 L 1576 24 L 1576 64" />
-          <path d="M 1576 836 L 1576 876 L 1536 876" />
-          <path d="M 64 876 L 24 876 L 24 836" />
+
+        {/* 建筑底部尺寸标注 */}
+        <g>
+          <line className="ifc-x-dim-line" x1={frontX} y1={frontY + dimOffset} x2={rightX} y2={rightY + dimOffset} />
+          <line className="ifc-x-dim-tick" x1={frontX} y1={frontY + dimOffset - 5} x2={frontX} y2={frontY + dimOffset + 5} />
+          <line className="ifc-x-dim-tick" x1={rightX} y1={rightY + dimOffset - 5} x2={rightX} y2={rightY + dimOffset + 5} />
+          <text
+            className="ifc-x-dim-text"
+            x={rightMidX}
+            y={rightMidY}
+            textAnchor="middle"
+            fontSize="11"
+            transform={`rotate(30 ${rightMidX} ${rightMidY})`}
+          >
+            25.0 m
+          </text>
+          <line className="ifc-x-dim-line" x1={frontX} y1={frontY + dimOffset} x2={leftX} y2={leftY + dimOffset} />
+          <line className="ifc-x-dim-tick" x1={leftX} y1={leftY + dimOffset - 5} x2={leftX} y2={leftY + dimOffset + 5} />
+          <text
+            className="ifc-x-dim-text"
+            x={leftMidX}
+            y={leftMidY}
+            textAnchor="middle"
+            fontSize="11"
+            transform={`rotate(-30 ${leftMidX} ${leftMidY})`}
+          >
+            18.5 m
+          </text>
         </g>
+
+        {/* 完成态：顶部静态光晕（不闪烁） */}
+        {done && (
+          <g className="ifc-x-done-glow">
+            <polygon points="430,0 780,0 650,250 500,250" fill="url(#ifc-x-done-glow)" />
+            <ellipse cx="575" cy="236" rx="170" ry="26" fill="rgba(77, 212, 255, 0.12)" />
+          </g>
+        )}
       </svg>
-      <i className="ifc-deco-dot" style={{ left: "18%", top: "30%", animationDelay: "0s" }} />
-      <i className="ifc-deco-dot" style={{ left: "30%", top: "62%", animationDelay: "1.4s" }} />
-      <i className="ifc-deco-dot" style={{ left: "68%", top: "24%", animationDelay: "2.6s" }} />
-      <i className="ifc-deco-dot" style={{ left: "76%", top: "58%", animationDelay: "0.8s" }} />
-      <i className="ifc-deco-dot" style={{ left: "12%", top: "78%", animationDelay: "2s" }} />
-      <i className="ifc-deco-dot" style={{ left: "88%", top: "70%", animationDelay: "3.2s" }} />
     </div>
   );
 }
@@ -219,6 +307,32 @@ export default function IfcParser() {
   const matchedCount = result?.valuation?.matched ?? 0;
   const grandTotal = result?.valuation?.grand_total ?? null;
 
+  // 构建 HUD：全部由既有进度 / 计数派生，不引入额外定时器
+  const hudSteps = ["读取 IFC 模型", "解析空间结构", "提取工程量", "生成清单与套价"];
+  const builtFloors = progress <= 0 ? 0 : Math.min(10, Math.floor(progress / 10) + 1);
+  const activeStep = uploading ? 0 : progress >= 80 ? 3 : progress >= 55 ? 2 : progress >= 20 ? 1 : 0;
+  const phaseTitle = uploading
+    ? "上传 IFC 文件"
+    : progress >= 80
+      ? "生成清单并匹配定额"
+      : progress >= 55
+        ? "提取构件工程量"
+        : progress >= 20
+          ? "解析空间结构与构件"
+          : "读取 IFC 模型数据";
+  const logLine = uploading
+    ? `接收文件 ${fileName || "-"}`
+    : progress >= 80
+      ? `已识别 ${compCount} 个构件，正在生成清单建议`
+      : progress >= 55
+        ? `正在计算 ${compCount} 个构件的工程量`
+        : compCount > 0
+          ? `已识别 ${compCount} 个构件，正在聚合`
+          : "等待解析引擎返回首批构件";
+  const ringRadius = 18;
+  const ringLength = 2 * Math.PI * ringRadius;
+  const ringOffset = ringLength * (1 - Math.min(100, Math.max(0, progress)) / 100);
+
   // 会话恢复：切走再回来时还原上次的 BIM 解析结果（缓存优先，仅存任务号时走后端取回）
   const restoredRef = useRef(false);
   useEffect(() => {
@@ -246,7 +360,6 @@ export default function IfcParser() {
       }
     } catch { /* 忽略缓存读取失败 */ }
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 会话持久化：任务号 / 文件名 / 结果变化时写入；上传中跳过以免覆盖旧缓存
@@ -371,7 +484,7 @@ export default function IfcParser() {
           if (timerRef.current) clearInterval(timerRef.current);
           handleValuationResult(data);
         }
-      } catch (err) {
+      } catch {
         failures += 1;
         if (failures >= 5) {
           if (timerRef.current) clearInterval(timerRef.current);
@@ -425,13 +538,41 @@ export default function IfcParser() {
 
   return (
     <div className="ifc-root">
-      {/* 顶部工具栏 */}
+      {/* 单条顶部工具栏 */}
       <header className="ifc-topbar">
         <div className="ifc-topbar-left">
           <span className="material-symbols-outlined ifc-topbar-icon">view_in_ar</span>
-          <div>
-            <h1 className="ifc-topbar-title">BIM 算量</h1>
-            {fileName ? <span className="ifc-topbar-file">{fileName}</span> : <span className="ifc-topbar-sub">IFC · IFCZIP · BIM 构件解析</span>}
+          <span className={fileName ? "ifc-topbar-file" : "ifc-topbar-sub"}>{fileName || "IFC · IFCZIP · BIM 构件解析"}</span>
+        </div>
+        {/* 摘要指标：构件 / 网格 / 清单 / 造价 */}
+        <div className="screen-metrics is-compact ifc-topbar-metrics">
+          <div className="screen-metric">
+            <span className="material-symbols-outlined screen-metric-icon">widgets</span>
+            <div className="screen-metric-body">
+              <span className="screen-metric-label">构件</span>
+              <span className="screen-metric-value">{compCount}</span>
+            </div>
+          </div>
+          <div className="screen-metric">
+            <span className="material-symbols-outlined screen-metric-icon">view_in_ar</span>
+            <div className="screen-metric-body">
+              <span className="screen-metric-label">网格</span>
+              <span className="screen-metric-value">{meshCount}</span>
+            </div>
+          </div>
+          <div className="screen-metric">
+            <span className="material-symbols-outlined screen-metric-icon">list_alt</span>
+            <div className="screen-metric-body">
+              <span className="screen-metric-label">清单</span>
+              <span className="screen-metric-value">{boqCount}</span>
+            </div>
+          </div>
+          <div className="screen-metric is-amber">
+            <span className="material-symbols-outlined screen-metric-icon">payments</span>
+            <div className="screen-metric-body">
+              <span className="screen-metric-label">造价</span>
+              <span className="screen-metric-value">{grandTotal != null ? money(grandTotal) : "-"}</span>
+            </div>
           </div>
         </div>
         <div className="ifc-topbar-actions">
@@ -444,28 +585,6 @@ export default function IfcParser() {
           <Button icon={<DownloadOutlined />} loading={exporting} disabled={!taskId || !isDone} onClick={exportResult}>导出</Button>
         </div>
       </header>
-
-      {/* KPI 概览条（嵌入 topbar 下方，不占舞台绝对定位） */}
-      {result && (
-        <div className="ifc-float-kpi">
-          <div className="ifc-float-kpi-item">
-            <span className="material-symbols-outlined">widgets</span>
-            <strong>{compCount}</strong><em>构件</em>
-          </div>
-          <div className="ifc-float-kpi-item">
-            <span className="material-symbols-outlined">view_in_ar</span>
-            <strong>{meshCount}</strong><em>网格</em>
-          </div>
-          <div className="ifc-float-kpi-item">
-            <span className="material-symbols-outlined">list_alt</span>
-            <strong>{boqCount}</strong><em>清单</em>
-          </div>
-          <div className="ifc-float-kpi-item">
-            <span className="material-symbols-outlined">payments</span>
-            <strong>{grandTotal != null ? money(grandTotal) : "-"}</strong>
-          </div>
-        </div>
-      )}
 
       {/* 全屏 3D 舞台 */}
       <div className="ifc-stage">
@@ -480,116 +599,90 @@ export default function IfcParser() {
             </ErrorBoundary>
           </div>
         ) : (
-          <div className="ifc-empty">
-            <div className="ifc-empty-grid" />
-            <div className="ifc-empty-vignette" />
-            <IfcStageDeco />
-
-            {/* 等距 3D 方块示意 */}
-            <div className="ifc-empty-iso">
-              <svg viewBox="0 0 280 220" preserveAspectRatio="xMidYMid meet">
-                <defs>
-                  <linearGradient id="ifc-iso-top" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.35" />
-                    <stop offset="100%" stopColor="#1e3a5f" stopOpacity="0.2" />
-                  </linearGradient>
-                  <linearGradient id="ifc-iso-left" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" stopColor="#1e3a5f" stopOpacity="0.3" />
-                    <stop offset="100%" stopColor="#0f1e30" stopOpacity="0.15" />
-                  </linearGradient>
-                  <linearGradient id="ifc-iso-right" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" stopColor="#0f1e30" stopOpacity="0.15" />
-                    <stop offset="100%" stopColor="#1e3a5f" stopOpacity="0.3" />
-                  </linearGradient>
-                  <linearGradient id="ifc-iso-scan" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#38bdf8" stopOpacity="0" />
-                    <stop offset="50%" stopColor="#38bdf8" stopOpacity="0.45" />
-                    <stop offset="100%" stopColor="#38bdf8" stopOpacity="0" />
-                  </linearGradient>
-                </defs>
-                {/* 主体建筑 */}
-                <g stroke="#38bdf8" strokeWidth="1.2" opacity="0.7">
-                  {/* 顶面 */}
-                  <polygon points="140,30 220,70 140,110 60,70" fill="url(#ifc-iso-top)" />
-                  {/* 左面 */}
-                  <polygon points="60,70 140,110 140,190 60,150" fill="url(#ifc-iso-left)" />
-                  {/* 右面 */}
-                  <polygon points="220,70 140,110 140,190 220,150" fill="url(#ifc-iso-right)" />
-                </g>
-                {/* 楼层分隔线 */}
-                <g stroke="#38bdf8" strokeWidth="0.8" opacity="0.4" strokeDasharray="3 2">
-                  <polygon points="70,85 140,120 140,150 70,115" fill="none" />
-                  <polygon points="210,85 140,120 140,150 210,115" fill="none" />
-                </g>
-                {/* 窗户网格 */}
-                <g stroke="#38bdf8" strokeWidth="0.6" opacity="0.35">
-                  <line x1="80" y1="95" x2="80" y2="135" />
-                  <line x1="100" y1="105" x2="100" y2="145" />
-                  <line x1="120" y1="115" x2="120" y2="155" />
-                  <line x1="75" y1="105" x2="125" y2="130" />
-                  <line x1="75" y1="125" x2="125" y2="150" />
-                </g>
-                {/* 底座环 + 扫描光带 */}
-                <ellipse cx="140" cy="152" rx="118" ry="40" fill="none" stroke="#38bdf8" strokeOpacity="0.3" strokeWidth="1" strokeDasharray="6 6">
-                  <animate attributeName="stroke-dashoffset" values="0;-48" dur="3s" repeatCount="indefinite" />
-                </ellipse>
-                <rect x="26" y="56" width="228" height="12" fill="url(#ifc-iso-scan)" opacity="0.7">
-                  <animate attributeName="y" values="40;186;40" dur="4.2s" repeatCount="indefinite" />
-                </rect>
-                {/* 轴线标注 */}
-                <g fill="#64748b" fontSize="8" fontFamily="ui-monospace, monospace" opacity="0.6">
-                  <text x="140" y="22" textAnchor="middle">Z</text>
-                  <text x="232" y="74" textAnchor="middle">X</text>
-                  <text x="52" y="74" textAnchor="middle">Y</text>
-                </g>
-              </svg>
-            </div>
-
-            {result ? (
-              /* 已有解析结果但没有网格预览数据：不再显示上传引导，改为说明 + 重新上传入口 */
-              <div className="ifc-empty-hint ifc-no-preview">
-                <div className="ifc-hint-icon">
-                  <span className="material-symbols-outlined">view_in_ar</span>
+          <div className="ifc-x-empty">
+            <div className="ifc-x-grid" aria-hidden="true" />
+            <div className="ifc-x-vignette" aria-hidden="true" />
+            <IfcBlueprint progress={progress} done={isDone} />
+            {!showProgress && !isDone && !isError && (
+              <Upload.Dragger {...uploadProps} className="ifc-x-dock" multiple={false}>
+                <div className="ifc-x-dock-body">
+                  <span className="material-symbols-outlined ifc-x-dock-icon">upload_file</span>
+                  <strong className="ifc-x-dock-title">拖入 IFC / IFCZIP 开始解析</strong>
+                  <span className="ifc-x-dock-flow">
+                    解析构件<span className="ifc-x-dock-arrow">→</span>提取工程量<span className="ifc-x-dock-arrow">→</span>自动套价
+                  </span>
+                  <span className="ifc-x-dock-formats"><b>IFC</b><b>IFCZIP</b></span>
                 </div>
-                <strong>该模型未生成三维网格预览</strong>
-                <p>已解析 {compCount} 个构件 · {boqCount} 条清单建议 · 明细与套价结果可在下方查看</p>
-                <Upload {...uploadProps}>
-                  <Button icon={<CloudUploadOutlined />}>重新上传模型</Button>
-                </Upload>
-              </div>
-            ) : (
-              /* 中央上传提示 */
-              <div className="ifc-empty-hint">
-                <div className="ifc-hint-icon">
-                  <span className="material-symbols-outlined">upload_file</span>
-                </div>
-                <strong>上传 IFC / IFCZIP 开始解析</strong>
-                <p>自动提取构件 · 计算工程量 · 生成清单与套价</p>
-                <div className="ifc-hint-steps">
-                  <span><span className="material-symbols-outlined">cloud_upload</span>上传模型</span>
-                  <span className="material-symbols-outlined ifc-step-arrow">arrow_forward</span>
-                  <span><span className="material-symbols-outlined">view_in_ar</span>构件解析</span>
-                  <span className="material-symbols-outlined ifc-step-arrow">arrow_forward</span>
-                  <span><span className="material-symbols-outlined">payments</span>一键套价</span>
-                </div>
-                <div className="ifc-hint-formats">
-                  <span>IFC</span><span>IFCZIP</span>
-                </div>
-              </div>
+              </Upload.Dragger>
             )}
           </div>
         )}
 
-        {/* 左下进度浮层 */}
-        {showProgress && (progress > 0 || uploading) && (
-          <div className="ifc-float-progress">
-            <div className="ifc-float-progress-head">
-              <span>{uploading ? "上传中..." : result?.progress || result?.valuation_progress || statusLabel}</span>
-              <strong>{progress}%</strong>
-            </div>
-            <div className="ifc-progress-track">
-              <div className="ifc-progress-fill" style={{ width: `${progress}%` }} />
-            </div>
+        {/* 构建 HUD：左下小控制台，完成后收为窄条；进度全部来自既有轮询结果 */}
+        {(showProgress || isDone || isError) && (
+          <div className={`ifc-x-hud${isDone || isError ? " is-bar" : ""}${isError ? " is-error" : ""}`}>
+            {isDone || isError ? (
+              <div className="ifc-x-hud-bar">
+                <span className="material-symbols-outlined">{isDone ? "check_circle" : "error"}</span>
+                <strong>{isDone ? "解析完成" : "解析失败"}</strong>
+                <span className="ifc-x-hud-bar-sep">·</span>
+                <span className="ifc-x-hud-bar-num">{compCount}</span>
+                <span className="ifc-x-hud-bar-unit">个构件</span>
+                <span className="ifc-x-hud-bar-sep">·</span>
+                <span className="ifc-x-hud-bar-num">{boqCount}</span>
+                <span className="ifc-x-hud-bar-unit">项清单</span>
+              </div>
+            ) : (
+              <>
+                <div className="ifc-x-hud-head">
+                  <span className="ifc-x-hud-eyebrow">BIM BUILD CONSOLE</span>
+                  <strong className="ifc-x-hud-title">{phaseTitle}</strong>
+                </div>
+                <div className="ifc-x-hud-progress">
+                  <svg className="ifc-x-ring" viewBox="0 0 44 44" aria-hidden="true">
+                    <circle className="ifc-x-ring-track" cx="22" cy="22" r={ringRadius} />
+                    <circle
+                      className="ifc-x-ring-value"
+                      cx="22"
+                      cy="22"
+                      r={ringRadius}
+                      strokeDasharray={ringLength.toFixed(2)}
+                      strokeDashoffset={ringOffset.toFixed(2)}
+                    />
+                  </svg>
+                  <div className="ifc-x-hud-percent"><strong>{Math.round(progress)}</strong><span>%</span></div>
+                  <div className="ifc-x-hud-note">{progress >= 80 ? "清单 / 套价" : progress >= 55 ? "工程量提取" : "构件识别"}</div>
+                </div>
+                <div className="ifc-x-hud-counts">
+                  <div className="ifc-x-hud-count">
+                    <span>已识别构件</span>
+                    <strong>{compCount}</strong>
+                  </div>
+                  <div className="ifc-x-hud-count">
+                    <span>已生成楼层</span>
+                    <strong>{builtFloors}</strong>
+                  </div>
+                  <div className="ifc-x-hud-count is-amber">
+                    <span>清单项</span>
+                    <strong>{boqCount}</strong>
+                  </div>
+                </div>
+                <ol className="ifc-x-hud-steps">
+                  {hudSteps.map((label, index) => (
+                    <li
+                      key={label}
+                      className={`ifc-x-hud-step${index < activeStep ? " is-done" : index === activeStep ? " is-active" : ""}`}
+                    >
+                      <span className="ifc-x-step-mark">{index < activeStep ? "✓" : index === activeStep ? "›" : ""}</span>
+                      {label}
+                    </li>
+                  ))}
+                </ol>
+                <div className="ifc-x-hud-log" key={logLine}>
+                  <span>&gt;</span>{logLine}
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -606,6 +699,13 @@ export default function IfcParser() {
         )}
         {result && panelOpen && (
           <div className="ifc-float-panel">
+            <Panel
+              title="解析结果"
+              icon="view_in_ar"
+              className="ifc-side-panel"
+              bodyClassName="ifc-side-body"
+              extra={<span>{statusLabel}</span>}
+            >
             {/* 任务概览 */}
             <div className="ifc-panel-card">
               <h3><span className="material-symbols-outlined">info</span>解析概览</h3>
@@ -662,6 +762,7 @@ export default function IfcParser() {
                 </div>
               </div>
             )}
+            </Panel>
           </div>
         )}
 

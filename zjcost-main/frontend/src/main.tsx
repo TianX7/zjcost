@@ -10,6 +10,8 @@ import './styles/pmc.css'
 import './styles/lifecycle.css'
 import './styles/ifc.css'
 import './styles/pages.css'
+import './styles/motion.css'
+import './styles/bigscreen.css'
 import App from './App.tsx'
 
 // 打包版：关闭浏览器窗口时通知后端优雅退出；刷新页面时取消待执行的退出。

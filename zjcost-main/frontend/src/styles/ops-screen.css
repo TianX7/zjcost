@@ -1,0 +1,1307 @@
+/* ═══════════════════════════════════════════════════════════════
+   运营期数字孪生大屏 · 厂区能源 / 厂区水务 / 设备运维
+   三栏（280~360 / 自适应 / 300~380）+ 中央工业场景
+   动效仅保留：线路慢速流光、预警/故障柔光、场景一次性淡入
+   ═══════════════════════════════════════════════════════════════ */
+
+.ops-screen {
+  --ops-gap: 12px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-gap);
+  padding: 14px 18px 16px;
+  overflow: hidden;
+}
+
+/* 作为切换页子节点时，间距与内边距由外层 .ops-screen 承担 */
+.ops-view-body > .ops-screen.ops-screen-page {
+  gap: 0;
+  padding: 0;
+}
+
+/* ─── 视图切换条 ──────────────────────────────────────────── */
+
+.ops-view-switch {
+  flex-shrink: 0;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--screen-border);
+  border-radius: 10px;
+  background: rgba(6, 20, 34, 0.7);
+  box-shadow: inset 0 1px 0 rgba(148, 200, 255, 0.08);
+}
+
+.ops-view-switch button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 18px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--screen-muted);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.ops-view-switch button .material-symbols-outlined {
+  font-size: 17px;
+}
+
+.ops-view-switch button:hover {
+  color: var(--screen-text);
+  background: rgba(77, 212, 255, 0.07);
+}
+
+.ops-view-switch button:focus-visible {
+  outline: 1px solid rgba(77, 212, 255, 0.55);
+  outline-offset: 1px;
+}
+
+.ops-view-switch button.active {
+  color: #eaf8ff;
+  border-color: rgba(77, 212, 255, 0.42);
+  background: linear-gradient(180deg, rgba(77, 212, 255, 0.16), rgba(61, 139, 255, 0.05));
+  box-shadow: inset 0 0 12px rgba(77, 212, 255, 0.1);
+}
+
+.ops-view-switch button.active .material-symbols-outlined {
+  color: var(--screen-cyan);
+}
+
+/* 视图容器（不挂动效，场景自身做一次性淡入） */
+.ops-view-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── 三栏骨架 ─────────────────────────────────────────────── */
+
+.ops-columns {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(272px, 300px) minmax(0, 1fr) minmax(292px, 320px);
+  gap: var(--ops-gap);
+}
+
+.ops-col {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-gap);
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(77, 212, 255, 0.26) transparent;
+}
+
+.ops-col::-webkit-scrollbar {
+  width: 5px;
+}
+
+.ops-col::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ops-col::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: rgba(77, 212, 255, 0.24);
+}
+
+.ops-col-center {
+  overflow: hidden;
+  padding-right: 0;
+}
+
+.ops-col > .screen-panel {
+  flex-shrink: 0;
+}
+
+/* 面板头：标题不省略号截断，副标题允许换行 */
+.ops-screen .screen-panel-head {
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 12px;
+}
+
+.ops-screen .screen-panel-title {
+  flex-shrink: 1;
+  font-size: 13px;
+  min-width: 0;
+}
+
+.ops-screen .screen-panel-title > span:last-child {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.3;
+}
+
+.ops-screen .screen-panel-extra {
+  flex-shrink: 1;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 6px;
+  font-size: 10.5px;
+  line-height: 1.35;
+  min-width: 0;
+}
+
+.ops-screen .screen-panel-live {
+  border-color: rgba(77, 212, 255, 0.32);
+  background: rgba(77, 212, 255, 0.08);
+  color: #7dd3fc;
+}
+
+.ops-screen .screen-panel-live-dot {
+  background: #4dd4ff;
+  box-shadow: 0 0 6px rgba(77, 212, 255, 0.7);
+}
+
+/* 中央场景面板 */
+.ops-scene-panel {
+  flex: 1;
+  min-height: 0;
+}
+
+.ops-col-center > .screen-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.ops-scene-panel .ops-scene-panel-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+}
+
+/* ─── 中央工业场景 ─────────────────────────────────────────── */
+
+.ops-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--screen-border);
+  border-radius: 12px;
+  background:
+    radial-gradient(56% 50% at 50% 58%, rgba(77, 212, 255, 0.1), transparent 74%),
+    linear-gradient(180deg, rgba(9, 22, 38, 0.92), rgba(6, 14, 26, 0.94));
+  box-shadow:
+    inset 0 1px 0 rgba(148, 200, 255, 0.07),
+    inset 0 0 52px rgba(20, 70, 130, 0.16);
+  overflow: hidden;
+}
+
+.ops-stage-ops {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* 静态厂区网格（无扫描、无闪烁） */
+.ops-stage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(141, 153, 166, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(141, 153, 166, 0.07) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(ellipse 80% 72% at 50% 56%, rgba(0, 0, 0, 1) 30%, rgba(0, 0, 0, 0) 100%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 72% at 50% 56%, rgba(0, 0, 0, 1) 30%, rgba(0, 0, 0, 0) 100%);
+  opacity: 0.7;
+}
+
+.ops-stage-ops::before {
+  display: none;
+}
+
+.ops-stage-scene {
+  position: absolute;
+  inset: 44px 14px 48px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: ops-scene-in 0.6s ease-out both;
+}
+
+.ops-stage-scene svg {
+  width: 100%;
+  height: 100%;
+}
+
+.ops-stage-scene .ops-scene-svg {
+  filter: drop-shadow(0 0 14px rgba(77, 212, 255, 0.12));
+}
+
+@keyframes ops-scene-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* 场景浮层 */
+.ops-stage-overlay {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.ops-stage-overlay-top {
+  top: 10px;
+  flex-wrap: wrap;
+}
+
+.ops-stage-overlay-bottom {
+  bottom: 8px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.ops-stage-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 1px solid rgba(141, 153, 166, 0.28);
+  border-radius: 999px;
+  background: rgba(6, 18, 32, 0.78);
+  color: var(--screen-muted);
+  font-size: 10.5px;
+  line-height: 1.3;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.ops-stage-chip .material-symbols-outlined {
+  font-size: 14px;
+  color: var(--screen-cyan);
+}
+
+.ops-stage-chip strong {
+  color: var(--screen-text);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ops-stage-kpi {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 5px 11px;
+  border: 1px solid rgba(141, 153, 166, 0.24);
+  border-radius: 9px;
+  background: rgba(6, 18, 32, 0.75);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.ops-stage-kpi > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ops-stage-kpi em {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--screen-muted);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.ops-stage-kpi strong {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--screen-cyan);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ops-stage-kpi strong i {
+  margin-left: 2px;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--screen-muted);
+}
+
+.ops-stage-kpi strong.amber {
+  color: var(--screen-amber);
+}
+
+.ops-stage-caption {
+  font-size: 10.5px;
+  color: var(--screen-muted);
+  line-height: 1.45;
+  letter-spacing: 0.03em;
+}
+
+.ops-stage-caption b {
+  color: var(--screen-text);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ops-stage-caption .ok {
+  color: #4dd4ff;
+}
+
+/* 预警/故障节点柔光：低频、小幅度，仅琥珀/红节点挂载 */
+.ops-node-glow {
+  animation: ops-node-glow 4.6s ease-in-out infinite;
+}
+
+.ops-node-glow.warn {
+  animation-duration: 5.2s;
+}
+
+.ops-node-glow.alarm {
+  animation-duration: 4s;
+}
+
+@keyframes ops-node-glow {
+  0%, 100% { opacity: 0.13; }
+  50% { opacity: 0.33; }
+}
+
+/* ─── 左栏：环形仪表 / 柱状指标 ───────────────────────────── */
+
+.ops-gauge-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 2px;
+  justify-items: center;
+}
+
+.ops-gauge-grid > .ops-gauge:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+/* 当日发电量：紧凑数据条，替代第 5 个环形仪表，避免左栏纵向溢出 */
+.ops-gauge-strip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 6px;
+  padding: 7px 10px;
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  border-radius: 8px;
+  background: linear-gradient(90deg, rgba(56, 189, 248, 0.12), rgba(56, 189, 248, 0.03));
+  white-space: nowrap;
+}
+
+.ops-gauge-strip .material-symbols-outlined {
+  font-size: 16px;
+  color: #38bdf8;
+}
+
+.ops-gauge-strip em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--screen-muted);
+  letter-spacing: 0.04em;
+}
+
+.ops-gauge-strip strong {
+  margin-left: auto;
+  font-size: 16px;
+  font-weight: 700;
+  color: #eaf8ff;
+  font-variant-numeric: tabular-nums;
+}
+
+.ops-gauge-strip strong i {
+  margin-left: 3px;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--screen-muted);
+}
+
+.ops-screen .ops-gauge-center strong {
+  font-size: 17px;
+}
+
+.ops-screen .ops-gauge {
+  width: 100%;
+  max-width: 118px;
+  transform: scale(0.96);
+  transform-origin: center;
+}
+
+.ops-screen .ops-gauge svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.ops-col-left .ops-bars {
+  height: 152px;
+  min-height: 152px;
+  gap: 3px;
+  padding: 4px 2px 0;
+}
+
+.ops-col-left .ops-bar-label {
+  margin-top: 3px;
+  font-size: 8.5px;
+  letter-spacing: -0.02em;
+}
+
+.ops-col-left .ops-bar-value {
+  font-size: 9px;
+}
+
+.ops-col-left .ops-bars-target-note {
+  font-size: 9px;
+}
+
+.ops-col-left .ops-quality-row {
+  grid-template-columns: 52px minmax(0, 1fr) 44px 72px;
+  gap: 6px;
+}
+
+.ops-col-left .ops-quality-row em,
+.ops-col-left .ops-quality-limit {
+  font-size: 10px;
+}
+
+.ops-col-left .ops-quality-row strong {
+  font-size: 12px;
+}
+
+.ops-col-left .ops-quality-track {
+  height: 9px;
+}
+
+.ops-col-left .ops-quality-list {
+  gap: 8px;
+}
+
+/* 告警条在窄栏内收紧 */
+.ops-col-left .ops-alert-row {
+  padding: 8px 9px;
+  gap: 8px;
+}
+
+.ops-col-left .ops-alert-icon {
+  width: 26px;
+  height: 26px;
+}
+
+.ops-col-left .ops-alert-body strong {
+  font-size: 12px;
+}
+
+.ops-col-left .ops-alert-body em {
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+/* ─── 右栏：收益 / 环境 / 逆变器 ──────────────────────────── */
+
+.ops-income-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 9px;
+}
+
+.ops-income-row > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 9px;
+  border: 1px solid rgba(141, 153, 166, 0.2);
+  border-radius: 8px;
+  background: rgba(8, 22, 38, 0.5);
+}
+
+.ops-income-row em {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--screen-muted);
+}
+
+.ops-income-row strong {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--screen-amber);
+  font-variant-numeric: tabular-nums;
+}
+
+.ops-income-row strong i {
+  margin-left: 2px;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--screen-muted);
+}
+
+.ops-env-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ops-env-card {
+  padding: 7px 9px;
+  gap: 8px;
+}
+
+.ops-env-card .material-symbols-outlined {
+  font-size: 19px;
+}
+
+.ops-env-card strong {
+  font-size: 15px;
+}
+
+.ops-col-right .ops-live-chart-meta {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ops-col-right .ops-live-legend {
+  gap: 10px;
+}
+
+.ops-inverter-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.ops-inverter-row {
+  display: flex;
+  gap: 8px;
+  padding: 8px 9px;
+  border: 1px solid rgba(141, 153, 166, 0.2);
+  border-radius: 8px;
+  background: rgba(8, 22, 38, 0.5);
+}
+
+.ops-inverter-row .ops-state-dot {
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+.ops-inverter-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.ops-inverter-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.ops-inverter-head strong {
+  color: var(--screen-text);
+  letter-spacing: 0.04em;
+}
+
+.ops-inverter-head em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--screen-muted);
+  white-space: nowrap;
+}
+
+.ops-inverter-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 9px;
+  margin: 4px 0 5px;
+  font-size: 10px;
+  color: var(--screen-muted);
+}
+
+.ops-inverter-metrics b {
+  margin-left: 2px;
+  color: var(--screen-text);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── 右栏：水池 / 水质状态 ────────────────────────────────── */
+
+.ops-col-right .ops-tanks {
+  gap: 6px;
+  padding: 4px 0;
+}
+
+.ops-col-right .ops-tank-body {
+  width: 64px;
+  height: 108px;
+}
+
+.ops-col-right .ops-tank em {
+  font-size: 11px;
+}
+
+.ops-col-right .ops-tank span {
+  font-size: 9.5px;
+}
+
+.ops-status-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 9px;
+}
+
+.ops-status-tile {
+  padding: 7px 5px;
+  border: 1px solid rgba(141, 153, 166, 0.2);
+  border-radius: 8px;
+  background: rgba(8, 22, 38, 0.5);
+  text-align: center;
+}
+
+.ops-status-tile em {
+  display: block;
+  font-style: normal;
+  font-size: 10px;
+  color: var(--screen-muted);
+  margin-bottom: 3px;
+}
+
+.ops-status-tile strong {
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.ops-status-tile span {
+  margin-left: 2px;
+  font-size: 9px;
+  color: var(--screen-muted);
+}
+
+/* ─── 设施运维：设备状态清单 ───────────────────────────────── */
+
+.ops-device-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding-bottom: 9px;
+  margin-bottom: 9px;
+  border-bottom: 1px solid rgba(96, 190, 255, 0.12);
+}
+
+.ops-device-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ops-device-summary em {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--screen-muted);
+  white-space: nowrap;
+}
+
+.ops-device-summary strong {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--screen-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.ops-device-summary strong i {
+  margin-left: 2px;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--screen-muted);
+}
+
+.ops-device-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.ops-device-row {
+  display: flex;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid rgba(141, 153, 166, 0.2);
+  border-radius: 8px;
+  background: rgba(8, 22, 38, 0.48);
+}
+
+.ops-device-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  margin-top: 5px;
+  border-radius: 50%;
+}
+
+.ops-device-dot.ok {
+  background: #4dd4ff;
+  box-shadow: 0 0 6px rgba(77, 212, 255, 0.7);
+}
+
+.ops-device-dot.warn {
+  background: #fbbf24;
+  box-shadow: 0 0 6px rgba(251, 191, 36, 0.7);
+}
+
+.ops-device-dot.alarm {
+  background: #f87171;
+  box-shadow: 0 0 6px rgba(248, 113, 113, 0.75);
+}
+
+.ops-device-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.ops-device-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.ops-device-head strong {
+  color: var(--screen-text);
+  font-weight: 700;
+}
+
+.ops-device-head em {
+  font-style: normal;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.ops-device-track {
+  height: 4px;
+  margin: 5px 0 4px;
+  border-radius: 2px;
+  background: rgba(141, 153, 166, 0.16);
+  overflow: hidden;
+}
+
+.ops-device-track span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.5s ease;
+}
+
+.ops-device-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--screen-muted);
+  line-height: 1.4;
+}
+
+/* 工单队列：紧凑文本行，不使用卡片墙 */
+.ops-worklist {
+  display: flex;
+  flex-direction: column;
+}
+
+.ops-worklist-row {
+  display: flex;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(141, 153, 166, 0.1);
+}
+
+.ops-worklist-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.ops-worklist-bar {
+  flex-shrink: 0;
+  width: 2px;
+  margin: 2px 0;
+  border-radius: 1px;
+  opacity: 0.85;
+}
+
+.ops-worklist-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.ops-worklist-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ops-worklist-head strong {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--screen-text);
+  line-height: 1.35;
+}
+
+.ops-worklist-head em {
+  flex-shrink: 0;
+  font-style: normal;
+  font-size: 9.5px;
+  color: var(--screen-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ops-worklist-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 1px;
+  font-size: 10px;
+  color: var(--screen-muted);
+}
+
+.ops-worklist-meta span {
+  min-width: 0;
+  line-height: 1.4;
+}
+
+.ops-worklist-meta b {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.ops-worklist-note {
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px dashed rgba(141, 153, 166, 0.18);
+}
+
+/* 维保进度：左右两行式，避免窄栏文字截断 */
+.ops-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.ops-timeline-row {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr);
+  align-items: center;
+  gap: 3px 8px;
+}
+
+.ops-timeline-row em {
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--screen-text);
+  white-space: nowrap;
+}
+
+.ops-timeline-track {
+  position: relative;
+  height: 14px;
+  border-radius: 7px;
+  background: rgba(141, 153, 166, 0.14);
+  overflow: hidden;
+}
+
+.ops-timeline-track span {
+  display: block;
+  height: 100%;
+  border-radius: 7px;
+  transition: width 0.6s ease;
+}
+
+.ops-timeline-track strong {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 9.5px;
+  font-weight: 700;
+  color: #e2e8f0;
+  font-variant-numeric: tabular-nums;
+}
+
+.ops-timeline-next {
+  grid-column: 1 / -1;
+  font-size: 10px;
+  color: var(--screen-muted);
+  line-height: 1.4;
+  white-space: normal;
+}
+
+/* ─── 告警时间线 / 成本构成 ────────────────────────────────── */
+
+.ops-alert-timeline {
+  display: flex;
+  flex-direction: column;
+}
+
+.ops-alert-timeline-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  gap: 8px;
+  padding-bottom: 11px;
+}
+
+.ops-alert-timeline-item:last-child {
+  padding-bottom: 0;
+}
+
+.ops-alert-timeline-item::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 12px;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(180deg, rgba(141, 153, 166, 0.3), rgba(141, 153, 166, 0.04));
+}
+
+.ops-alert-timeline-item:last-child::before {
+  display: none;
+}
+
+.ops-alert-dot {
+  position: relative;
+  z-index: 1;
+  width: 9px;
+  height: 9px;
+  margin-top: 3px;
+  border-radius: 50%;
+  border: 2px solid rgba(6, 18, 32, 0.9);
+}
+
+.ops-alert-dot.warn {
+  background: #fbbf24;
+}
+
+.ops-alert-dot.alarm {
+  background: #f87171;
+}
+
+.ops-alert-dot.info {
+  background: #38bdf8;
+}
+
+.ops-alert-dot.ok {
+  background: #4dd4ff;
+}
+
+.ops-alert-timeline-body {
+  min-width: 0;
+}
+
+.ops-alert-timeline-body strong {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--screen-text);
+  line-height: 1.35;
+}
+
+.ops-alert-timeline-body em {
+  display: block;
+  margin-top: 2px;
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--screen-muted);
+  line-height: 1.4;
+}
+
+.ops-col-right .ops-alert-time {
+  font-size: 9.5px;
+  color: var(--screen-muted);
+  white-space: nowrap;
+  padding-top: 2px;
+}
+
+.ops-col-right .ops-cost-bars {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+
+.ops-col-right .ops-cost-row {
+  grid-template-columns: 62px minmax(0, 1fr) 36px;
+  gap: 8px;
+}
+
+.ops-col-right .ops-cost-row em {
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+
+.ops-col-right .ops-cost-track {
+  height: 10px;
+  border-radius: 5px;
+}
+
+/* ─── 动效收敛：仅保留流光 / 节点柔光 / 场景淡入 ──────────── */
+
+.ops-screen .screen-panel,
+.ops-screen .ops-gauge-arc,
+.ops-screen .ops-bar-fill,
+.ops-screen .ops-bar-fill::after,
+.ops-screen .ops-bar-col,
+.ops-screen .ops-state-dot,
+.ops-screen .ops-live-badge i,
+.ops-screen .screen-panel-live-dot,
+.ops-screen .ops-env-card,
+.ops-screen .ops-timeline-row,
+.ops-screen .ops-alert-row,
+.ops-screen .ops-cost-row,
+.ops-screen .ops-tank-crest,
+.ops-screen .ops-tank-water,
+.ops-screen .ops-alert-icon .material-symbols-outlined,
+.ops-screen .ops-flow-line {
+  animation: none !important;
+}
+
+/* ─── 响应式 ───────────────────────────────────────────────── */
+
+@media (min-width: 1920px) {
+  .ops-screen {
+    --ops-gap: 14px;
+    padding: 16px 22px 18px;
+  }
+
+  .ops-columns {
+    grid-template-columns: minmax(320px, 360px) minmax(0, 1fr) minmax(330px, 380px);
+  }
+
+  .ops-stage-scene {
+    inset: 46px 18px 50px;
+  }
+
+  .ops-stage-chip {
+    font-size: 11px;
+  }
+
+  .ops-stage-kpi strong {
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 1440px) {
+  .ops-screen {
+    padding: 12px 14px 14px;
+  }
+
+  .ops-columns {
+    grid-template-columns: minmax(252px, 276px) minmax(0, 1fr) minmax(272px, 300px);
+  }
+
+  .ops-stage-overlay {
+    left: 10px;
+    right: 10px;
+    gap: 5px;
+  }
+
+  .ops-stage-chip {
+    padding: 3px 8px;
+    font-size: 10px;
+  }
+
+  .ops-stage-kpi {
+    gap: 14px;
+    padding: 5px 9px;
+  }
+
+  .ops-stage-kpi strong {
+    font-size: 14px;
+  }
+}
+
+/* 1440 以下：保持三栏大屏结构，仅收窄两侧数据栏，避免退化为单列长页 */
+@media (max-width: 1439px) {
+  .ops-screen {
+    padding: 10px 12px 12px;
+    --ops-gap: 10px;
+  }
+
+  .ops-columns {
+    grid-template-columns: minmax(206px, 226px) minmax(0, 1fr) minmax(232px, 252px);
+  }
+
+  .ops-screen .screen-panel-title > span:last-child {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ops-screen .screen-panel-extra {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* 窄栏下面板标题优先，右侧补充说明让位给标题 */
+  .ops-screen .screen-panel-extra > span:not(.screen-panel-live) {
+    display: none;
+  }
+
+  .ops-screen .screen-panel-extra .screen-panel-live {
+    flex-shrink: 0;
+  }
+
+  .ops-col-left .ops-bars {
+    height: 128px;
+    min-height: 128px;
+  }
+
+  .ops-col-left .ops-bars-target-note {
+    display: none;
+  }
+
+  /* 12 个月标签在窄栏内会互相压字：隔列隐藏文字，仅保留柱体 */
+  .ops-col-left .ops-bar-col:nth-child(even) .ops-bar-label,
+  .ops-col-left .ops-bar-col:nth-child(even) .ops-bar-value {
+    visibility: hidden;
+  }
+
+  .ops-col-right .ops-live-legend em,
+  .ops-col-right .ops-live-legend strong,
+  .ops-col-right .ops-live-window {
+    font-size: 9.5px;
+  }
+
+  .ops-screen .screen-panel-head {
+    min-height: 36px;
+    padding: 0 8px;
+  }
+
+  .ops-screen .screen-panel-title {
+    font-size: 12px;
+  }
+
+  .ops-screen .screen-panel-extra {
+    font-size: 10px;
+  }
+
+  .ops-view-switch button {
+    height: 30px;
+    padding: 0 12px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 1023px) {
+  .ops-screen {
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 12px;
+  }
+
+  .ops-view-switch {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .ops-view-switch button {
+    flex: 1;
+    justify-content: center;
+    padding: 0 10px;
+  }
+
+  .ops-view-body {
+    overflow: visible;
+  }
+
+  .ops-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ops-col {
+    overflow: visible;
+  }
+
+  .ops-col-center,
+  .ops-stage,
+  .ops-scene-panel {
+    min-height: 480px;
+  }
+
+  .ops-stage-ops {
+    min-height: 480px;
+  }
+}
+
+@media (max-width: 720px) {
+  .ops-stage-scene {
+    inset: 64px 6px 92px;
+  }
+
+  .ops-stage-overlay-top {
+    gap: 4px;
+  }
+
+  .ops-stage-kpi {
+    width: 100%;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .ops-stage-kpi em {
+    font-size: 9px;
+  }
+}
+
+/* ─── 动效降级：全部静止 ───────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .ops-view-body,
+  .ops-stage-scene,
+  .ops-node-glow {
+    animation: none !important;
+  }
+
+  .ops-screen *,
+  .ops-screen *::before,
+  .ops-screen *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

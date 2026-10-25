@@ -4,6 +4,8 @@ import { Button, Empty, Tag, Upload, message } from "antd";
 import type { UploadProps } from "antd";
 import { ArrowLeftOutlined, BuildOutlined, ClearOutlined, CloudUploadOutlined, DownloadOutlined } from "@ant-design/icons";
 import { api } from "../api";
+import Panel from "../components/Panel";
+import "../styles/resource-screen.css";
 import ValuationReview from "../components/ValuationReview";
 import FlowGuide from "../components/FlowGuide";
 import Ifc3DViewer, { type Element3D } from "../components/Ifc3DViewer";
@@ -77,337 +79,6 @@ function ringColor(score: number) {
   if (score >= 85) return "#22c55e";
   if (score >= 70) return "#38bdf8";
   return "#f59e0b";
-}
-
-function DisciplinePlaceholderSVG({ discipline }: { discipline: string }) {
-  // 共享定义：渐变、填充图案
-  const commonDefs = (
-    <defs>
-      <linearGradient id="wall-grad" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#1e3a5f" stopOpacity="0.4" />
-        <stop offset="100%" stopColor="#0f1e30" stopOpacity="0.2" />
-      </linearGradient>
-      <linearGradient id="scan-grad" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#38bdf8" stopOpacity="0" />
-        <stop offset="50%" stopColor="#38bdf8" stopOpacity="0.5" />
-        <stop offset="100%" stopColor="#38bdf8" stopOpacity="0" />
-      </linearGradient>
-      <pattern id="wall-hatch" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
-        <line x1="0" y1="0" x2="0" y2="6" stroke="#1e3a5f" strokeWidth="0.6" opacity="0.5" />
-      </pattern>
-      <pattern id="earth-hatch" patternUnits="userSpaceOnUse" width="5" height="5">
-        <line x1="0" y1="5" x2="5" y2="0" stroke="#475569" strokeWidth="0.4" opacity="0.4" />
-      </pattern>
-    </defs>
-  );
-
-  // 扫描动效带
-  const scanLine = <rect x="140" y="120" width="920" height="60" fill="url(#scan-grad)" opacity="0.5">
-    <animate attributeName="y" values="120;620;120" dur="7s" repeatCount="indefinite" />
-    <animate attributeName="opacity" values="0;0.5;0" dur="7s" repeatCount="indefinite" />
-  </rect>;
-
-  // 标准图框标题栏（施工图样式）
-  const titleBlock = (
-    <>
-      <g stroke="#1e3a5f" strokeWidth="1" fill="none" opacity="0.6">
-        <rect x="140" y="710" width="920" height="50" />
-        <line x1="140" y1="735" x2="1060" y2="735" />
-        <line x1="340" y1="710" x2="340" y2="760" />
-        <line x1="640" y1="710" x2="640" y2="760" />
-        <line x1="840" y1="710" x2="840" y2="760" />
-      </g>
-      <g fill="#64748b" fontSize="9" fontFamily="ui-monospace, monospace" opacity="0.7">
-        <text x="150" y="725">项目名称</text>
-        <text x="150" y="750" fill="#94a3b8">滨江科创中心 · 标准层平面图</text>
-        <text x="350" y="725">图号</text>
-        <text x="350" y="750" fill="#94a3b8">建施-001</text>
-        <text x="650" y="725">比例</text>
-        <text x="650" y="750" fill="#94a3b8">1:100</text>
-        <text x="850" y="725">日期</text>
-        <text x="850" y="750" fill="#94a3b8">2026-06-20</text>
-      </g>
-    </>
-  );
-
-  // 轴网系统（三道尺寸标注 + 轴号）
-  const axes = (
-    <>
-      {/* 轴线（点划线） */}
-      <g stroke="#1e3a5f" strokeWidth="0.8" opacity="0.55" strokeDasharray="14 4 2 4">
-        <line x1="140" y1="280" x2="1060" y2="280" />
-        <line x1="140" y1="440" x2="1060" y2="440" />
-        <line x1="140" y1="600" x2="1060" y2="600" />
-        <line x1="380" y1="120" x2="380" y2="680" />
-        <line x1="620" y1="120" x2="620" y2="680" />
-        <line x1="860" y1="120" x2="860" y2="680" />
-      </g>
-      {/* 轴号圆圈 */}
-      <g fill="none" stroke="#38bdf8" strokeWidth="1" opacity="0.7">
-        <circle cx="140" cy="100" r="11" /><circle cx="380" cy="100" r="11" />
-        <circle cx="620" cy="100" r="11" /><circle cx="860" cy="100" r="11" />
-        <circle cx="1060" cy="100" r="11" />
-        <circle cx="118" cy="120" r="11" /><circle cx="118" cy="280" r="11" />
-        <circle cx="118" cy="440" r="11" /><circle cx="118" cy="600" r="11" />
-        <circle cx="118" cy="680" r="11" />
-      </g>
-      <g fill="#38bdf8" fontSize="10" fontFamily="ui-monospace, monospace" opacity="0.85" textAnchor="middle" dominantBaseline="central">
-        <text x="140" y="100">A</text><text x="380" y="100">B</text>
-        <text x="620" y="100">C</text><text x="860" y="100">D</text>
-        <text x="1060" y="100">E</text>
-        <text x="118" y="120">1</text><text x="118" y="280">2</text>
-        <text x="118" y="440">3</text><text x="118" y="600">4</text>
-        <text x="118" y="680">5</text>
-      </g>
-    </>
-  );
-
-  // 三道尺寸标注（建筑规范：总尺寸 + 轴线尺寸 + 细部尺寸）
-  const dimensions = (
-    <g stroke="#475569" strokeWidth="0.6" fill="#64748b" fontSize="9" fontFamily="ui-monospace, monospace" opacity="0.7">
-      {/* 第一道：细部尺寸（最靠近图框） */}
-      <line x1="140" y1="60" x2="380" y2="60" />
-      <line x1="140" y1="56" x2="140" y2="64" /><line x1="380" y1="56" x2="380" y2="64" />
-      <text x="260" y="54" textAnchor="middle">3600</text>
-      <line x1="380" y1="60" x2="620" y2="60" />
-      <line x1="620" y1="56" x2="620" y2="64" />
-      <text x="500" y="54" textAnchor="middle">3600</text>
-      <line x1="620" y1="60" x2="860" y2="60" />
-      <line x1="860" y1="56" x2="860" y2="64" />
-      <text x="740" y="54" textAnchor="middle">3600</text>
-      <line x1="860" y1="60" x2="1060" y2="60" />
-      <line x1="1060" y1="56" x2="1060" y2="64" />
-      <text x="960" y="54" textAnchor="middle">3000</text>
-      {/* 第二道：轴线尺寸 */}
-      <line x1="140" y1="78" x2="380" y2="78" />
-      <line x1="140" y1="74" x2="140" y2="82" /><line x1="380" y1="74" x2="380" y2="82" />
-      <text x="260" y="72" textAnchor="middle">3600</text>
-      <line x1="380" y1="78" x2="620" y2="78" />
-      <line x1="620" y1="74" x2="620" y2="82" />
-      <text x="500" y="72" textAnchor="middle">3600</text>
-      <line x1="620" y1="78" x2="860" y2="78" />
-      <line x1="860" y1="74" x2="860" y2="82" />
-      <text x="740" y="72" textAnchor="middle">3600</text>
-      <line x1="860" y1="78" x2="1060" y2="78" />
-      <line x1="1060" y1="74" x2="1060" y2="82" />
-      <text x="960" y="72" textAnchor="middle">3000</text>
-      {/* 第三道：总尺寸 */}
-      <line x1="140" y1="92" x2="1060" y2="92" />
-      <line x1="140" y1="88" x2="140" y2="96" /><line x1="1060" y1="88" x2="1060" y2="96" />
-      <text x="600" y="86" textAnchor="middle">13800</text>
-      {/* 竖向尺寸 */}
-      <line x1="98" y1="120" x2="98" y2="280" />
-      <line x1="94" y1="120" x2="102" y2="120" /><line x1="94" y1="280" x2="102" y2="280" />
-      <text x="92" y="200" textAnchor="middle" transform="rotate(-90 92 200)">2400</text>
-      <line x1="98" y1="280" x2="98" y2="440" />
-      <line x1="94" y1="440" x2="102" y2="440" />
-      <text x="92" y="360" textAnchor="middle" transform="rotate(-90 92 360)">2400</text>
-      <line x1="98" y1="440" x2="98" y2="600" />
-      <line x1="94" y1="600" x2="102" y2="600" />
-      <text x="92" y="520" textAnchor="middle" transform="rotate(-90 92 520)">2400</text>
-      <line x1="98" y1="600" x2="98" y2="680" />
-      <text x="92" y="640" textAnchor="middle" transform="rotate(-90 92 640)">1200</text>
-    </g>
-  );
-
-  // 标高符号
-  const elevationMarks = (
-    <g fill="#64748b" stroke="#475569" strokeWidth="0.6" fontSize="9" fontFamily="ui-monospace, monospace" opacity="0.75">
-      <path d="M 240 690 L 250 680 L 260 690" fill="none" />
-      <text x="252" y="695" textAnchor="middle">±0.000</text>
-      <path d="M 720 690 L 730 680 L 740 690" fill="none" />
-      <text x="732" y="695" textAnchor="middle">+3.000</text>
-    </g>
-  );
-
-  // 外墙（双线 240mm）+ 内墙（双线 120mm）
-  const walls = (
-    <>
-      {/* 外墙双线 */}
-      <g stroke="#3b82f6" fill="none" opacity="0.75">
-        <rect x="140" y="120" width="920" height="560" fill="url(#wall-hatch)" stroke="none" opacity="0.3" />
-        <rect x="140" y="120" width="920" height="560" strokeWidth="2" />
-        <rect x="146" y="126" width="908" height="548" strokeWidth="1.2" opacity="0.6" />
-      </g>
-      {/* 内墙双线 */}
-      <g stroke="#3b82f6" strokeWidth="1" opacity="0.6">
-        <line x1="380" y1="126" x2="380" y2="278" /><line x1="386" y1="126" x2="386" y2="278" />
-        <line x1="380" y1="442" x2="380" y2="598" /><line x1="386" y1="442" x2="386" y2="598" />
-        <line x1="620" y1="282" x2="620" y2="438" /><line x1="626" y1="282" x2="626" y2="438" />
-        <line x1="860" y1="442" x2="860" y2="678" /><line x1="866" y1="442" x2="866" y2="678" />
-        <line x1="146" y1="440" x2="378" y2="440" /><line x1="146" y1="446" x2="378" y2="446" />
-        <line x1="622" y1="600" x2="858" y2="600" /><line x1="622" y1="606" x2="858" y2="606" />
-      </g>
-    </>
-  );
-
-  switch (discipline) {
-    case "installation":
-      return (
-        <svg className="dr-cad-placeholder" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid meet">
-          {commonDefs}
-          {walls}
-          {axes}
-          {dimensions}
-          {elevationMarks}
-          {/* 给水管（蓝色实线） */}
-          <g stroke="#0ea5e9" strokeWidth="1.4" fill="none" opacity="0.85">
-            <path d="M 200 200 L 320 200 L 320 360 L 460 360" />
-            <path d="M 460 360 L 460 480 L 540 480" />
-            <path d="M 680 200 L 680 360 L 820 360 L 820 480" />
-            <path d="M 200 560 L 380 560 L 380 640 L 540 640" />
-            <path d="M 680 560 L 820 560 L 820 640 L 980 640" />
-          </g>
-          {/* 排水管（绿色虚线） */}
-          <g stroke="#22c55e" strokeWidth="1.4" fill="none" opacity="0.8" strokeDasharray="6 3">
-            <path d="M 540 480 L 540 540 L 380 540 L 380 660 L 200 660" />
-            <path d="M 820 480 L 820 540 L 980 540 L 980 660" />
-          </g>
-          {/* 立管符号（圆圈带标注） */}
-          <g fill="none" stroke="#0ea5e9" strokeWidth="1.2" opacity="0.9">
-            <circle cx="320" cy="200" r="8" /><circle cx="680" cy="200" r="8" />
-            <circle cx="380" cy="660" r="8" stroke="#22c55e" /><circle cx="980" cy="660" r="8" stroke="#22c55e" />
-          </g>
-          <g fill="#0ea5e9" fontSize="8" fontFamily="ui-monospace, monospace" opacity="0.9" textAnchor="middle">
-            <text x="320" y="203">JL-1</text><text x="680" y="203">JL-2</text>
-          </g>
-          <g fill="#22c55e" fontSize="8" fontFamily="ui-monospace, monospace" opacity="0.9" textAnchor="middle">
-            <text x="380" y="663">PL-1</text><text x="980" y="663">PL-2</text>
-          </g>
-          {/* 卫生器具标准图例 */}
-          <g stroke="#64748b" strokeWidth="0.8" fill="none" opacity="0.7">
-            {/* 马桶 */}
-            <ellipse cx="460" cy="380" rx="18" ry="14" /><rect x="446" y="362" width="28" height="8" rx="2" />
-            <ellipse cx="820" cy="380" rx="18" ry="14" /><rect x="806" y="362" width="28" height="8" rx="2" />
-            {/* 洗手盆 */}
-            <rect x="500" y="460" width="40" height="24" rx="3" /><circle cx="520" cy="472" r="2" />
-            <rect x="860" y="460" width="40" height="24" rx="3" /><circle cx="880" cy="472" r="2" />
-            {/* 浴缸 */}
-            <rect x="220" y="500" width="80" height="40" rx="6" /><circle cx="285" cy="520" r="3" />
-            {/* 地漏 */}
-            <circle cx="540" cy="540" r="6" /><line x1="534" y1="540" x2="546" y2="540" /><line x1="540" y1="534" x2="540" y2="546" />
-            <circle cx="820" cy="540" r="6" /><line x1="814" y1="540" x2="826" y2="540" /><line x1="820" y1="534" x2="820" y2="546" />
-            {/* 洗衣机 */}
-            <rect x="220" y="580" width="60" height="50" rx="3" /><circle cx="250" cy="605" r="14" />
-            {/* 水表 */}
-            <circle cx="200" cy="200" r="6" /><text x="200" y="220" fontSize="7" fill="#0ea5e9">水表</text>
-            {/* 阀门 */}
-            <path d="M 320 200 L 326 196 L 320 200 L 326 204" fill="#0ea5e9" />
-          </g>
-          {/* 管径标注 */}
-          <g fill="#0ea5e9" fontSize="8" fontFamily="ui-monospace, monospace" opacity="0.85">
-            <text x="280" y="195">DN25</text>
-            <text x="700" y="195">DN25</text>
-            <text x="400" y="555" fill="#22c55e">DN100</text>
-            <text x="900" y="555" fill="#22c55e">DN100</text>
-          </g>
-          {/* 房间标注 */}
-          <g fill="#94a3b8" fontSize="10" fontFamily="ui-monospace, monospace" opacity="0.7" textAnchor="middle">
-            <text x="260" y="350">卫生间</text>
-            <text x="740" y="350">卫生间</text>
-            <text x="260" y="470">主卧</text>
-            <text x="740" y="470">次卧</text>
-          </g>
-          {scanLine}{titleBlock}
-        </svg>
-      );
-    default: // architecture
-      return (
-        <svg className="dr-cad-placeholder" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid meet">
-          {commonDefs}
-          {walls}
-          {axes}
-          {dimensions}
-          {elevationMarks}
-          {/* 门（标准建筑符号：门弧+门扇） */}
-          <g stroke="#fbbf24" strokeWidth="1.2" fill="none" opacity="0.85">
-            {/* 入户门 */}
-            <path d="M 380 126 A 38 38 0 0 1 418 164" /><line x1="380" y1="126" x2="380" y2="164" />
-            {/* 卧室门 */}
-            <path d="M 620 282 A 36 36 0 0 0 584 318" /><line x1="620" y1="282" x2="584" y2="282" />
-            {/* 卫生间门 */}
-            <path d="M 860 442 A 34 34 0 0 1 894 476" /><line x1="860" y1="442" x2="860" y2="476" />
-            {/* 厨房门 */}
-            <path d="M 620 600 A 32 32 0 0 1 652 632" /><line x1="620" y1="600" x2="620" y2="632" />
-            {/* 阳台推拉门 */}
-            <line x1="680" y1="126" x2="800" y2="126" strokeWidth="2" />
-            <line x1="680" y1="130" x2="740" y2="130" /><line x1="740" y1="134" x2="800" y2="134" />
-          </g>
-          {/* 窗户（四线表示） */}
-          <g stroke="#38bdf8" strokeWidth="0.8" opacity="0.75">
-            {/* C1 客厅窗 */}
-            <line x1="200" y1="120" x2="320" y2="120" /><line x1="200" y1="124" x2="320" y2="124" /><line x1="200" y1="128" x2="320" y2="128" />
-            {/* C2 餐厅窗 */}
-            <line x1="440" y1="120" x2="560" y2="120" /><line x1="440" y1="124" x2="560" y2="124" /><line x1="440" y1="128" x2="560" y2="128" />
-            {/* C3 主卧窗 */}
-            <line x1="680" y1="120" x2="800" y2="120" /><line x1="680" y1="124" x2="800" y2="124" /><line x1="680" y1="128" x2="800" y2="128" />
-            {/* C4 卫生间窗 */}
-            <line x1="140" y1="200" x2="140" y2="280" /><line x1="144" y1="200" x2="144" y2="280" /><line x1="148" y1="200" x2="148" y2="280" />
-            {/* C5 厨房窗 */}
-            <line x1="860" y1="600" x2="860" y2="680" /><line x1="864" y1="600" x2="864" y2="680" /><line x1="868" y1="600" x2="868" y2="680" />
-          </g>
-          {/* 家具洁具（标准图例） */}
-          <g stroke="#64748b" strokeWidth="0.8" fill="none" opacity="0.55">
-            {/* 客厅：沙发+茶几+电视柜 */}
-            <rect x="180" y="320" width="120" height="40" rx="4" /><line x1="210" y1="320" x2="210" y2="360" /><line x1="250" y1="320" x2="250" y2="360" />
-            <rect x="200" y="380" width="80" height="30" rx="2" />
-            <rect x="180" y="430" width="100" height="20" rx="2" />
-            {/* 餐厅：餐桌+餐椅 */}
-            <ellipse cx="500" cy="360" rx="40" ry="24" />
-            <rect x="460" y="330" width="20" height="12" rx="2" /><rect x="520" y="330" width="20" height="12" rx="2" />
-            <rect x="460" y="384" width="20" height="12" rx="2" /><rect x="520" y="384" width="20" height="12" rx="2" />
-            {/* 主卧：床+床头柜+衣柜 */}
-            <rect x="180" y="480" width="100" height="80" rx="3" />
-            <rect x="190" y="490" width="80" height="25" rx="2" /><line x1="230" y1="490" x2="230" y2="515" />
-            <rect x="180" y="470" width="30" height="20" rx="2" /><rect x="250" y="470" width="30" height="20" rx="2" />
-            <rect x="290" y="480" width="40" height="80" rx="2" /><line x1="290" y1="520" x2="330" y2="520" />
-            {/* 卫生间：马桶+洗手盆+淋浴 */}
-            <ellipse cx="700" cy="490" rx="18" ry="14" /><rect x="686" y="472" width="28" height="8" rx="2" />
-            <rect x="740" y="475" width="40" height="24" rx="3" /><circle cx="760" cy="487" r="2" />
-            <rect x="680" y="520" width="60" height="40" rx="2" /><line x1="680" y1="540" x2="740" y2="540" strokeDasharray="3 2" />
-            {/* 厨房：橱柜+灶台+水槽+冰箱 */}
-            <rect x="700" y="620" width="140" height="40" /><line x1="740" y1="620" x2="740" y2="660" /><line x1="780" y1="620" x2="780" y2="660" />
-            <circle cx="720" cy="640" r="6" /><circle cx="745" cy="640" r="6" />
-            <rect x="795" y="625" width="30" height="30" rx="2" /><line x1="800" y1="630" x2="820" y2="650" /><line x1="820" y1="630" x2="800" y2="650" />
-            <rect x="830" y="620" width="30" height="40" rx="2" /><line x1="830" y1="635" x2="860" y2="635" />
-          </g>
-          {/* 房间名称标注 */}
-          <g fill="#94a3b8" fontSize="11" fontFamily="ui-monospace, monospace" opacity="0.75" textAnchor="middle">
-            <text x="260" y="370">客厅</text>
-            <text x="500" y="400">餐厅</text>
-            <text x="230" y="540">主卧</text>
-            <text x="740" y="540">卫生间</text>
-            <text x="770" y="670">厨房</text>
-          </g>
-          {/* 门窗编号 */}
-          <g fill="#38bdf8" fontSize="8" fontFamily="ui-monospace, monospace" opacity="0.85">
-            <text x="260" y="115">C1</text>
-            <text x="500" y="115">C2</text>
-            <text x="740" y="115">C3</text>
-            <text x="130" y="245" transform="rotate(-90 130 245)">C4</text>
-            <text x="880" y="645" transform="rotate(-90 880 645)">C5</text>
-            <text x="400" y="120">M1</text>
-            <text x="610" y="278">M2</text>
-            <text x="870" y="438">M3</text>
-            <text x="630" y="596">M4</text>
-          </g>
-          {/* 指北针 */}
-          <g stroke="#64748b" strokeWidth="0.8" fill="none" opacity="0.6">
-            <circle cx="1020" cy="160" r="20" />
-            <path d="M 1020 140 L 1014 175 L 1020 170 L 1026 175 Z" fill="#64748b" opacity="0.7" />
-            <text x="1020" y="135" fontSize="9" fill="#64748b" textAnchor="middle">N</text>
-          </g>
-          {/* 剖切符号 */}
-          <g stroke="#ef4444" strokeWidth="1" fill="none" opacity="0.7">
-            <line x1="140" y1="400" x2="1060" y2="400" strokeDasharray="4 2" />
-            <text x="135" y="404" fontSize="10" fill="#ef4444" textAnchor="end">1</text>
-            <text x="1065" y="404" fontSize="10" fill="#ef4444">1</text>
-            <path d="M 130 395 L 140 400 L 130 405" /><path d="M 1070 395 L 1060 400 L 1070 405" />
-          </g>
-          {scanLine}{titleBlock}
-        </svg>
-      );
-  }
 }
 
 function moneyShort(value: number | null | undefined) {
@@ -520,6 +191,9 @@ export default function DrawingRecognition() {
   const [modelView, setModelView] = useState<"drawing" | "building" | "model">("drawing");
   const [modelProgress, setModelProgress] = useState(0);
   const [modelElements, setModelElements] = useState<Element3D[]>([]);
+  // 解析完成态：HUD 收起为左上角窄状态条，只展示一次后淡出
+  const [doneHud, setDoneHud] = useState<{ elements: number | null; boq: number } | null>(null);
+  const prevStatusRef = useRef<string | undefined>(undefined);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const revealTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const buildTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -561,7 +235,8 @@ export default function DrawingRecognition() {
       const stage = stageRef.current;
       if (!stage) return null;
       const sr = stage.getBoundingClientRect();
-      let top = sr.top, left = sr.left, right = sr.right, bottom = sr.bottom;
+      let top = sr.top, right = sr.right, bottom = sr.bottom;
+      const left = sr.left;
       // 避让浮在预览区上的 UI：顶部专业工具栏、右侧信息面板/折叠钮、底部状态条
       const avoid = (sel: string) => {
         const el = stage.querySelector<HTMLElement>(sel);
@@ -583,6 +258,14 @@ export default function DrawingRecognition() {
         const pr = progEl.getBoundingClientRect();
         if (pr.width >= 2 && pr.height >= 2) {
           top = Math.max(top, pr.bottom + 8);
+        }
+      }
+      // 解析 HUD 控制台停在左下角且较高：CAD 窗口下边界让到控制台上方
+      const hudEl = stage.querySelector<HTMLElement>(".dr-x-hud-console");
+      if (hudEl) {
+        const hr = hudEl.getBoundingClientRect();
+        if (hr.width >= 2 && hr.height >= 2) {
+          bottom = Math.min(bottom, hr.top - 8);
         }
       }
       // 底部抽屉（构件/清单/计价复核/诊断）较高，avoid 的底部判定阈值不够高，
@@ -799,7 +482,6 @@ export default function DrawingRecognition() {
         }
       }
     } catch { /* 忽略缓存读取失败 */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 会话持久化：任务号 / 文件名 / 结果变化时写入；上传中跳过以免覆盖旧缓存。
@@ -1300,6 +982,7 @@ export default function DrawingRecognition() {
     setTaskId("");
     setFileName("");
     setResult(null);
+    setDoneHud(null);
     setRevealIndex(0);
     setBottomTab(null);
     setModelView("drawing");
@@ -1333,6 +1016,41 @@ export default function DrawingRecognition() {
     : /分类|标记|汇总|识别|转换|读取|图层|收集|几何/.test(progText) ? 1
     : parsing ? 1
     : 0;
+
+  // ── 工程解析 HUD：真实计数 + 四段步骤 ────────────────
+  const HUD_STEPS = ["快速预览", "图层识别", "构件归类", "清单生成"];
+  const layerCount = result?.layer_summary?.length ?? 0;
+  const elementCount = (result?.layer_summary ?? []).reduce(
+    (sum, row) => sum + (Number(row.count) || 0),
+    0,
+  );
+  const elementText = elementCount > 0 ? elementCount.toLocaleString("zh-CN") : "—";
+  const layerText = layerCount > 0 ? String(layerCount) : "—";
+  const boqText = boqCount > 0 ? String(boqCount) : "—";
+  let hudStepIndex = 0;
+  if (!isUploading) {
+    hudStepIndex = Math.min(3, Math.floor(progress / 25));
+    if (/图层|读取|收集/.test(progText)) hudStepIndex = Math.max(hudStepIndex, 1);
+    if (/归类|分类|构件|识别|标记|几何/.test(progText)) hudStepIndex = Math.max(hudStepIndex, 2);
+    if (/清单|汇总|生成/.test(progText)) hudStepIndex = Math.max(hudStepIndex, 3);
+  }
+  const hudLog = result?.progress
+    || (isUploading ? "接收文件中 · 校验 DXF 结构" : "建立解析会话 · 等待几何数据");
+
+  useEffect(() => {
+    const status = result?.status;
+    if (prevStatusRef.current === "processing" && status === "done") {
+      setDoneHud({ elements: elementCount > 0 ? elementCount : null, boq: boqCount });
+    }
+    prevStatusRef.current = status;
+  }, [result?.status, elementCount, boqCount]);
+
+  // 窄状态条停留 2s 后淡出，2.4s 后移除；只触发一次，不循环
+  useEffect(() => {
+    if (!doneHud) return;
+    const timer = window.setTimeout(() => setDoneHud(null), 2400);
+    return () => window.clearTimeout(timer);
+  }, [doneHud]);
 
   const COMPONENT_COLORS: Record<string, string> = {
     "框架柱": "#2563eb", "构造柱": "#3b82f6", "圈梁": "#60a5fa",
@@ -1383,19 +1101,42 @@ export default function DrawingRecognition() {
 
   return (
     <div className="dr-root">
-      {/* 顶部工具栏 */}
+      {/* 单条顶部工具栏 */}
       <header className="dr-topbar">
         <div className="dr-topbar-left">
           <span className="material-symbols-outlined dr-topbar-icon">architecture</span>
-          <div>
-            <h1 className="dr-topbar-title">图纸解析套价</h1>
-            {modelView !== "drawing" ? (
-              <span className="dr-topbar-file">{fileName || MODEL_DISPLAY_NAME}</span>
-            ) : fileName ? (
-              <span className="dr-topbar-file">{fileName}</span>
-            ) : (
-              <span className="dr-topbar-sub">DWG · DXF</span>
-            )}
+          <span className="dr-topbar-sub">{modelView !== "drawing" ? "BIM 模型" : "DWG · DXF"}</span>
+          {fileName && <span className="dr-topbar-file">{fileName}</span>}
+        </div>
+        {/* 摘要指标：构件 / 清单 / 定额 / 造价 */}
+        <div className="screen-metrics is-compact dr-topbar-metrics">
+          <div className="screen-metric">
+            <span className="material-symbols-outlined screen-metric-icon">widgets</span>
+            <div className="screen-metric-body">
+              <span className="screen-metric-label">构件</span>
+              <span className="screen-metric-value">{compCount}</span>
+            </div>
+          </div>
+          <div className="screen-metric">
+            <span className="material-symbols-outlined screen-metric-icon">list_alt</span>
+            <div className="screen-metric-body">
+              <span className="screen-metric-label">清单</span>
+              <span className="screen-metric-value">{boqCount}</span>
+            </div>
+          </div>
+          <div className="screen-metric">
+            <span className="material-symbols-outlined screen-metric-icon">link</span>
+            <div className="screen-metric-body">
+              <span className="screen-metric-label">定额</span>
+              <span className="screen-metric-value">{result?.valuation?.matched ?? 0}</span>
+            </div>
+          </div>
+          <div className="screen-metric is-amber">
+            <span className="material-symbols-outlined screen-metric-icon">request_quote</span>
+            <div className="screen-metric-body">
+              <span className="screen-metric-label">造价</span>
+              <span className="screen-metric-value">{moneyShort(result?.valuation?.grand_total)}</span>
+            </div>
           </div>
         </div>
         <div className="dr-topbar-actions">
@@ -1435,8 +1176,6 @@ export default function DrawingRecognition() {
         {modelView === "drawing" ? (
           <>
         <div className="dr-stage-grid" />
-
-        {(uploading || result?.status === "processing") && <Recognition3DOverlay />}
 
         {/* 顶部专业切换工具条（常驻） */}
         <div className="dr-cad-toolbar">
@@ -1490,18 +1229,62 @@ export default function DrawingRecognition() {
           </div>
         ) : (
           <div className="dr-cad-empty">
-            <div className="dr-cad-grid" />
+            <div className="dr-x-blueprint-grid" />
             <div className="dr-cad-vignette" />
 
-            {/* 专业切换底图（占位示例，非解析结果） */}
-            <DisciplinePlaceholderSVG discipline={activeDiscipline} />
-            <div className="dr-cad-demo-badge"><span className="material-symbols-outlined">info</span>示例底图 · 非解析结果</div>
+            {/* 图纸占位线稿：轴网 + 墙体双线 + 房间标注框 */}
+            <svg className="dr-x-sketch" viewBox="0 0 640 420" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+              <g stroke="rgba(96,190,255,.16)" strokeWidth="0.8" strokeDasharray="7 5">
+                <line x1="24" y1="60" x2="616" y2="60" />
+                <line x1="24" y1="200" x2="616" y2="200" />
+                <line x1="24" y1="360" x2="616" y2="360" />
+                <line x1="70" y1="32" x2="70" y2="388" />
+                <line x1="270" y1="32" x2="270" y2="388" />
+                <line x1="470" y1="32" x2="470" y2="388" />
+                <line x1="570" y1="32" x2="570" y2="388" />
+              </g>
+              <g fill="none" stroke="rgba(96,190,255,.34)" strokeWidth="1">
+                <circle cx="70" cy="34" r="9" /><circle cx="270" cy="34" r="9" />
+                <circle cx="470" cy="34" r="9" /><circle cx="570" cy="34" r="9" />
+                <circle cx="44" cy="60" r="9" /><circle cx="44" cy="200" r="9" /><circle cx="44" cy="360" r="9" />
+              </g>
+              <g fill="rgba(148,196,230,.45)" fontSize="9" fontFamily="ui-monospace, monospace" textAnchor="middle" dominantBaseline="central">
+                <text x="70" y="34">A</text><text x="270" y="34">B</text>
+                <text x="470" y="34">C</text><text x="570" y="34">D</text>
+                <text x="44" y="60">1</text><text x="44" y="200">2</text><text x="44" y="360">3</text>
+              </g>
+              {/* 外墙双线 */}
+              <g stroke="rgba(120,200,255,.36)" fill="none">
+                <rect x="70" y="60" width="500" height="300" strokeWidth="1.6" />
+                <rect x="78" y="68" width="484" height="284" strokeWidth="1" opacity=".55" />
+              </g>
+              {/* 内墙双线 */}
+              <g stroke="rgba(120,200,255,.3)" strokeWidth="1" fill="none">
+                <line x1="266" y1="68" x2="266" y2="352" /><line x1="275" y1="68" x2="275" y2="352" />
+                <line x1="78" y1="196" x2="562" y2="196" /><line x1="78" y1="204" x2="562" y2="204" />
+                <line x1="470" y1="204" x2="470" y2="352" /><line x1="478" y1="204" x2="478" y2="352" />
+              </g>
+              {/* 门洞 */}
+              <g stroke="rgba(125,211,252,.3)" strokeWidth="0.9" fill="none">
+                <path d="M 275 232 A 30 30 0 0 1 305 262" />
+                <path d="M 470 120 A 26 26 0 0 0 444 146" />
+              </g>
+              {/* 房间标注框 */}
+              <g stroke="rgba(96,190,255,.24)" strokeWidth="0.7" strokeDasharray="3 3" fill="none">
+                <rect x="108" y="104" width="122" height="64" rx="2" />
+                <rect x="310" y="104" width="120" height="64" rx="2" />
+                <rect x="108" y="240" width="122" height="68" rx="2" />
+                <rect x="310" y="240" width="120" height="68" rx="2" />
+              </g>
+              <g fill="rgba(148,196,230,.5)" fontSize="10" fontFamily="ui-monospace, monospace" textAnchor="middle">
+                <text x="169" y="141">客厅</text>
+                <text x="370" y="141">餐厅</text>
+                <text x="169" y="279">卧室</text>
+                <text x="370" y="279">厨房</text>
+              </g>
+            </svg>
 
-            {/* 十字光标 */}
-            <div className="dr-cad-crosshair">
-              <span className="dr-cad-cross-h" />
-              <span className="dr-cad-cross-v" />
-            </div>
+            <div className="dr-cad-demo-badge dr-x-badge"><span className="material-symbols-outlined">info</span>占位线稿 · 非解析结果</div>
 
             {/* 状态栏（无图纸时不编造坐标/图层/比例） */}
             <div className="dr-cad-statusbar">
@@ -1509,32 +1292,96 @@ export default function DrawingRecognition() {
               <span><span className="material-symbols-outlined">straighten</span>单位: mm</span>
               <span><span className="material-symbols-outlined">layers</span>图层: -</span>
               <span><span className="material-symbols-outlined">aspect_ratio</span>比例: -</span>
-              <span className="dr-cad-status-wait"><span className="material-symbols-outlined">hourglass_empty</span>等待图纸</span>
+              <span className="dr-cad-status-wait dr-x-status-wait"><span className="material-symbols-outlined">hourglass_empty</span>等待图纸</span>
             </div>
 
-            {/* 中央上传提示（解析中隐藏，避免挡住底图） */}
-            <div className={`dr-cad-empty-hint${uploading || (progress > 0 && result?.status !== "done") ? " is-parsing" : ""}`}>
-              <div className="dr-cad-hint-icon">
+            {/* 上传码头：虚线框 + 图标 + 格式徽标，与线稿错位排布 */}
+            <Upload.Dragger
+              {...uploadProps}
+              className={`dr-x-upload-dock${isUploading || parsing ? " is-parsing" : ""}`}
+            >
+              <div className="dr-x-dock-icon">
                 <span className="material-symbols-outlined">upload_file</span>
               </div>
-              <strong>上传图纸开始辅助解析</strong>
-              <p>支持建筑、安装全专业图纸，自动识别构件并套价</p>
-              <Upload {...uploadProps}>
-                <Button type="primary" size="large" icon={<CloudUploadOutlined />} loading={uploading}>
-                  选择图纸文件
-                </Button>
-              </Upload>
-              <div className="dr-cad-hint-steps">
-                <span><span className="material-symbols-outlined">looks_one</span>识别构件</span>
-                <span className="dr-cad-hint-arrow"><span className="material-symbols-outlined">arrow_forward</span></span>
-                <span><span className="material-symbols-outlined">looks_two</span>生成清单</span>
-                <span className="dr-cad-hint-arrow"><span className="material-symbols-outlined">arrow_forward</span></span>
-                <span><span className="material-symbols-outlined">looks_3</span>匹配定额</span>
+              <div className="dr-x-dock-title">拖入 DWG / DXF 开始识别</div>
+              <div className="dr-x-dock-sub">自动提取构件、生成清单并匹配计价依据</div>
+              <div className="dr-x-dock-formats">
+                <span>DWG</span><span>DXF</span><span>≤100MB</span>
               </div>
-              <div className="dr-cad-hint-formats">
-                <span>DWG</span><span>DXF</span>
+            </Upload.Dragger>
+          </div>
+        )}
+
+        {/* 工程解析 HUD：1px 扫描线 + 左下控制台 + 右下缩略导航 */}
+        {(isUploading || parsing) && (
+          <div className={`dr-x-hud${parsing ? " is-parsing" : ""}${panelOpen ? " is-panel-open" : ""}`}>
+            {parsing && <div className="dr-x-scanline" aria-hidden="true" />}
+
+            <section className="dr-x-hud-console">
+              <div className="dr-x-hud-head">
+                <i />
+                <span>图纸解析中</span>
+                <em>{String(hudStepIndex + 1).padStart(2, "0")} / 04</em>
               </div>
-            </div>
+              <div className="dr-x-hud-progress">
+                <strong className="dr-x-hud-pct">{progress}<i>%</i></strong>
+                <div className="dr-x-hud-bar">
+                  <span style={{ width: `${progress}%` }} />
+                </div>
+              </div>
+              <div className="dr-x-hud-counts">
+                <div className="dr-x-count-row"><span>图元</span><b>{elementText}</b></div>
+                <div className="dr-x-count-row"><span>图层</span><b>{layerText}</b></div>
+                <div className="dr-x-count-row"><span>清单项</span><b>{boqText}</b></div>
+              </div>
+              <ol className="dr-x-hud-steps">
+                {HUD_STEPS.map((label, i) => (
+                  <li
+                    key={label}
+                    className={i === hudStepIndex ? "is-current" : i < hudStepIndex ? "is-done" : ""}
+                  >
+                    <i>{String(i + 1).padStart(2, "0")}</i>{label}
+                  </li>
+                ))}
+              </ol>
+              <div className="dr-x-hud-log"><span>›</span>{hudLog}</div>
+            </section>
+
+            <aside className="dr-x-minimap" aria-hidden="true">
+              <span className="dr-x-minimap-title">图纸缩略导航</span>
+              <div className="dr-x-minimap-map">
+                <svg viewBox="0 0 80 56" preserveAspectRatio="none">
+                  <g stroke="rgba(96,190,255,.28)" strokeWidth="0.7" fill="none">
+                    <rect x="6" y="5" width="68" height="46" />
+                    <rect x="9" y="8" width="62" height="40" opacity=".45" />
+                    <line x1="32" y1="8" x2="32" y2="48" />
+                    <line x1="9" y1="27" x2="71" y2="27" />
+                  </g>
+                  <g stroke="rgba(96,190,255,.16)" strokeWidth="0.5" strokeDasharray="2 2">
+                    <line x1="4" y1="14" x2="76" y2="14" />
+                    <line x1="4" y1="39" x2="76" y2="39" />
+                    <line x1="20" y1="3" x2="20" y2="52" />
+                    <line x1="55" y1="3" x2="55" y2="52" />
+                  </g>
+                </svg>
+                <i
+                  className="dr-x-minimap-region"
+                  style={{ top: `${4 + Math.round((Math.min(100, progress) / 100) * 36)}px` }}
+                />
+              </div>
+            </aside>
+          </div>
+        )}
+
+        {/* 完成态：HUD 收成左上角窄状态条，2s 后一次性淡出 */}
+        {doneHud && (
+          <div className="dr-x-hud-done" role="status">
+            <span className="material-symbols-outlined">check_circle</span>
+            <strong>解析完成</strong>
+            <span className="dr-x-sep">·</span>
+            <span>{doneHud.elements != null ? `${doneHud.elements.toLocaleString("zh-CN")} 个图元` : "— 个图元"}</span>
+            <span className="dr-x-sep">·</span>
+            <span>{doneHud.boq > 0 ? `${doneHud.boq} 项清单` : "— 项清单"}</span>
           </div>
         )}
 
@@ -1559,28 +1406,8 @@ export default function DrawingRecognition() {
           </div>
         )}
 
-        {/* 左上 KPI 浮层 */}
-        <div className="dr-float-kpi">
-          <div className="dr-float-kpi-item">
-            <span className="material-symbols-outlined">widgets</span>
-            <strong>{compCount}</strong><em>构件</em>
-          </div>
-          <div className="dr-float-kpi-item">
-            <span className="material-symbols-outlined">list_alt</span>
-            <strong>{boqCount}</strong><em>清单</em>
-          </div>
-          <div className="dr-float-kpi-item">
-            <span className="material-symbols-outlined">link</span>
-            <strong>{result?.valuation?.matched ?? 0}</strong><em>定额</em>
-          </div>
-          <div className="dr-float-kpi-item highlight">
-            <span className="material-symbols-outlined">request_quote</span>
-            <strong>{moneyShort(result?.valuation?.grand_total)}</strong><em>造价</em>
-          </div>
-        </div>
-
-        {/* 解析/计价进度：顶部居中大卡，CAD 嵌入时 CAD 窗口顶部让出该区域以免互盖 */}
-        {(isUploading || parsing || valuing) && (progress > 0 || isUploading || valuing) && (
+        {/* 计价进度：沿用顶部居中卡（解析中的信息改由 HUD 承载） */}
+        {valuing && !parsing && (
           <div className={`dr-float-progress is-parsing is-${valuing ? "valuing" : "working"}`}>
             <div className="dr-float-progress-lead">
               <span className="dr-progress-icon material-symbols-outlined">
@@ -1647,16 +1474,36 @@ export default function DrawingRecognition() {
         {/* 右侧信息面板 */}
         {panelOpen && (
           <aside className="dr-float-panel">
-            <div className="dr-float-panel-scroll">
-              <div className="dr-zh-card">
-                <div className="dr-zh-card-head">
-                  <h3><span className="material-symbols-outlined">fact_check</span>解析状态</h3>
-                  <span className={`dr-confidence-badge ${result?.status === "error" ? "error" : result?.status === "done" ? "real" : "working"}`}>
-                    {result?.status === "done" ? "完成" : result?.status === "error" ? "失败" : taskId ? "解析中" : "待上传"}
-                  </span>
+            <Panel
+              title="解析结果"
+              icon="fact_check"
+              className="dr-side-panel"
+              bodyClassName="dr-side-body"
+              extra={
+                <span className={`dr-confidence-badge ${result?.status === "error" ? "error" : result?.status === "done" ? "real" : "working"}`}>
+                  {result?.status === "done" ? "完成" : result?.status === "error" ? "失败" : taskId ? "解析中" : "待上传"}
+                </span>
+              }
+            >
+            <div className={`dr-float-panel-scroll${result ? "" : " dr-x-panel-scroll"}`}>
+              {result ? (
+                <p className="dr-summary">{result.summary || result.progress || "正在解析图纸…"}</p>
+              ) : (
+                <div className="dr-x-panel-empty">
+                  <span className="dr-x-panel-empty-icon material-symbols-outlined">fact_check</span>
+                  <strong>{isUploading || taskId ? "正在识别图纸" : "等待识别结果"}</strong>
+                  <p>
+                    {isUploading || taskId
+                      ? "解析任务已建立，构件、清单与计价结果将自动汇总到这里。"
+                      : "上传 DWG / DXF 图纸后，构件、清单与计价结果会汇总到这里。"}
+                  </p>
+                  <Upload {...uploadProps}>
+                    <Button type="primary" icon={<CloudUploadOutlined />} loading={uploading}>
+                      选择图纸文件
+                    </Button>
+                  </Upload>
                 </div>
-                <p className="dr-summary">{result?.summary || "待上传"}</p>
-              </div>
+              )}
 
               {result?.quality_score && (
                 <div className="dr-zh-card dr-quality-card">
@@ -1735,6 +1582,7 @@ export default function DrawingRecognition() {
                 </div>
               )}
             </div>
+            </Panel>
           </aside>
         )}
 

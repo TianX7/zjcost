@@ -1,0 +1,903 @@
+/* ═══════════════════════════════════════════════════════════════
+   业务页面大屏化统一覆盖
+   适用范围：项目台账 / 项目详情 / 计价复核 / 算量中心 / 动态管控
+   仅补充视觉结构与局部覆盖，不改变既有业务样式文件
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── 顶部摘要指标带 ───────────────────────────────────────── */
+
+.bs-summary-strip {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--screen-gap);
+}
+
+.bs-summary-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 16px 12px 18px;
+  border: 1px solid var(--screen-border);
+  border-radius: 12px;
+  background: linear-gradient(150deg, rgba(12, 36, 68, 0.82), rgba(8, 24, 46, 0.6));
+  box-shadow: inset 0 1px 0 rgba(148, 200, 255, 0.08), 0 8px 22px rgba(2, 10, 22, 0.26);
+  overflow: hidden;
+}
+
+.bs-summary-item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: linear-gradient(180deg, var(--screen-cyan), rgba(61, 139, 255, 0.15));
+  box-shadow: 0 0 8px rgba(77, 212, 255, 0.55);
+}
+
+.bs-summary-item.is-green::before {
+  background: linear-gradient(180deg, #34d399, rgba(52, 211, 153, 0.15));
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.55);
+}
+
+.bs-summary-item.is-amber::before {
+  background: linear-gradient(180deg, var(--screen-amber), rgba(251, 191, 36, 0.15));
+  box-shadow: 0 0 8px rgba(251, 191, 36, 0.55);
+}
+
+.bs-summary-item.is-red::before {
+  background: linear-gradient(180deg, #f87171, rgba(248, 113, 113, 0.15));
+  box-shadow: 0 0 8px rgba(248, 113, 113, 0.55);
+}
+
+.bs-summary-label {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--screen-muted);
+}
+
+.bs-summary-value {
+  max-width: 100%;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--screen-text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 0 14px rgba(77, 212, 255, 0.18);
+}
+
+.bs-summary-item.is-green .bs-summary-value { color: #6ee7b7; }
+.bs-summary-item.is-amber .bs-summary-value { color: #fcd34d; }
+.bs-summary-item.is-red .bs-summary-value { color: #fca5a5; }
+
+.bs-summary-hint {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--screen-muted);
+}
+
+/* ─── 两栏栅格：左筛选 + 右主表 / 左摘要 + 右主内容 ───────── */
+
+.bs-two-col {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  gap: var(--screen-gap);
+  align-items: start;
+}
+
+.bs-two-col.side-left {
+  grid-template-columns: minmax(240px, 290px) minmax(0, 1fr);
+}
+
+.bs-col-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--screen-gap);
+  min-width: 0;
+}
+
+/* ─── 筛选表单（面板内竖排） ───────────────────────────────── */
+
+.bs-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bs-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bs-field-label {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--screen-muted);
+}
+
+.bs-filter .ant-input,
+.bs-filter .ant-input-affix-wrapper,
+.bs-filter .ant-select {
+  width: 100%;
+}
+
+/* ─── 表格 / 图表容器 ─────────────────────────────────────── */
+
+.screen-panel-body.bs-panel-table {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.bs-panel-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-top: 1px solid rgba(96, 190, 255, 0.12);
+  font-size: 12px;
+  color: var(--screen-muted);
+}
+
+.bs-panel-inset {
+  padding: 12px 14px;
+}
+
+.bs-panel-inset:last-child {
+  border-top: 1px solid rgba(96, 190, 255, 0.1);
+}
+
+.bs-section-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--screen-muted);
+}
+
+.bs-chart {
+  width: 100%;
+  min-width: 0;
+}
+
+.bs-cell-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--screen-muted);
+}
+
+.bs-ratio {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bs-ratio .qc-category-meter {
+  height: 4px;
+}
+
+/* ─── 面板内小指标 / 列表行 ───────────────────────────────── */
+
+.bs-metric-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.bs-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--screen-border);
+  border-radius: 10px;
+  background: rgba(9, 28, 54, 0.55);
+}
+
+.bs-metric-label {
+  font-size: 12px;
+  color: var(--screen-muted);
+}
+
+.bs-metric-value {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--screen-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.bs-metric-value.is-green { color: #6ee7b7; }
+.bs-metric-value.is-amber { color: #fcd34d; }
+.bs-metric-value.is-red { color: #fca5a5; }
+
+.bs-metric-hint {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--screen-muted);
+}
+
+.bs-kv-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.bs-kv-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px dashed rgba(96, 190, 255, 0.12);
+  font-size: 13px;
+  color: var(--screen-muted);
+}
+
+.bs-kv-row:last-child {
+  border-bottom: none;
+}
+
+.bs-kv-row strong {
+  color: var(--screen-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── 四源 / 维度小卡（非 antd Card） ────────────────────── */
+
+.bs-source-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.bs-source-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--screen-border);
+  border-radius: 10px;
+  background: linear-gradient(150deg, rgba(12, 36, 68, 0.6), rgba(9, 28, 54, 0.35));
+}
+
+.bs-source-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--screen-text);
+}
+
+.bs-source-head .material-symbols-outlined {
+  font-size: 20px;
+}
+
+.bs-source-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--screen-muted);
+}
+
+/* ─── 提示条 ──────────────────────────────────────────────── */
+
+.bs-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 9px;
+  font-size: 13px;
+  line-height: 1.7;
+  border: 1px solid rgba(56, 189, 248, 0.32);
+  background: rgba(56, 189, 248, 0.08);
+  color: #bae6fd;
+}
+
+.bs-alert .material-symbols-outlined {
+  font-size: 19px;
+  flex-shrink: 0;
+}
+
+.bs-alert.warn {
+  border-color: rgba(251, 191, 36, 0.34);
+  background: rgba(251, 191, 36, 0.08);
+  color: #fde68a;
+}
+
+.bs-alert.ok {
+  border-color: rgba(52, 211, 153, 0.34);
+  background: rgba(52, 211, 153, 0.08);
+  color: #a7f3d0;
+}
+
+/* ─── Tabs 外观统一 ───────────────────────────────────────── */
+
+.bs-tabs .ant-tabs-nav {
+  margin: 0 0 12px;
+}
+
+.bs-tabs .ant-tabs-tab {
+  padding: 8px 14px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--screen-muted);
+  letter-spacing: 0.04em;
+}
+
+.bs-tabs .ant-tabs-tab:hover {
+  color: var(--screen-text);
+  background: rgba(77, 212, 255, 0.07);
+}
+
+.bs-tabs .ant-tabs-tab-active {
+  background: linear-gradient(180deg, rgba(77, 212, 255, 0.16), rgba(61, 139, 255, 0.06));
+  border-color: rgba(77, 212, 255, 0.28);
+}
+
+.bs-tabs .ant-tabs-ink-bar {
+  display: none;
+}
+
+/* ─── 项目详情：工作区与内嵌内容 ─────────────────────────── */
+
+.pd-workspace .ws-tabs .ant-tabs-nav {
+  margin-bottom: 12px;
+}
+
+.pd-workspace .content-card,
+.pa-pane .content-card {
+  border: 1px solid var(--screen-border);
+  border-radius: 10px;
+  background: linear-gradient(160deg, rgba(12, 36, 68, 0.62), rgba(9, 28, 54, 0.42));
+  box-shadow: inset 0 1px 0 rgba(148, 200, 255, 0.06);
+}
+
+.pd-workspace .content-card-head,
+.pa-pane .content-card-head {
+  border-bottom: 1px solid rgba(96, 190, 255, 0.12);
+  background: linear-gradient(90deg, rgba(77, 212, 255, 0.08), transparent 62%);
+}
+
+/* 计价复核：内嵌页面容器不再产生第二层滚动与内边距 */
+.pa-pane .page-container {
+  flex: none;
+  overflow: visible;
+  padding: 0;
+  gap: var(--screen-gap);
+}
+
+.pa-pane .content-card {
+  margin: 0;
+}
+
+.pa-pane .ant-tabs-nav {
+  margin-bottom: 12px;
+}
+
+/* ─── 页面根容器只保留唯一滚动条 ─────────────────────────── */
+
+.bs-screen-page {
+  min-height: 0;
+}
+
+/* ─── 响应式 ──────────────────────────────────────────────── */
+
+@media (max-width: 1279px) {
+  .bs-two-col,
+  .bs-two-col.side-left {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .bs-summary-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .bs-summary-value {
+    font-size: 20px;
+  }
+}
+
+@media (max-width: 560px) {
+  .bs-summary-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   综合单价分析（UnitPriceAnalysis）— upa- 专属布局
+   三块面板：清单信息（内容定高）/ 定额绑定（flex:1 内部滚动）/
+   计算说明（贴底窄条），页面纵向填满，无底部空白
+   ═══════════════════════════════════════════════════════════════ */
+
+.page-container.upa-page {
+  gap: 12px;
+  padding: 8px 16px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ─── 顶部指标带：压缩为 56px 单行 ─────────────────────────── */
+
+.upa-page .screen-metrics {
+  height: 56px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.upa-page .screen-metric {
+  padding: 6px 12px;
+  gap: 9px;
+  border-radius: 8px;
+}
+
+.upa-page .screen-metric-icon {
+  font-size: 17px;
+}
+
+.upa-page .screen-metric-label {
+  font-size: 10px;
+}
+
+.upa-page .screen-metric-value {
+  font-size: 16px;
+}
+
+/* ─── 顶部单行筛选条：40px ─────────────────────────────────── */
+
+.upa-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--screen-border);
+  border-radius: 8px;
+  background: linear-gradient(120deg, rgba(12, 36, 68, 0.6), rgba(10, 30, 58, 0.3));
+  overflow: hidden;
+}
+
+.upa-toolbar-spacer {
+  flex: 1;
+}
+
+/* ─── 主体：三块面板纵向排列，撑满剩余高度 ─────────────────── */
+
+.upa-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.upa-panel {
+  flex-shrink: 0;
+}
+
+/* ─── 清单信息：指标行 + 一行摘要 ──────────────────────────── */
+
+.upa-panel-info .screen-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 14px 9px;
+}
+
+.upa-info-main {
+  display: flex;
+  align-items: stretch;
+  gap: 14px;
+  min-width: 0;
+}
+
+.upa-info-fields {
+  flex: 1;
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.upa-field {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding: 0 12px;
+  border-left: 1px solid rgba(96, 190, 255, 0.14);
+}
+
+.upa-info-fields > .upa-field:first-child {
+  padding-left: 0;
+  border-left: none;
+}
+
+.upa-field.is-grow {
+  flex: 1 1 180px;
+}
+
+.upa-field-label {
+  font-size: 11px;
+  line-height: 1.3;
+  letter-spacing: 0.04em;
+  color: var(--screen-muted);
+  white-space: nowrap;
+}
+
+.upa-field-value {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--screen-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.upa-field-value.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.upa-field-value.is-accent {
+  color: var(--screen-cyan);
+  text-shadow: 0 0 10px rgba(77, 212, 255, 0.3);
+}
+
+.upa-info-total {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  padding-left: 4px;
+  border-left: 1px solid rgba(77, 212, 255, 0.32);
+}
+
+.upa-info-total > .upa-field {
+  padding-right: 0;
+  border-left: none;
+}
+
+.upa-info-total > .upa-field + .upa-field {
+  padding-left: 16px;
+  border-left: 1px solid rgba(96, 190, 255, 0.14);
+}
+
+.upa-info-sub {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(96, 190, 255, 0.16);
+}
+
+.upa-coeff {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.upa-coeff-label {
+  font-size: 11px;
+  color: var(--screen-muted);
+  white-space: nowrap;
+  cursor: help;
+}
+
+.upa-coeff-value {
+  font-size: 14px;
+  line-height: 1;
+  color: #2dd4bf;
+  font-variant-numeric: tabular-nums;
+}
+
+.upa-coeff-none {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--screen-muted);
+}
+
+.upa-fees {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.upa-fee-chip,
+.upa-fee-rate {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px;
+  border: 1px solid rgba(96, 190, 255, 0.14);
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--screen-muted);
+  white-space: nowrap;
+}
+
+.upa-fee-chip b {
+  color: var(--screen-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.upa-fee-chip i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.upa-fee-rate {
+  border-style: dashed;
+}
+
+/* ─── 定额绑定：占满剩余高度，表格内部滚动 ─────────────────── */
+
+.upa-panel-bindings {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.upa-bindings-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.upa-bindings-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.upa-bindings-scroll .ant-table {
+  min-width: 1000px;
+  font-size: 12px;
+  background: transparent;
+}
+
+.upa-page .upa-bindings-scroll .ant-table-thead > tr > th {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  height: 36px;
+  padding: 0 10px;
+  background: #163257;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.upa-page .upa-bindings-scroll .ant-table-tbody > tr > td {
+  height: 38px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.upa-bindings-scroll .ant-table-tbody > tr > td .ant-tag {
+  margin-inline-end: 0;
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.upa-page .upa-bindings-scroll .ant-table-summary > tr > td {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  height: 38px;
+  padding: 0 10px;
+  background: #0f2748;
+  border-top: 1px solid rgba(96, 190, 255, 0.28);
+  font-size: 12px;
+}
+
+/* ─── 空态 / 未选择占位 ───────────────────────────────────── */
+
+.upa-empty {
+  flex: 1;
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 16px;
+  font-size: 12px;
+  color: var(--screen-muted);
+}
+
+.upa-empty > .material-symbols-outlined {
+  font-size: 26px;
+  flex-shrink: 0;
+  color: rgba(77, 212, 255, 0.55);
+}
+
+.upa-empty-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  max-width: 560px;
+  line-height: 1.6;
+}
+
+.upa-empty-text strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--screen-text);
+}
+
+.upa-placeholder {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 16px;
+  border: 1px solid var(--screen-border);
+  border-radius: 12px;
+  background: linear-gradient(160deg, rgba(12, 36, 68, 0.6), rgba(9, 28, 54, 0.36));
+  font-size: 12px;
+  color: var(--screen-muted);
+}
+
+.upa-placeholder .material-symbols-outlined {
+  font-size: 30px;
+  color: rgba(77, 212, 255, 0.6);
+}
+
+.upa-placeholder strong {
+  font-size: 14px;
+  color: var(--screen-text);
+}
+
+.upa-placeholder p {
+  margin: 0;
+}
+
+/* ─── 计算说明：贴底窄条 ─────────────────────────────────── */
+
+.upa-explain {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 64px;
+  max-height: 80px;
+  padding: 8px 14px;
+  border: 1px solid var(--screen-border);
+  border-left: 3px solid rgba(77, 212, 255, 0.6);
+  border-radius: 8px;
+  background: linear-gradient(90deg, rgba(77, 212, 255, 0.07), rgba(10, 30, 58, 0.3) 60%);
+  overflow: hidden;
+}
+
+.upa-explain-icon {
+  flex-shrink: 0;
+  font-size: 18px;
+  color: var(--screen-cyan);
+}
+
+.upa-explain-label {
+  flex-shrink: 0;
+  padding-right: 10px;
+  border-right: 1px solid rgba(96, 190, 255, 0.18);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--screen-muted);
+  white-space: nowrap;
+}
+
+.upa-explain-text {
+  margin: 0;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.65;
+  color: #b8d4f0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── 响应式：≤1279 单列滚动 ─────────────────────────────── */
+
+@media (max-width: 1279px) {
+  .page-container.upa-page {
+    overflow-y: auto;
+    padding: 8px 12px;
+  }
+
+  .upa-page .screen-metrics {
+    height: 48px;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .upa-page .screen-metric {
+    padding: 5px 8px;
+    gap: 6px;
+  }
+
+  .upa-page .screen-metric-icon {
+    font-size: 14px;
+  }
+
+  .upa-page .screen-metric-value {
+    font-size: 13px;
+  }
+
+  .upa-toolbar {
+    height: auto;
+    min-height: 40px;
+    flex-wrap: wrap;
+    padding: 6px 10px;
+  }
+
+  .upa-body {
+    flex: none;
+  }
+
+  .upa-panel-bindings {
+    flex: none;
+  }
+
+  .upa-bindings-scroll {
+    flex: none;
+    max-height: 60vh;
+  }
+
+  .upa-info-main,
+  .upa-info-fields {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .upa-info-fields > .upa-field {
+    padding-left: 0;
+    border-left: none;
+  }
+
+  .upa-info-total {
+    padding-left: 0;
+    border-left: none;
+  }
+
+  .upa-info-sub {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .upa-fees {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 900px) {
+  .upa-page .screen-metrics {
+    height: auto;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

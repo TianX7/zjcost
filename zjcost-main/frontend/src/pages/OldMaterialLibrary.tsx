@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Panel from "../components/Panel";
+import "../styles/resource-screen.css";
 import {
   Button,
   Empty,
@@ -16,7 +18,7 @@ import {
   message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { CalculatorOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, ExportOutlined, FileExcelOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { CalculatorOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, FileExcelOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import {
   type LossEstimateResponse,
   type OldMaterialAcquisitionMethod,
@@ -631,71 +633,200 @@ export default function OldMaterialLibrary() {
   ];
 
   return (
-    <div className="page-container">
-      {/* 定额编制标准依据说明 */}
-      <div className="content-card" style={{ marginBottom: 16 }}>
-        <div className="content-card-body oml-standards-banner">
-          <span className="material-symbols-outlined">verified_user</span>
-          <div>
-            <strong>定额编制标准依据</strong>
-            <p>本库定额条目、综合单价、换算规则与适用工况严格对标国家现行工程造价定额规范、地方计价标准及建筑工程材料定额标准编制，未作任何私自增删与改动，可直接用于工程造价编制、报审与结算复核工作。</p>
+    <div className="page-container res-page">
+      {/* 摘要指标带 */}
+      <div className="screen-metrics">
+        <div className="screen-metric">
+          <span className="material-symbols-outlined screen-metric-icon">inventory_2</span>
+          <div className="screen-metric-body">
+            <span className="screen-metric-label">旧材料条目</span>
+            <span className="screen-metric-value">
+              {stats?.total ?? 0}
+              <span className="screen-metric-unit">条</span>
+            </span>
           </div>
         </div>
-      </div>
-      {/* KPI 指标卡 */}
-      <div className="kpi-grid">
-        <div className="kpi-card">
-          <span className="material-symbols-outlined kpi-card-icon">inventory_2</span>
-          <div className="kpi-card-body">
-            <span className="kpi-card-label">旧材料条目</span>
-            <span className="kpi-card-value">{stats?.total ?? 0}<span className="kpi-card-suffix">条</span></span>
+        <div className="screen-metric">
+          <span className="material-symbols-outlined screen-metric-icon">recycling</span>
+          <div className="screen-metric-body">
+            <span className="screen-metric-label">当地回收</span>
+            <span className="screen-metric-value">
+              {methodStats.recycle.count}
+              <span className="screen-metric-unit">条</span>
+            </span>
           </div>
         </div>
-        <div className="kpi-card">
-          <span className="material-symbols-outlined kpi-card-icon" style={{ color: "#34d399" }}>recycling</span>
-          <div className="kpi-card-body">
-            <span className="kpi-card-label">当地回收</span>
-            <span className="kpi-card-value">{methodStats.recycle.count}<span className="kpi-card-suffix">条</span></span>
+        <div className="screen-metric is-amber">
+          <span className="material-symbols-outlined screen-metric-icon">science</span>
+          <div className="screen-metric-body">
+            <span className="screen-metric-label">原材料复现</span>
+            <span className="screen-metric-value">
+              {methodStats.reproduce.count}
+              <span className="screen-metric-unit">条</span>
+            </span>
           </div>
         </div>
-        <div className="kpi-card">
-          <span className="material-symbols-outlined kpi-card-icon" style={{ color: "#a78bfa" }}>science</span>
-          <div className="kpi-card-body">
-            <span className="kpi-card-label">原材料复现</span>
-            <span className="kpi-card-value">{methodStats.reproduce.count}<span className="kpi-card-suffix">条</span></span>
-          </div>
-        </div>
-        <div className="kpi-card">
-          <span className="material-symbols-outlined kpi-card-icon">temple_buddhist</span>
-          <div className="kpi-card-body">
-            <span className="kpi-card-label">涉及遗址</span>
-            <span className="kpi-card-value">{stats?.by_heritage_site.length ?? 0}<span className="kpi-card-suffix">处</span></span>
+        <div className="screen-metric">
+          <span className="material-symbols-outlined screen-metric-icon">temple_buddhist</span>
+          <div className="screen-metric-body">
+            <span className="screen-metric-label">涉及遗址</span>
+            <span className="screen-metric-value">
+              {stats?.by_heritage_site.length ?? 0}
+              <span className="screen-metric-unit">处</span>
+            </span>
           </div>
         </div>
       </div>
 
-      {/* 三级计价演示面板（大屏逐项可见） */}
-      {demoItem && (
-        <div className="content-card oml-demo-card" style={{ marginBottom: 16 }}>
-          <div className="content-card-body">
-            <div className="oml-demo-head">
-              <div>
-                <h3 className="content-card-title" style={{ marginBottom: 4 }}>
-                  <span className="material-symbols-outlined">account_tree</span>
-                  三级计价构成演示
-                </h3>
-                <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-                  {demoItem.quota_code} · {demoItem.name} · 单位 {demoItem.unit}
-                  <span style={{ marginLeft: 12 }}>批次号：{demoItem.batch_no || "-"}</span>
-                  <span style={{ marginLeft: 12 }}>检测报告：{demoItem.inspection_report_no || "-"}</span>
+      <div className="res-split">
+        {/* 左筛选面板 */}
+        <Panel title="筛选条件" icon="filter_alt" className="res-side" bodyClassName="res-side-body">
+          <div className="res-filter">
+            <Input
+              allowClear
+              prefix={<SearchOutlined />}
+              placeholder="搜索编码或材料名称"
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+            />
+            <Select
+              allowClear
+              placeholder="获取方式"
+              value={acquisitionMethod}
+              onChange={(v) => setAcquisitionMethod(v ?? undefined)}
+              options={ACQUISITION_METHOD_OPTIONS}
+            />
+            <Select
+              allowClear
+              placeholder="关联遗址"
+              value={heritageSite || undefined}
+              onChange={(v) => setHeritageSite(v ?? "")}
+              options={heritageSiteOptions}
+              showSearch
+            />
+            {items.some((item) => item.base_price == null || item.base_price <= 0) && (
+              <Tooltip title="这些条目缺少综合单价，套价时无法计价，需补充维护回收/加工/运输三级价格">
+                <Tag color="red">缺综合单价 {items.filter((item) => item.base_price == null || item.base_price <= 0).length} 条</Tag>
+              </Tooltip>
+            )}
+            {items.length >= OML_LIST_LIMIT && (
+              <Tooltip title={`列表一次最多加载 ${OML_LIST_LIMIT} 条，当前条件结果可能更多，请继续细化编码 / 名称 / 获取方式 / 遗址筛选`}>
+                <Tag color="orange">仅展示前 {OML_LIST_LIMIT} 条</Tag>
+              </Tooltip>
+            )}
+            <div className="res-filter-actions">
+              <Button icon={<ReloadOutlined />} loading={loading} onClick={load}>
+                刷新
+              </Button>
+              <Upload accept=".xlsx" showUploadList={false} beforeUpload={handleImportExcel}>
+                <Button icon={<FileExcelOutlined />} loading={importing}>
+                  导入Excel
+                </Button>
+              </Upload>
+              <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+                新增旧材料
+              </Button>
+            </div>
+          </div>
+
+          {/* 获取方式分布 */}
+          {stats && stats.total > 0 && (
+            <div className="res-filter">
+              <span className="res-nav-label">获取方式分布</span>
+              {(Object.keys(ACQUISITION_METHOD_META) as OldMaterialAcquisitionMethod[]).map((m) => {
+                const meta = ACQUISITION_METHOD_META[m];
+                const stat = methodStats[m];
+                return (
+                  <div key={m} className="res-stat">
+                    <span className="res-stat-label">{meta.label}</span>
+                    <span className="res-stat-value">{stat.count} 条 · {stat.percent}%</span>
+                    <Progress percent={stat.percent} strokeColor={meta.color} showInfo={false} size="small" />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* 定额编制标准依据 */}
+          <div className="oml-standards-banner res-note">
+            <span className="material-symbols-outlined">verified_user</span>
+            <p>本库定额条目、综合单价、换算规则与适用工况严格对标国家现行工程造价定额规范、地方计价标准及建筑工程材料定额标准编制，未作任何私自增删与改动，可直接用于工程造价编制、报审与结算复核工作。</p>
+          </div>
+        </Panel>
+
+        {/* 右材料表格面板 */}
+        <Panel
+          title="旧材料定额库"
+          icon="recycling"
+          live
+          flush
+          className="res-main"
+          extra={
+            <span style={{ display: "inline-flex", gap: 8 }}>
+              <Button size="small" icon={<DownloadOutlined />} loading={exporting} onClick={handleExportQuota}>
+                导出定额
+              </Button>
+              <Button size="small" icon={<CalculatorOutlined />} onClick={openLossEstimate}>
+                AI损耗预测
+              </Button>
+            </span>
+          }
+        >
+          <Table
+            rowKey="id"
+            columns={columns}
+            dataSource={items}
+            loading={loading}
+            scroll={{ x: 1750 }}
+            pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `共 ${t} 条${items.length >= OML_LIST_LIMIT ? `（仅加载前 ${OML_LIST_LIMIT} 条）` : ""}` }}
+            onRow={(record) => ({
+              onClick: (event) => {
+                if ((event.target as HTMLElement).closest(".ant-table-row-expand-icon")) return;
+                setExpandedKeys((keys) =>
+                  keys.includes(record.id)
+                    ? keys.filter((k) => k !== record.id)
+                    : [...keys, record.id]
+                );
+              },
+            })}
+            expandable={{
+              expandedRowRender: (record) => <OldMaterialDetailPanel record={record} />,
+              rowExpandable: () => true,
+              expandedRowKeys: expandedKeys,
+              onExpandedRowsChange: (rows) => setExpandedKeys(rows as number[]),
+            }}
+            locale={{
+              emptyText: (
+                <Empty description="未找到旧材料定额，可点击「新增旧材料」添加">
+                  <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+                    新增旧材料
+                  </Button>
+                </Empty>
+              ),
+            }}
+          />
+        </Panel>
+      </div>
+
+      {/* 三级计价与 AI 损耗演示（双栏大屏面板） */}
+      {(demoItem || lossDemoResult) && (
+        <div className="screen-grid-2">
+          {demoItem && (
+            <Panel title="三级计价构成演示" icon="account_tree" className="oml-demo-panel">
+              <div className="oml-demo-head">
+                <div>
+                  <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+                    {demoItem.quota_code} · {demoItem.name} · 单位 {demoItem.unit}
+                    <span style={{ marginLeft: 12 }}>批次号：{demoItem.batch_no || "-"}</span>
+                    <span style={{ marginLeft: 12 }}>检测报告：{demoItem.inspection_report_no || "-"}</span>
+                  </div>
+                </div>
+                <div className="oml-demo-total">
+                  <span className="oml-demo-total-label">综合单价</span>
+                  <span className="oml-demo-total-value">{demoItem.base_price.toFixed(2)}</span>
+                  <span className="oml-demo-total-unit">元/{demoItem.unit}</span>
                 </div>
               </div>
-              <div className="oml-demo-total">
-                <span className="oml-demo-total-label">综合单价</span>
-                <span className="oml-demo-total-value">{demoItem.base_price.toFixed(2)}</span>
-                <span className="oml-demo-total-unit">元/{demoItem.unit}</span>
-              </div>
-            </div>
 
             <div className="oml-demo-levels">
               {/* 第一级：回收价 */}
@@ -759,21 +890,14 @@ export default function OldMaterialLibrary() {
                 传统做法：笼统估一个价，审计追问来源无从应答；现在<b>三级拆分 + 工序拆分 + 来源凭证</b>，每一笔逐项可见，争议自然归零。
               </span>
             </div>
-          </div>
-        </div>
-      )}
+            </Panel>
+          )}
 
-      {/* AI 损耗预测演示面板（大屏逐项可见） */}
-      {lossDemoResult && (
-        <div className="content-card oml-demo-card" style={{ marginBottom: 16 }}>
-          <div className="content-card-body">
-            <div className="oml-demo-head">
-              <div>
-                <h3 className="content-card-title" style={{ marginBottom: 4 }}>
-                  <span className="material-symbols-outlined">monitoring</span>
-                  AI 损耗预测
-                </h3>
+          {lossDemoResult && (
+            <Panel title="AI 损耗预测" icon="monitoring" className="oml-demo-panel">
+              <div className="oml-demo-head">
                 <div>
+                  <div>
                   <Tag color="geekblue">XGBoost + LSTM 融合算法</Tag>
                   <Tag color="cyan">500 组历史工程样本训练</Tag>
                 </div>
@@ -831,160 +955,12 @@ export default function OldMaterialLibrary() {
                 {lossDemoResult.method_note}
               </span>
             </div>
-          </div>
+            </Panel>
+          )}
         </div>
       )}
 
-      {/* 获取方式分布 */}
-      {stats && stats.total > 0 && (
-        <div className="content-card">
-          <div className="content-card-head">
-            <h3 className="content-card-title">
-              <span className="material-symbols-outlined">donut_large</span>
-              获取方式分布
-            </h3>
-          </div>
-          <div className="content-card-body">
-            <div className="quota-resource-overview">
-              {(Object.keys(ACQUISITION_METHOD_META) as OldMaterialAcquisitionMethod[]).map((m) => {
-                const meta = ACQUISITION_METHOD_META[m];
-                const stat = methodStats[m];
-                return (
-                  <div key={m} className="quota-resource-card">
-                    <span className="material-symbols-outlined quota-resource-icon" style={{ color: meta.color }}>
-                      {meta.icon}
-                    </span>
-                    <div className="quota-resource-body">
-                      <span className="quota-resource-label">{meta.label}</span>
-                      <strong className="quota-resource-value">{stat.count}</strong>
-                      <Progress percent={stat.percent} strokeColor={meta.color} showInfo={false} size="small" />
-                      <span className="quota-resource-percent">{stat.percent}%</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* 筛选栏 */}
-      <div className="filter-bar">
-        <Input
-          allowClear
-          prefix={<SearchOutlined />}
-          placeholder="搜索编码或材料名称"
-          value={keyword}
-          onChange={(e) => setKeyword(e.target.value)}
-          style={{ width: 260 }}
-        />
-        <Select
-          allowClear
-          placeholder="获取方式"
-          value={acquisitionMethod}
-          onChange={(v) => setAcquisitionMethod(v ?? undefined)}
-          style={{ width: 160 }}
-          options={ACQUISITION_METHOD_OPTIONS}
-        />
-        <Select
-          allowClear
-          placeholder="关联遗址"
-          value={heritageSite || undefined}
-          onChange={(v) => setHeritageSite(v ?? "")}
-          style={{ width: 220 }}
-          options={heritageSiteOptions}
-          showSearch
-        />
-        <Button icon={<ReloadOutlined />} loading={loading} onClick={load}>
-          刷新
-        </Button>
-        <Button icon={<DownloadOutlined />} loading={exporting} onClick={handleExportQuota}>
-          导出定额
-        </Button>
-        <Button
-          icon={<ExportOutlined />}
-          loading={exporting}
-          onClick={() => {
-            setExporting(true);
-            api
-              .exportOldMaterials({})
-              .then((blob) => {
-                downloadBlob(blob, "旧材料定额库.xlsx");
-                message.success("旧材料定额库导出成功");
-              })
-              .catch((err) => {
-                message.error(err instanceof Error ? err.message : "导出旧材料定额库失败");
-              })
-              .finally(() => setExporting(false));
-          }}
-        >
-          旧材定额库导出
-        </Button>
-        <Upload
-          accept=".xlsx"
-          showUploadList={false}
-          beforeUpload={handleImportExcel}
-        >
-          <Button icon={<FileExcelOutlined />} loading={importing}>导入Excel</Button>
-        </Upload>
-        <Button icon={<CalculatorOutlined />} onClick={openLossEstimate}>
-          AI损耗预测
-        </Button>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-          新增旧材料
-        </Button>
-        {items.some((item) => item.base_price == null || item.base_price <= 0) && (
-          <Tooltip title="这些条目缺少综合单价，套价时无法计价，需补充维护回收/加工/运输三级价格">
-            <Tag color="red">缺综合单价 {items.filter((item) => item.base_price == null || item.base_price <= 0).length} 条</Tag>
-          </Tooltip>
-        )}
-        {items.length >= OML_LIST_LIMIT && (
-          <Tooltip title={`列表一次最多加载 ${OML_LIST_LIMIT} 条，当前条件结果可能更多，请继续细化编码 / 名称 / 获取方式 / 遗址筛选`}>
-            <Tag color="orange">仅展示前 {OML_LIST_LIMIT} 条</Tag>
-          </Tooltip>
-        )}
-      </div>
-
-      {/* 旧材料定额表格 */}
-      <div className="content-card">
-        <div className="content-card-body flush">
-          <Table
-            rowKey="id"
-            columns={columns}
-            dataSource={items}
-            loading={loading}
-            scroll={{ x: 1750 }}
-            pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `共 ${t} 条${items.length >= OML_LIST_LIMIT ? `（仅加载前 ${OML_LIST_LIMIT} 条）` : ""}` }}
-            onRow={(record) => ({
-              onClick: (event) => {
-                if ((event.target as HTMLElement).closest(".ant-table-row-expand-icon")) return;
-                setExpandedKeys((keys) =>
-                  keys.includes(record.id)
-                    ? keys.filter((k) => k !== record.id)
-                    : [...keys, record.id]
-                );
-              },
-            })}
-            expandable={{
-              expandedRowRender: (record) => <OldMaterialDetailPanel record={record} />,
-              rowExpandable: () => true,
-              expandedRowKeys: expandedKeys,
-              onExpandedRowsChange: (rows) => setExpandedKeys(rows as number[]),
-            }}
-            locale={{
-              emptyText: (
-                <Empty description="未找到旧材料定额，可点击「新增旧材料」添加">
-                  <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-                    新增旧材料
-                  </Button>
-                </Empty>
-              ),
-            }}
-          />
-        </div>
-      </div>
-
-      {/* 创建/编辑模态框 */}
       <Modal
         title={editing ? `编辑旧材料：${editing.name}` : "新增旧材料定额"}
         open={modalOpen}

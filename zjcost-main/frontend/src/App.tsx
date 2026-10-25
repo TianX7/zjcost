@@ -1,8 +1,10 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { App as AntApp, Button, Card, ConfigProvider, Form, Input, Space, theme, Typography } from "antd";
+import { App as AntApp, Button, Card, ConfigProvider, Dropdown, Form, Input, Space, theme, Typography } from "antd";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { API_BASE, AUTH_LOGOUT_EVENT, getAuthToken, setAuthToken } from "./client";
+import BigScreenShell from "./components/BigScreenShell";
+import ScreenHeader from "./components/ScreenHeader";
 import TourGuide from "./components/TourGuide";
 import ParticleBackdrop from "./components/ParticleBackdrop";
 import { TourModeProvider, useTourMode } from "./tourMode";
@@ -22,21 +24,85 @@ const SystemSettings = lazy(() => import("./pages/SystemSettings"));
 const OldMaterialLibrary = lazy(() => import("./pages/OldMaterialLibrary"));
 const DynamicControl = lazy(() => import("./pages/DynamicControl"));
 
-const NAV_ITEMS = [
-  { path: "/dashboard", icon: "query_stats", label: "总控工作台" },
-  { path: "/projects", icon: "folder_managed", label: "项目台账" },
-  { path: "/quantity-center", icon: "square_foot", label: "清单算量中心" },
-  { path: "/drawings", icon: "draw", label: "图纸智能识别" },
-  { path: "/ifc-parser", icon: "view_in_ar", label: "BIM 模型算量" },
-  { path: "/facility-ops", icon: "monitoring", label: "光伏 · 中水 · 运维" },
-  { path: "/ifc-walk-tour", icon: "directions_walk", label: "数字孪生漫游" },
-  { path: "/data-resources", icon: "database", label: "定额与价格库" },
-  { path: "/old-materials", icon: "recycling", label: "旧材利用定额" },
-  { path: "/unit-price-analysis", icon: "price_change", label: "综合单价分析" },
-  { path: "/pricing-audit", icon: "calculate", label: "计价复核与审计" },
-  { path: "/dynamic-control", icon: "monitoring", label: "动态管控" },
-  { path: "/settings", icon: "tune", label: "系统参数配置" },
+interface NavItem {
+  path: string;
+  icon: string;
+  label: string;
+}
+
+interface NavGroup {
+  key: string;
+  label: string;
+  icon: string;
+  items: NavItem[];
+}
+
+// 顶部一级模块：总览 / 造价 / 算量 / 运维 / 资源 / 系统
+const NAV_GROUPS: NavGroup[] = [
+  {
+    key: "overview",
+    label: "总览",
+    icon: "grid_view",
+    items: [{ path: "/dashboard", icon: "query_stats", label: "总控工作台" }],
+  },
+  {
+    key: "cost",
+    label: "造价",
+    icon: "calculate",
+    items: [
+      { path: "/projects", icon: "folder_managed", label: "项目台账" },
+      { path: "/pricing-audit", icon: "fact_check", label: "计价复核与审计" },
+      { path: "/dynamic-control", icon: "monitoring", label: "动态管控" },
+      { path: "/unit-price-analysis", icon: "price_change", label: "综合单价分析" },
+    ],
+  },
+  {
+    key: "quantity",
+    label: "算量",
+    icon: "square_foot",
+    items: [
+      { path: "/quantity-center", icon: "square_foot", label: "清单算量中心" },
+      { path: "/drawings", icon: "draw", label: "图纸智能识别" },
+      { path: "/ifc-parser", icon: "view_in_ar", label: "BIM 模型算量" },
+    ],
+  },
+  {
+    key: "ops",
+    label: "运维",
+    icon: "monitoring",
+    items: [
+      { path: "/facility-ops", icon: "monitoring", label: "光伏 · 中水 · 运维" },
+      { path: "/ifc-walk-tour", icon: "directions_walk", label: "数字孪生漫游" },
+    ],
+  },
+  {
+    key: "resource",
+    label: "资源",
+    icon: "database",
+    items: [
+      { path: "/data-resources", icon: "database", label: "定额与价格库" },
+      { path: "/old-materials", icon: "recycling", label: "旧材利用定额" },
+    ],
+  },
+  {
+    key: "system",
+    label: "系统",
+    icon: "tune",
+    items: [{ path: "/settings", icon: "tune", label: "系统参数配置" }],
+  },
 ];
+
+const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+
+const pad2 = (value: number) => String(value).padStart(2, "0");
+
+function formatClock(date: Date) {
+  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
+}
+
+function formatDate(date: Date) {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${WEEKDAYS[date.getDay()]}`;
+}
 
 
 const PAGE_TITLES: Record<string, { title: string; hint: string }> = {
@@ -56,78 +122,121 @@ const PAGE_TITLES: Record<string, { title: string; hint: string }> = {
   "/settings": { title: "系统参数配置", hint: "管理规则、权限与系统参数" },
 };
 
-function AppSidebar() {
+function AppTopBar() {
   const navigate = useNavigate();
   const location = useLocation();
   const hasToken = Boolean(getAuthToken());
   const { tourMode, toggleTourMode } = useTourMode();
+  const [now, setNow] = useState(() => new Date());
+
+  // 实时时钟：每秒刷新
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const isActive = (path: string) => location.pathname === path || location.pathname.startsWith(`${path}/`);
+  const isGroupActive = (items: NavItem[]) => items.some((item) => isActive(item.path));
 
   return (
-    <aside className="app-sidebar">
-      <div className="app-sidebar-top">
-        <a
-          href="/dashboard"
-          className="app-sidebar-brand"
-          onClick={(event) => {
-            event.preventDefault();
-            navigate("/dashboard");
-          }}
-        >
-          <div className="app-sidebar-brand-icon">
-            <span className="material-symbols-outlined">architecture</span>
-          </div>
-          <div className="app-sidebar-brand-text">
-            <h1>筑衡</h1>
-            <p>全过程工程造价协同管控平台</p>
-          </div>
-        </a>
+    <header className="app-topbar">
+      <a
+        href="/dashboard"
+        className="app-topbar-brand"
+        onClick={(event) => {
+          event.preventDefault();
+          navigate("/dashboard");
+        }}
+      >
+        <span className="app-topbar-brand-mark">
+          <span className="material-symbols-outlined">architecture</span>
+        </span>
+        <span className="app-topbar-brand-text">
+          <strong>筑衡</strong>
+          <span>全过程工程造价协同管控平台</span>
+        </span>
+      </a>
 
-        <nav className="app-sidebar-nav">
-          {NAV_ITEMS.map((item) => {
-            const active = location.pathname.startsWith(item.path);
+      <nav className="app-topbar-nav">
+        {NAV_GROUPS.map((group) => {
+          const active = isGroupActive(group.items);
+          const direct = group.items.length === 1 && group.key === "overview";
+
+          if (direct) {
+            const item = group.items[0];
             return (
-              <a
-                key={item.path}
-                href={item.path}
-                className={`app-sidebar-link${active ? " active" : ""}`}
-                onClick={(event) => {
-                  event.preventDefault();
-                  navigate(item.path);
-                }}
+              <button
+                key={group.key}
+                type="button"
+                className={`app-topbar-link${active ? " active" : ""}`}
+                onClick={() => navigate(item.path)}
+                title={item.label}
               >
-                <span className="material-symbols-outlined">{item.icon}</span>
-                <span>{item.label}</span>
-              </a>
+                <span className="material-symbols-outlined">{group.icon}</span>
+                <span>{group.label}</span>
+              </button>
             );
-          })}
-        </nav>
-      </div>
+          }
 
-      {hasToken && (
-        <>
+          const menuItems = group.items.map((item) => ({
+            key: item.path,
+            icon: <span className="material-symbols-outlined">{item.icon}</span>,
+            label: item.label,
+          }));
+
+          return (
+            <Dropdown
+              key={group.key}
+              trigger={["click"]}
+              placement="bottomLeft"
+              rootClassName="app-topbar-dropdown"
+              menu={{
+                items: menuItems,
+                selectedKeys: group.items.filter((item) => isActive(item.path)).map((item) => item.path),
+                onClick: ({ key }) => navigate(key),
+              }}
+            >
+              <button type="button" className={`app-topbar-link${active ? " active" : ""}`}>
+                <span className="material-symbols-outlined">{group.icon}</span>
+                <span>{group.label}</span>
+                <span className="material-symbols-outlined app-topbar-caret">expand_more</span>
+              </button>
+            </Dropdown>
+          );
+        })}
+      </nav>
+
+      <div className="app-topbar-status">
+        <div className="app-topbar-clock" aria-label="实时时间">
+          <span className="app-topbar-clock-time">{formatClock(now)}</span>
+          <span className="app-topbar-clock-date">{formatDate(now)}</span>
+        </div>
+        <span className="app-topbar-divider" aria-hidden="true" />
+        <button
+          type="button"
+          className={`app-topbar-action${tourMode ? " active" : ""}`}
+          onClick={toggleTourMode}
+          title={tourMode ? "退出导览模式" : "进入导览模式"}
+        >
+          <span className="material-symbols-outlined">{tourMode ? "play_circle" : "slideshow"}</span>
+          <span className="app-topbar-action-text">{tourMode ? "导览中 · 点击退出" : "导览模式"}</span>
+        </button>
+        {hasToken && (
           <button
             type="button"
-            className={`app-sidebar-tour-toggle${tourMode ? " active" : ""}`}
-            onClick={toggleTourMode}
-            title={tourMode ? "退出导览模式" : "进入导览模式"}
-          >
-            <span className="material-symbols-outlined">{tourMode ? "play_circle" : "slideshow"}</span>
-            <span>{tourMode ? "导览中 · 点击退出" : "导览模式"}</span>
-          </button>
-          <Button
-            type="text"
-            className="app-sidebar-link"
-            icon={<span className="material-symbols-outlined">logout</span>}
+            className="app-topbar-action"
             onClick={() => {
               setAuthToken("");
               window.location.reload();
             }}
+            title="退出登录"
           >
-            退出登录
-          </Button>
-        </>
-      )}
-    </aside>
+            <span className="material-symbols-outlined">logout</span>
+            <span className="app-topbar-action-text">退出登录</span>
+          </button>
+        )}
+      </div>
+    </header>
   );
 }
 
@@ -138,17 +247,26 @@ function WorkspaceHeader() {
     ?? { title: "项目工作台", hint: "" };
 
   return (
-    <header className="workspace-header">
-      <div>
-        <div className="workspace-eyebrow">筑衡 / 工程造价工作台</div>
-        <h2>{page.title}</h2>
-        {page.hint && <p>{page.hint}</p>}
-      </div>
-      <Space size={8}>
-        <Button icon={<span className="material-symbols-outlined">search</span>} onClick={() => navigate("/projects")}>查找项目</Button>
-        <Button type="primary" icon={<span className="material-symbols-outlined">add</span>} onClick={() => navigate("/projects")}>新建项目</Button>
-      </Space>
-    </header>
+    <ScreenHeader
+      eyebrow="筑衡 / 工程造价工作台"
+      title={page.title}
+      subtitle={page.hint}
+      actions={
+        <Space size={8}>
+          <Button icon={<span className="material-symbols-outlined">search</span>} onClick={() => navigate("/projects")}>查找项目</Button>
+          <Button type="primary" icon={<span className="material-symbols-outlined">add</span>} onClick={() => navigate("/projects")}>新建项目</Button>
+        </Space>
+      }
+    />
+  );
+}
+
+function PageTransition({ children }: { children: ReactNode }) {
+  const location = useLocation();
+  return (
+    <div key={location.pathname} className="page-transition">
+      {children}
+    </div>
   );
 }
 
@@ -335,9 +453,18 @@ export default function App() {
                         <div className="tech-corner tech-corner--tl" />
                         <div className="tech-corner tech-corner--br" />
                         <div className="tech-dots" />
-                        <AppSidebar />
+                        <AppTopBar />
                         <main className="app-main">
                           <WorkspaceHeader />
+                          <BigScreenShell
+                            footer={
+                              <>
+                                <span>系统运行正常 · 本地部署 · 数据不出内网</span>
+                                <span>筑衡 ZH COST · 全过程工程造价协同管控平台</span>
+                              </>
+                            }
+                          >
+                          <PageTransition>
                           <Routes>
                             <Route path="/dashboard" element={<Dashboard />} />
                             <Route path="/zh-command" element={<Navigate to="/dashboard" replace />} />
@@ -368,6 +495,8 @@ export default function App() {
                             <Route path="/settings" element={<SystemSettings />} />
                             <Route path="*" element={<Navigate to="/dashboard" replace />} />
                           </Routes>
+                          </PageTransition>
+                          </BigScreenShell>
                         </main>
                       </div>
                     }

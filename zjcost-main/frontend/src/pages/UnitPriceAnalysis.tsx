@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Button, Empty, InputNumber, Segmented, Select, Spin, Table, Tag, message } from "antd";
+import { Button, InputNumber, Segmented, Select, Spin, Table, Tag, message } from "antd";
 import type { BindingRef, BoqItem, CalcProvenance, Project } from "../api";
 import { api } from "../api";
-import PageHeader from "../components/PageHeader";
+import Panel from "../components/Panel";
+import "../styles/resource-screen.css";
+import "../styles/business-screen.css";
 import { DownloadOutlined } from "@ant-design/icons";
 
 function asFiniteNumber(value: string | undefined) {
@@ -193,7 +195,10 @@ export default function UnitPriceAnalysis() {
   }, [provenance]);
 
   const feeConfigEntries = useMemo(
-    () => Object.entries(provenance?.fee_config_snapshot ?? {}),
+    () =>
+      Object.entries(provenance?.fee_config_snapshot ?? {}).filter(([, value]) =>
+        Number.isFinite(Number(value)),
+      ),
     [provenance],
   );
 
@@ -204,21 +209,51 @@ export default function UnitPriceAnalysis() {
   }, [provenance, bindingsTotal]);
 
   return (
-    <div className="page-container">
-      <PageHeader
-        icon="analytics"
-        title="综合单价分析"
-        subtitle="查看清单综合单价来源、定额组成和建议。"
-        actions={
-          <>
-            <Button icon={<DownloadOutlined />} disabled={!provenance} onClick={exportReport}>导出报告</Button>
-            <Button onClick={() => navigate(selectedProjectId ? `/projects/${selectedProjectId}` : "/projects")}>返回项目</Button>
-          </>
-        }
-      />
+    <div className="page-container res-page upa-page">
+      {/* 摘要指标带：单价构成关键数值（压缩为单行 56px） */}
+      <div className="screen-metrics upa-metrics">
+        <div className="screen-metric">
+          <span className="material-symbols-outlined screen-metric-icon">payments</span>
+          <div className="screen-metric-body">
+            <span className="screen-metric-label">综合单价</span>
+            <span className="screen-metric-value">{money(provenance?.unit_price)}</span>
+          </div>
+        </div>
+        <div className="screen-metric">
+          <span className="material-symbols-outlined screen-metric-icon">summarize</span>
+          <div className="screen-metric-body">
+            <span className="screen-metric-label">合价</span>
+            <span className="screen-metric-value">{money(provenance?.calc_total)}</span>
+          </div>
+        </div>
+        <div className="screen-metric">
+          <span className="material-symbols-outlined screen-metric-icon">percent</span>
+          <div className="screen-metric-body">
+            <span className="screen-metric-label">直接费占比</span>
+            <span className="screen-metric-value">
+              {bindDirectPercent}
+              <span className="screen-metric-unit">%</span>
+            </span>
+          </div>
+        </div>
+        <div className="screen-metric is-amber">
+          <span className="material-symbols-outlined screen-metric-icon">tune</span>
+          <div className="screen-metric-body">
+            <span className="screen-metric-label">调价系数</span>
+            <span className="screen-metric-value">×{currentCoeff.toFixed(2)}</span>
+          </div>
+        </div>
+        <div className="screen-metric">
+          <span className="material-symbols-outlined screen-metric-icon">receipt_long</span>
+          <div className="screen-metric-body">
+            <span className="screen-metric-label">含税合计</span>
+            <span className="screen-metric-value">{money(provenance?.calc_breakdown?.total)}</span>
+          </div>
+        </div>
+      </div>
 
-      {/* 筛选栏：项目选择、清单选择、刷新按钮 */}
-      <div className="filter-bar">
+      {/* 单行筛选条：项目、清单、刷新与导出（40px） */}
+      <div className="upa-toolbar">
         <Select
           placeholder="选择项目"
           value={selectedProjectId}
@@ -227,7 +262,7 @@ export default function UnitPriceAnalysis() {
             setSelectedBoqItemId(undefined);
           }}
           options={projects.map((project) => ({ value: project.id, label: project.name }))}
-          style={{ minWidth: 260 }}
+          style={{ width: 230 }}
           showSearch
           optionFilterProp="label"
         />
@@ -238,165 +273,166 @@ export default function UnitPriceAnalysis() {
           disabled={!selectedProjectId}
           onChange={setSelectedBoqItemId}
           options={boqItems.map((item) => ({ value: item.id, label: `${item.code} ${item.name}` }))}
-          style={{ minWidth: 360 }}
+          style={{ flex: "1 1 320px", minWidth: 180, maxWidth: 460 }}
           showSearch
           optionFilterProp="label"
         />
         <Button onClick={load} loading={loading} disabled={!selectedBoqItemId}>刷新分析</Button>
+        <span className="upa-toolbar-spacer" />
         <Button icon={<DownloadOutlined />} disabled={!provenance} onClick={exportReport}>导出报告</Button>
+        <Button onClick={() => navigate(selectedProjectId ? `/projects/${selectedProjectId}` : "/projects")}>返回项目</Button>
       </div>
 
       {!selectedBoqItemId ? (
-        <div className="content-card">
-          <div className="content-card-body">
-            <Empty description="请选择项目和清单项" />
+        <div className="upa-body">
+          <div className="upa-placeholder">
+            <span className="material-symbols-outlined">analytics</span>
+            <strong>请选择项目和清单项</strong>
+            <p>选择清单后展示综合单价构成与定额绑定明细</p>
           </div>
         </div>
       ) : loading && !provenance ? (
-        <div className="content-card">
-          <div className="content-card-body" style={{ textAlign: "center", padding: "48px 0" }}>
+        <div className="upa-body">
+          <div className="upa-placeholder">
             <Spin tip="正在加载单价分析..." />
           </div>
         </div>
       ) : (
-        <>
-          {/* 清单信息 */}
-          <div className="content-card">
-            <div className="content-card-head">
-              <h3 className="content-card-title"><span className="material-symbols-outlined">description</span>清单信息</h3>
-            </div>
-            <div className="content-card-body">
-              <div className="stat-row">
-                <div className="stat-item">
-                  <span className="stat-item-label">清单编码</span>
-                  <span className="stat-item-value">{provenance?.boq_code ?? "-"}</span>
+        <div className="upa-body">
+          {/* 清单信息：指标行 + 摘要行 */}
+          <Panel title="清单信息" icon="description" className="upa-panel upa-panel-info">
+            <div className="upa-info-main">
+              <div className="upa-info-fields">
+                <div className="upa-field">
+                  <span className="upa-field-label">清单编码</span>
+                  <b className="upa-field-value num">{provenance?.boq_code ?? "-"}</b>
                 </div>
-                <div className="stat-item">
-                  <span className="stat-item-label">清单名称</span>
-                  <span className="stat-item-value">{provenance?.boq_name ?? "-"}</span>
+                <div className="upa-field is-grow">
+                  <span className="upa-field-label">清单名称</span>
+                  <b className="upa-field-value" title={provenance?.boq_name ?? ""}>{provenance?.boq_name ?? "-"}</b>
                 </div>
-                <div className="stat-item">
-                  <span className="stat-item-label">单位</span>
-                  <span className="stat-item-value">{provenance?.boq_unit ?? "-"}</span>
+                <div className="upa-field">
+                  <span className="upa-field-label">单位</span>
+                  <b className="upa-field-value">{provenance?.boq_unit ?? "-"}</b>
                 </div>
-                <div className="stat-item">
-                  <span className="stat-item-label">工程量</span>
-                  <span className="stat-item-value">{provenance?.boq_quantity ?? "-"}</span>
+                <div className="upa-field">
+                  <span className="upa-field-label">工程量</span>
+                  <b className="upa-field-value num">{provenance?.boq_quantity ?? "-"}</b>
                 </div>
-                <div className="stat-item">
-                  <span className="stat-item-label">综合单价</span>
-                  <span className="stat-item-value accent">{money(provenance?.unit_price)}</span>
+                <div className="upa-field">
+                  <span className="upa-field-label">综合单价</span>
+                  <b className="upa-field-value num is-accent">{money(provenance?.unit_price)}</b>
                 </div>
-                <div className="stat-item">
-                  <span className="stat-item-label">合价</span>
-                  <span className="stat-item-value accent">{money(provenance?.calc_total)}</span>
+                <div className="upa-field">
+                  <span className="upa-field-label">人工价</span>
+                  <b className="upa-field-value num">{money(provenance?.price_snapshot?.labor_price)}</b>
                 </div>
-                <div className="stat-item">
-                  <span className="stat-item-label">人工价</span>
-                  <span className="stat-item-value">{money(provenance?.price_snapshot?.labor_price)}</span>
+                <div className="upa-field">
+                  <span className="upa-field-label">材料价</span>
+                  <b className="upa-field-value num">{money(provenance?.price_snapshot?.material_price)}</b>
                 </div>
-                <div className="stat-item">
-                  <span className="stat-item-label">材料价</span>
-                  <span className="stat-item-value">{money(provenance?.price_snapshot?.material_price)}</span>
+                <div className="upa-field">
+                  <span className="upa-field-label">机械价</span>
+                  <b className="upa-field-value num">{money(provenance?.price_snapshot?.machine_price)}</b>
                 </div>
-                <div className="stat-item">
-                  <span className="stat-item-label">机械价</span>
-                  <span className="stat-item-value">{money(provenance?.price_snapshot?.machine_price)}</span>
+              </div>
+              <div className="upa-info-total">
+                <div className="upa-field">
+                  <span className="upa-field-label">合计</span>
+                  <b className="upa-field-value num is-accent">{money(provenance?.calc_total)}</b>
+                </div>
+                <div className="upa-field">
+                  <span className="upa-field-label">直接费占比</span>
+                  <b className="upa-field-value num">{bindDirectPercent}%</b>
                 </div>
               </div>
             </div>
-          </div>
 
-            {/* 荒漠调价系数 */}
-            {(provenance?.bindings.length ?? 0) > 0 && (
-              <div className="content-card">
-                <div className="content-card-head">
-                  <h3 className="content-card-title"><span className="material-symbols-outlined">tune</span>荒漠调价系数</h3>
-                  <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                    按项目所在地套用，作用于全部定额绑定，综合单价与费用构成即时联动
+            {/* 调价系数与费用构成：压成一行副信息 */}
+            <div className="upa-info-sub">
+              {(provenance?.bindings.length ?? 0) > 0 ? (
+                <div className="upa-coeff">
+                  <span
+                    className="upa-coeff-label"
+                    title="荒漠区说明：平均运距 180km、技工日单价高 35%、风沙气候致机械台班利用率下降，叠加荒漠调价系数 ×1.15。"
+                  >
+                    调价系数
                   </span>
+                  <strong className="upa-coeff-value num">×{currentCoeff.toFixed(2)}</strong>
+                  <Segmented
+                    size="small"
+                    value={pendingCoeff}
+                    onChange={(value) => setPendingCoeff(Number(value))}
+                    options={[
+                      { label: "标准区 ×1.00", value: 1.0 },
+                      { label: "荒漠区 ×1.15", value: 1.15 },
+                    ]}
+                  />
+                  <InputNumber
+                    size="small"
+                    min={0.1}
+                    max={10}
+                    step={0.05}
+                    value={pendingCoeff}
+                    onChange={(value) => setPendingCoeff(Number(value ?? 1))}
+                    style={{ width: 118 }}
+                    addonBefore="自定义"
+                  />
+                  <Button size="small" type="primary" loading={applyingCoeff} onClick={applyCoefficient}>
+                    应用调价系数
+                  </Button>
                 </div>
-                <div className="content-card-body">
-                  <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
-                    <div style={{ display: "flex", alignItems: "flex-end", gap: 10 }}>
-                      <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>当前调价系数</span>
-                      <strong style={{ fontSize: 30, color: "#2dd4bf" }}>×{currentCoeff.toFixed(2)}</strong>
-                    </div>
-                    <Segmented
-                      value={pendingCoeff}
-                      onChange={(value) => setPendingCoeff(Number(value))}
-                      options={[
-                        { label: "标准区 ×1.00", value: 1.0 },
-                        { label: "荒漠区 ×1.15", value: 1.15 },
-                      ]}
-                    />
-                    <InputNumber
-                      min={0.1}
-                      max={10}
-                      step={0.05}
-                      value={pendingCoeff}
-                      onChange={(value) => setPendingCoeff(Number(value ?? 1))}
-                      style={{ width: 110 }}
-                      addonBefore="自定义"
-                    />
-                    <Button type="primary" loading={applyingCoeff} onClick={applyCoefficient}>
-                      应用调价系数
-                    </Button>
-                  </div>
-                  <p style={{ margin: "10px 0 0", fontSize: 12, color: "var(--text-secondary)" }}>
-                    荒漠区说明：平均运距 180km、技工日单价高 35%、风沙气候致机械台班利用率下降，叠加荒漠调价系数 ×1.15。
-                  </p>
-                </div>
+              ) : (
+                <span className="upa-coeff-none">未绑定定额，调价系数不可用</span>
+              )}
+              <div className="upa-fees">
+                {feeParts.map((p) => (
+                  <span key={p.label} className="upa-fee-chip" title={`${p.label} ${money(p.value)}`}>
+                    <i style={{ background: p.color }} />
+                    {p.label}
+                    <b>{p.percent}%</b>
+                  </span>
+                ))}
+                {feeConfigEntries.map(([key, value]) => (
+                  <span key={key} className="upa-fee-rate">
+                    {FEE_RATE_LABELS[key] ?? key} {(Number(value) * 100).toFixed(2)}%
+                  </span>
+                ))}
               </div>
-            )}
+            </div>
+          </Panel>
 
-            {/* 费用构成 */}
-            {feeParts.length > 0 && (
-              <div className="content-card">
-                <div className="content-card-head">
-                  <h3 className="content-card-title"><span className="material-symbols-outlined">donut_small</span>费用构成</h3>
-                  <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>含税合计 {money(provenance?.calc_breakdown?.total)}</span>
+          {/* 定额绑定：占满剩余高度，表头吸顶、合计行贴底 */}
+          <Panel
+            title={`定额绑定（${provenance?.bindings.length ?? 0} 项）`}
+            icon="link"
+            className="upa-panel upa-panel-bindings"
+            flush
+            bodyClassName="upa-bindings-body"
+            extra={
+              <span>
+                {provenance?.calc_breakdown ? `直接费占含税合计 ${bindDirectPercent}%` : "尚未计价，暂无占比"}
+              </span>
+            }
+          >
+            {!loading && (provenance?.bindings.length ?? 0) === 0 ? (
+              <div className="upa-empty">
+                <span className="material-symbols-outlined">link_off</span>
+                <div className="upa-empty-text">
+                  <strong>尚未绑定定额</strong>
+                  <span>该清单暂未绑定定额，无法计算综合单价。请在项目工作台的「定额绑定」中补充绑定后重新计价。</span>
                 </div>
-                <div className="content-card-body">
-                  <div className="quota-price-distribution">
-                    {feeParts.map((p) => (
-                      <div key={p.label} className="quota-price-bar-row">
-                        <span className="quota-price-bar-label">{p.label}</span>
-                        <div className="quota-price-bar-track">
-                          <div className="quota-price-bar-fill" style={{ width: `${p.percent}%`, background: `linear-gradient(90deg, ${p.color}, ${p.color}66)` }} />
-                        </div>
-                        <strong className="quota-price-bar-count">{money(p.value)}</strong>
-                      </div>
-                    ))}
-                  </div>
-                  {feeConfigEntries.length > 0 && (
-                    <div className="unit-fee-rates">
-                      {feeConfigEntries.map(([key, value]) => (
-                        <span key={key} className="unit-fee-rate">
-                          {FEE_RATE_LABELS[key] ?? key} {(Number(value) * 100).toFixed(2)}%
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                {selectedProjectId && (
+                  <Button size="small" type="primary" onClick={() => navigate(`/projects/${selectedProjectId}`)}>打开项目工作台</Button>
+                )}
               </div>
-            )}
-
-            {/* 定额绑定 */}
-            <div className="content-card">
-              <div className="content-card-head">
-                <h3 className="content-card-title"><span className="material-symbols-outlined">link</span>定额绑定（{provenance?.bindings.length ?? 0} 项）</h3>
-                <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                  {provenance?.calc_breakdown ? `直接费占含税合计 ${bindDirectPercent}%` : "尚未计价，暂无占比"}
-                </span>
-              </div>
-              <div className="content-card-body flush">
+            ) : (
+              <div className="upa-bindings-scroll">
                 <Table
                   rowKey="binding_id"
                   loading={loading}
                   dataSource={provenance?.bindings ?? []}
                   pagination={false}
-                  scroll={{ x: 1120 }}
                   summary={() =>
                     (provenance?.bindings.length ?? 0) > 0 ? (
                       <Table.Summary.Row>
@@ -406,15 +442,6 @@ export default function UnitPriceAnalysis() {
                       </Table.Summary.Row>
                     ) : null
                   }
-                  locale={{
-                    emptyText: (
-                      <Empty description="该清单暂未绑定定额，无法计算综合单价。请在项目工作台的「定额绑定」中补充绑定后重新计价。">
-                        {selectedProjectId && (
-                          <Button type="primary" onClick={() => navigate(`/projects/${selectedProjectId}`)}>打开项目工作台</Button>
-                        )}
-                      </Empty>
-                    ),
-                  }}
                   columns={[
                     { title: "定额编码", dataIndex: ["quota", "quota_code"], width: 140, render: (value: string) => <Tag color="blue">{value}</Tag> },
                     { title: "定额名称", dataIndex: ["quota", "quota_name"] },
@@ -441,18 +468,18 @@ export default function UnitPriceAnalysis() {
                   ]}
                 />
               </div>
-            </div>
+            )}
+          </Panel>
 
-          {/* 计算说明 */}
-          <div className="content-card">
-            <div className="content-card-head">
-              <h3 className="content-card-title"><span className="material-symbols-outlined">info</span>计算说明</h3>
-            </div>
-            <div className="content-card-body">
-              <p style={{ margin: 0 }}>{provenance?.explanation ?? "暂无说明"}</p>
-            </div>
+          {/* 计算说明：贴底窄条 */}
+          <div className="upa-explain">
+            <span className="material-symbols-outlined upa-explain-icon">info</span>
+            <span className="upa-explain-label">计算说明</span>
+            <p className="upa-explain-text" title={provenance?.explanation ?? "暂无说明"}>
+              {provenance?.explanation ?? "暂无说明"}
+            </p>
           </div>
-        </>
+        </div>
       )}
     </div>
   );

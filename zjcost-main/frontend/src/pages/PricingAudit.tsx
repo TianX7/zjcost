@@ -1,11 +1,13 @@
 import { useState } from "react";
-import { Tabs, Table, Tag, Typography } from "antd";
-import { CalculatorOutlined, AuditOutlined, FileTextOutlined, HistoryOutlined } from "@ant-design/icons";
-import PageHeader from "../components/PageHeader";
+import { Table, Tabs, Tag } from "antd";
+import type { ColumnsType } from "antd/es/table";
+import { CalculatorOutlined, AuditOutlined, FileTextOutlined } from "@ant-design/icons";
+import Panel from "../components/Panel";
 import FlowGuide from "../components/FlowGuide";
 import PricingManagement from "./PricingManagement";
 import AuditWorkbench from "./AuditWorkbench";
 import ReportsPage from "./ReportsPage";
+import "../styles/business-screen.css";
 
 const STEPS = [
   { key: "pricing", title: "清单计价", desc: "执行计价计算，生成综合单价与费用构成" },
@@ -17,11 +19,20 @@ const TAB_ICONS: Record<string, React.ReactNode> = {
   pricing: <CalculatorOutlined />,
   audit: <AuditOutlined />,
   reports: <FileTextOutlined />,
-  standards: <HistoryOutlined />,
 };
 
+interface StandardTransition {
+  key: string;
+  old_code: string;
+  old_name: string;
+  new_code: string;
+  new_name: string;
+  effective_date: string;
+  status: string;
+}
+
 // 计价标准更替对照表
-const STANDARD_TRANSITIONS = [
+const STANDARD_TRANSITIONS: StandardTransition[] = [
   {
     key: "1",
     old_code: "GB 50500-2013",
@@ -42,11 +53,11 @@ const STANDARD_TRANSITIONS = [
   },
 ];
 
-const standardsColumns = [
+const standardsColumns: ColumnsType<StandardTransition> = [
   {
     title: "旧版（已废止）",
     key: "old",
-    render: (_: any, record: any) => (
+    render: (_: unknown, record) => (
       <div>
         <div style={{ fontWeight: 600, color: "#94a3b8" }}>{record.old_code}</div>
         <div style={{ fontSize: 12, color: "#64748b" }}>{record.old_name}</div>
@@ -56,7 +67,7 @@ const standardsColumns = [
   {
     title: "现行最新版本",
     key: "new",
-    render: (_: any, record: any) => (
+    render: (_: unknown, record) => (
       <div>
         <div style={{ fontWeight: 600, color: "#38bdf8" }}>{record.new_code}</div>
         <div style={{ fontSize: 12, color: "#94a3b8" }}>{record.new_name}</div>
@@ -79,43 +90,41 @@ const standardsColumns = [
   },
 ];
 
-function StandardsComparison() {
-  return (
-    <div className="page-container">
-      <div className="content-card">
-        <div className="content-card-head">
-          <h3 className="content-card-title">
-            <HistoryOutlined /> 计价标准更替对照
-          </h3>
-        </div>
-        <div className="content-card-body">
-          <Typography.Paragraph style={{ color: "#94a3b8", marginBottom: 16 }}>
-            以下展示建设工程造价相关标准的旧版与现行最新版本对照，便于审计复核时参考标准演进关系。
-            现行标准于 2025 年 9 月 1 日起实施，旧版规范同时废止。
-          </Typography.Paragraph>
-          <Table
-            rowKey="key"
-            dataSource={STANDARD_TRANSITIONS}
-            columns={standardsColumns}
-            pagination={false}
-            bordered
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function PricingAudit() {
   const [activeKey, setActiveKey] = useState("pricing");
+  const current = STANDARD_TRANSITIONS.filter((item) => item.status === "已实施").length;
+  const retired = STANDARD_TRANSITIONS.length;
+  const activeStep = STEPS.find((step) => step.key === activeKey) ?? STEPS[0];
 
   return (
-    <div className="page-container">
-      <PageHeader
-        icon="calculate"
-        title="计价与复核"
-        subtitle="完成清单计价后，直接进行审计复核并生成成果报表，形成计价→复核→出件的工作流。"
-      />
+    <div className="page-container pa-root bs-screen-page">
+      <div className="bs-summary-strip">
+        <div className="bs-summary-item is-cyan">
+          <span className="bs-summary-label">流程阶段</span>
+          <strong className="bs-summary-value num">{STEPS.length}</strong>
+          <span className="bs-summary-hint">计价 → 复核 → 出件</span>
+        </div>
+        <div className="bs-summary-item is-cyan">
+          <span className="bs-summary-label">标准更替对照</span>
+          <strong className="bs-summary-value num">{STANDARD_TRANSITIONS.length}</strong>
+          <span className="bs-summary-hint">旧版与现行标准对照</span>
+        </div>
+        <div className="bs-summary-item is-green">
+          <span className="bs-summary-label">现行标准</span>
+          <strong className="bs-summary-value num">{current}</strong>
+          <span className="bs-summary-hint">均已实施</span>
+        </div>
+        <div className="bs-summary-item is-amber">
+          <span className="bs-summary-label">旧版（已废止）</span>
+          <strong className="bs-summary-value num">{retired}</strong>
+          <span className="bs-summary-hint">历史项目需核对依据</span>
+        </div>
+        <div className="bs-summary-item is-green">
+          <span className="bs-summary-label">实施日期</span>
+          <strong className="bs-summary-value">{STANDARD_TRANSITIONS[0]?.effective_date ?? "-"}</strong>
+          <span className="bs-summary-hint">现行标准生效日</span>
+        </div>
+      </div>
 
       {/* 工作流步骤条 */}
       <div className="workflow-stepper">
@@ -136,32 +145,68 @@ export default function PricingAudit() {
         ))}
       </div>
 
-      <Tabs
-        activeKey={activeKey}
-        onChange={setActiveKey}
-        items={[
-          {
-            key: "pricing",
-            label: <span>{TAB_ICONS.pricing} 清单计价</span>,
-            children: <PricingManagement />,
-          },
-          {
-            key: "audit",
-            label: <span>{TAB_ICONS.audit} 审计复核</span>,
-            children: <AuditWorkbench />,
-          },
-          {
-            key: "reports",
-            label: <span>{TAB_ICONS.reports} 成果报表</span>,
-            children: <ReportsPage />,
-          },
-          {
-            key: "standards",
-            label: <span>{TAB_ICONS.standards} 标准对照</span>,
-            children: <StandardsComparison />,
-          },
-        ]}
-      />
+      <div className="bs-two-col">
+        <Panel
+          title="计价复核工作台"
+          icon="fact_check"
+          extra={<Tag color="blue">当前：{activeStep.title}</Tag>}
+          bodyClassName="pa-pane"
+        >
+          <Tabs
+            className="bs-tabs"
+            activeKey={activeKey}
+            onChange={setActiveKey}
+            items={[
+              {
+                key: "pricing",
+                label: <span>{TAB_ICONS.pricing} 清单计价</span>,
+                children: <PricingManagement />,
+              },
+              {
+                key: "audit",
+                label: <span>{TAB_ICONS.audit} 审计复核</span>,
+                children: <AuditWorkbench />,
+              },
+              {
+                key: "reports",
+                label: <span>{TAB_ICONS.reports} 成果报表</span>,
+                children: <ReportsPage />,
+              },
+            ]}
+          />
+        </Panel>
+
+        <div className="bs-col-stack">
+          <Panel title="标准更替对照" icon="history" flush bodyClassName="bs-panel-table">
+            <Table
+              rowKey="key"
+              size="small"
+              dataSource={STANDARD_TRANSITIONS}
+              columns={standardsColumns}
+              pagination={false}
+              scroll={{ x: 520 }}
+            />
+            <div className="bs-panel-inset">
+              <p className="bs-section-note">
+                现行标准于 2025 年 9 月 1 日起实施，旧版规范同时废止；历史项目复核时需核对计价依据版本。
+              </p>
+            </div>
+          </Panel>
+
+          <Panel title="复核风险提示" icon="policy">
+            <div className="bs-alert warn">
+              <span className="material-symbols-outlined">warning</span>
+              <span>旧版规范已废止，沿用旧版计价的清单需在复核阶段标注依据差异。</span>
+            </div>
+            <div className="bs-kv-list" style={{ marginTop: 10 }}>
+              <div className="bs-kv-row"><span>规则校验</span><strong>计价依据版本一致性</strong></div>
+              <div className="bs-kv-row"><span>计价审查</span><strong>综合单价与费用构成</strong></div>
+              <div className="bs-kv-row"><span>风险提示</span><strong>废止标准引用与缺项</strong></div>
+            </div>
+          </Panel>
+        </div>
+      </div>
+
       <FlowGuide current="pricing" />
     </div>
   );
