@@ -1289,6 +1289,275 @@
   }
 }
 
+/* ─── 3D 厂区场景（光伏 / 水处理 / 设备） ─────────────────── */
+
+.ops-3d-root {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.ops-3d-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  cursor: grab;
+  touch-action: none;
+  outline: none;
+}
+
+.ops-3d-canvas:active {
+  cursor: grabbing;
+}
+
+.ops-3d-leaders {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.ops-3d-leader {
+  stroke: rgba(125, 233, 255, 0.36);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+  stroke-linecap: round;
+}
+
+.ops-3d-leader.warn {
+  stroke: rgba(251, 191, 36, 0.55);
+}
+
+.ops-3d-leader.alarm {
+  stroke: rgba(248, 113, 113, 0.6);
+}
+
+.ops-3d-anchor {
+  fill: #9ff2ff;
+  filter: drop-shadow(0 0 6px rgba(77, 212, 255, 0.85));
+}
+
+.ops-3d-anchor.warn {
+  fill: #fbbf24;
+  filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.8));
+}
+
+.ops-3d-anchor.alarm {
+  fill: #f87171;
+  filter: drop-shadow(0 0 6px rgba(248, 113, 113, 0.8));
+}
+
+.ops-3d-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0;
+  will-change: opacity;
+}
+
+.ops-3d-tag {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px 10px 6px;
+  border: 1px solid rgba(96, 190, 255, 0.26);
+  border-left: 2px solid rgba(77, 212, 255, 0.85);
+  border-radius: 5px;
+  background:
+    linear-gradient(135deg, rgba(8, 26, 48, 0.95), rgba(5, 16, 30, 0.82));
+  box-shadow:
+    0 8px 22px rgba(2, 10, 24, 0.5),
+    inset 0 1px 0 rgba(148, 200, 255, 0.1);
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  will-change: transform;
+  transition: box-shadow 0.3s ease;
+}
+
+.ops-3d-tag em {
+  font-style: normal;
+  font-size: 10px;
+  line-height: 1.2;
+  letter-spacing: 0.05em;
+  color: rgba(146, 184, 216, 0.95);
+}
+
+.ops-3d-tag strong {
+  font-size: 13px;
+  line-height: 1.25;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #e4f7ff;
+  text-shadow: 0 0 10px rgba(77, 212, 255, 0.3);
+}
+
+.ops-3d-tag.warn {
+  border-left-color: rgba(251, 191, 36, 0.9);
+  border-color: rgba(251, 191, 36, 0.28);
+  box-shadow:
+    0 8px 20px rgba(2, 10, 24, 0.45),
+    0 0 14px rgba(251, 191, 36, 0.1),
+    inset 0 1px 0 rgba(255, 220, 150, 0.12);
+}
+
+.ops-3d-tag.warn strong {
+  color: #ffd980;
+  text-shadow: 0 0 10px rgba(251, 191, 36, 0.32);
+}
+
+.ops-3d-tag.alarm {
+  border-left-color: rgba(248, 113, 113, 0.95);
+  border-color: rgba(248, 113, 113, 0.3);
+  box-shadow:
+    0 8px 20px rgba(2, 10, 24, 0.45),
+    0 0 16px rgba(248, 113, 113, 0.14),
+    inset 0 1px 0 rgba(255, 170, 170, 0.12);
+}
+
+.ops-3d-tag.alarm strong {
+  color: #ffb3b3;
+  text-shadow: 0 0 12px rgba(248, 113, 113, 0.36);
+}
+
+.ops-3d-tag.ok strong {
+  color: #c8f4ff;
+}
+
+.ops-3d-toolbar {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 4;
+  display: flex;
+  gap: 5px;
+  opacity: 0;
+  transition: opacity 0.4s ease 0.2s;
+}
+
+.ops-3d-toolbar.ready {
+  opacity: 1;
+}
+
+.ops-3d-tool {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid rgba(96, 190, 255, 0.24);
+  border-radius: 50%;
+  background: rgba(6, 22, 44, 0.74);
+  color: rgba(149, 183, 211, 0.9);
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ops-3d-tool:hover {
+  color: #9ff2ff;
+  border-color: rgba(77, 212, 255, 0.55);
+  background: rgba(77, 212, 255, 0.14);
+  box-shadow: 0 0 14px rgba(77, 212, 255, 0.22);
+}
+
+.ops-3d-tool.active {
+  color: #9ff2ff;
+  border-color: rgba(77, 212, 255, 0.55);
+  background: rgba(77, 212, 255, 0.16);
+}
+
+.ops-3d-tool .material-symbols-outlined {
+  font-size: 15px;
+}
+
+.ops-3d-hint {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  z-index: 4;
+  padding: 3px 8px;
+  border: 1px solid rgba(96, 190, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(5, 18, 34, 0.55);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: rgba(127, 166, 201, 0.8);
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.ops-3d-legend {
+  position: absolute;
+  left: 10px;
+  bottom: 8px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 9px;
+  border: 1px solid rgba(96, 190, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(5, 18, 34, 0.5);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: rgba(127, 166, 201, 0.8);
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.ops-3d-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ops-3d-legend i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #4dd4ff;
+  box-shadow: 0 0 6px rgba(77, 212, 255, 0.8);
+}
+
+.ops-3d-legend i.warn {
+  background: #fbbf24;
+  box-shadow: 0 0 6px rgba(251, 191, 36, 0.8);
+}
+
+.ops-3d-legend i.alarm {
+  background: #f87171;
+  box-shadow: 0 0 6px rgba(248, 113, 113, 0.8);
+}
+
+@media (max-width: 1180px) {
+  .ops-3d-hint {
+    display: none;
+  }
+
+  .ops-3d-legend {
+    gap: 7px;
+    padding: 2px 7px;
+    font-size: 8.5px;
+  }
+}
+
 /* ─── 动效降级：全部静止 ───────────────────────────────────── */
 
 @media (prefers-reduced-motion: reduce) {

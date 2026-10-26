@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { message } from "antd";
 import Panel from "../components/Panel";
+import OpsScene3D from "../components/OpsScene3D";
 import "../styles/ops-screen.css";
 
 /* ─────────────────────────────────────────────────────────────
@@ -402,42 +403,6 @@ function AnimatedBars({ items, color, unit, target, targetLabel = "计划" }: {
   );
 }
 
-/** 管线/线路慢速流动光点：线性匀速，首尾无缝；减弱动效时不渲染 */
-function FlowDots({ path, dur = 12, color = "#7dd3fc", r = 2.6, count = 2, opacity = 0.7 }: {
-  path: string; dur?: number; color?: string; r?: number; count?: number; opacity?: number;
-}) {
-  const reduced = usePrefersReducedMotion();
-  if (reduced) return null;
-  return (
-    <>
-      {Array.from({ length: count }).map((_, i) => (
-        <circle key={i} r={r} fill={color} opacity={opacity}>
-          <animateMotion
-            dur={`${dur}s`}
-            begin={`${-(i * dur) / count}s`}
-            repeatCount="indefinite"
-            calcMode="linear"
-            path={path}
-          />
-        </circle>
-      ))}
-    </>
-  );
-}
-
-/** 场景读数气泡：挂在小体块上方，展示现有指标 */
-function StageBubble({ x, y, w = 156, title, value, color = "#7dd3fc" }: {
-  x: number; y: number; w?: number; title: string; value: string; color?: string;
-}) {
-  return (
-    <g>
-      <rect x={x} y={y} width={w} height="40" rx="4" fill="rgba(5, 17, 30, 0.88)" stroke={color} strokeOpacity="0.4" strokeWidth="0.7" />
-      <text x={x + 8} y={y + 15} fill="#93a9bb" fontSize="13" letterSpacing="0.3">{title}</text>
-      <text x={x + 8} y={y + 32} fill={color} fontSize="16" fontWeight="700">{value}</text>
-    </g>
-  );
-}
-
 /* ═══════════════ 光伏发电监测 ═══════════════ */
 
 const MONTHS = ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"];
@@ -462,15 +427,6 @@ export function PvPowerPage() {
   const monthTotal = MONTH_PV.reduce((a, b) => a + b, 0);
 
   // 厂区电力路径：屋面阵列 → 汇流箱 → 逆变器 → 配电房 → 厂区负荷 / 并网点
-  const pvWires = [
-    "M 300 300 V 340 H 127 V 448",
-    "M 127 478 V 492 H 250",
-    "M 302 486 H 420",
-    "M 470 440 V 430 H 330",
-    "M 530 486 H 850",
-    "M 904 486 H 962",
-  ];
-
   const [live, setLive] = useState<number[]>(() => Array.from({ length: 30 }, (_, i) => 18 + Math.sin(i / 4) * 12));
   const [irrLive, setIrrLive] = useState<number[]>(() => Array.from({ length: 30 }, (_, i) => 240 + Math.sin(i / 5) * 170));
   useEffect(() => {
@@ -499,6 +455,13 @@ export function PvPowerPage() {
       dot: level === "ok" ? "normal" : "warn",
     };
   });
+
+  // 场景节点色调取三台逆变器中最严重的一台
+  const pvTone = inverters.some((inv) => inv.level === "alarm")
+    ? "alarm"
+    : inverters.some((inv) => inv.level === "warn")
+      ? "warn"
+      : "ok";
 
   // 动态检测：阈值判定 → 预警/告警 → 处置建议 → 联动运维
   const pvAlerts: OpsAlert[] = [];
@@ -622,198 +585,69 @@ export function PvPowerPage() {
             </div>
 
             <div className="ops-stage-scene">
-              <svg
-                className="ops-scene-svg"
-                viewBox="0 0 1000 620"
-                preserveAspectRatio="xMidYMid meet"
-                role="img"
-                aria-label="厂区屋面光伏与并网路径数字孪生场景"
-              >
-                <defs>
-                  <linearGradient id="pv-ground" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#0c1824" />
-                    <stop offset="100%" stopColor="#070f19" />
-                  </linearGradient>
-                  <linearGradient id="pv-wall" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#33465a" />
-                    <stop offset="100%" stopColor="#22323f" />
-                  </linearGradient>
-                  <linearGradient id="pv-roof" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0%" stopColor="#223142" />
-                    <stop offset="100%" stopColor="#131e2a" />
-                  </linearGradient>
-                  <linearGradient id="pv-panel" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0%" stopColor="#24506f" />
-                    <stop offset="100%" stopColor="#12293d" />
-                  </linearGradient>
-                  <linearGradient id="pv-cabinet" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#233243" />
-                    <stop offset="100%" stopColor="#141f2b" />
-                  </linearGradient>
-                </defs>
-
-                {/* 厂区地坪与坐标网格 */}
-                <rect x="0" y="56" width="1000" height="564" fill="url(#pv-ground)" />
-                <g stroke="#5c6b7a" strokeOpacity="0.13" strokeWidth="0.7">
-                  {Array.from({ length: 15 }).map((_, i) => (
-                    <line key={`gx-${i}`} x1={i * 70} y1="56" x2={i * 70} y2="620" />
-                  ))}
-                  {Array.from({ length: 8 }).map((_, i) => (
-                    <line key={`gy-${i}`} x1="0" y1={80 + i * 70} x2="1000" y2={80 + i * 70} />
-                  ))}
-                </g>
-
-                {/* 绿化带与厂区道路 */}
-                <rect x="24" y="520" width="952" height="16" fill="#22352f" stroke="#4c6b5e" strokeOpacity="0.4" strokeWidth="0.7" />
-                {Array.from({ length: 20 }).map((_, i) => (
-                  <rect key={`hedge-${i}`} x={40 + i * 47} y="524" width="30" height="8" fill="#2c4a3e" />
-                ))}
-                <rect x="24" y="544" width="952" height="48" fill="#0e1924" stroke="#5c6b7a" strokeWidth="0.7" />
-                <line x1="34" y1="568" x2="966" y2="568" stroke="#8d99a6" strokeOpacity="0.3" strokeDasharray="18 16" strokeWidth="0.9" />
-
-                {/* 设备基础平台 */}
-                <rect x="48" y="436" width="904" height="82" fill="#152230" stroke="#5c6b7a" strokeWidth="0.7" />
-
-                {/* 主厂房：锯齿采光屋顶 + 满铺屋面光伏 */}
-                <polygon points="70,300 540,300 640,236 170,236" fill="url(#pv-roof)" stroke="#8d99a6" strokeWidth="1.4" strokeLinejoin="round" />
-                <rect x="70" y="300" width="470" height="130" fill="url(#pv-wall)" stroke="#8d99a6" strokeWidth="1.4" />
-                {[0, 1, 2, 3].map((i) => {
-                  const x = 210 + i * 105;
-                  return (
-                    <g key={`tooth-${i}`}>
-                      <polygon points={`${x},236 ${x + 58},236 ${x + 58},218 ${x + 30},218`} fill="#1b2b3a" stroke="#8d99a6" strokeWidth="1" />
-                      <polygon points={`${x + 34},236 ${x + 54},236 ${x + 54},220 ${x + 34},220`} fill="#6fa8c8" fillOpacity="0.24" stroke="#6fa8c8" strokeWidth="0.7" />
-                    </g>
-                  );
-                })}
-                {Array.from({ length: 4 }).map((_, r) => (
-                  <g key={`pv-row-${r}`}>
-                    {Array.from({ length: 9 }).map((_, c) => {
-                      const x = 96 + r * 25 + c * 47;
-                      const y = 294 - r * 16;
-                      return (
-                        <polygon
-                          key={`pv-cell-${r}-${c}`}
-                          points={`${x},${y} ${x + 41},${y} ${x + 48},${y - 11} ${x + 7},${y - 11}`}
-                          fill="url(#pv-panel)"
-                          stroke="#6fa8c8"
-                          strokeOpacity="0.5"
-                          strokeWidth="0.7"
-                        />
-                      );
-                    })}
-                  </g>
-                ))}
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <rect key={`win-${i}`} x={94 + i * 72} y="330" width="50" height="14" fill="#6fa8c8" fillOpacity="0.16" stroke="#6fa8c8" strokeOpacity="0.4" strokeWidth="0.7" />
-                ))}
-                {[70, 164, 258, 352, 446, 540].map((x) => (
-                  <line key={`col-${x}`} x1={x} y1="300" x2={x} y2="430" stroke="#5c6b7a" strokeWidth="0.7" />
-                ))}
-                <rect x="120" y="384" width="72" height="46" fill="#1b2937" stroke="#8d99a6" strokeWidth="0.7" />
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <line key={`door-${i}`} x1="126" y1={390 + i * 9} x2="186" y2={390 + i * 9} stroke="#5c6b7a" strokeWidth="0.7" />
-                ))}
-                <text x="232" y="410" fill="#c7d6e2" fontSize="17" letterSpacing="1">厂区负荷 · 生产车间</text>
-                <text x="70" y="206" fill="#d6e4ef" fontSize="19" fontWeight="700">主厂房 · 屋面光伏</text>
-                <text x="70" y="222" fill="#8fa7ba" fontSize="16">锯齿采光带 · 组串 18 · 装机 68 kWp</text>
-
-                {/* 排风塔（先画，底部由辅房屋面遮挡） */}
-                <rect x="826" y="206" width="26" height="160" fill="#1b2937" stroke="#8d99a6" strokeWidth="1.4" />
-                <rect x="820" y="198" width="38" height="10" fill="#5c6b7a" />
-                {[230, 256, 282, 308, 334].map((y) => (
-                  <line key={`stack-${y}`} x1="826" y1={y} x2="852" y2={y} stroke="#5c6b7a" strokeWidth="0.7" />
-                ))}
-                <line x1="839" y1="198" x2="839" y2="178" stroke="#8d99a6" strokeWidth="0.7" />
-                <text x="839" y="170" textAnchor="middle" fill="#9fb0bf" fontSize="16">排风塔</text>
-
-                {/* 辅房 */}
-                <polygon points="590,360 800,360 850,322 640,322" fill="url(#pv-roof)" stroke="#8d99a6" strokeWidth="1.4" strokeLinejoin="round" />
-                <rect x="590" y="360" width="210" height="76" fill="url(#pv-wall)" stroke="#8d99a6" strokeWidth="1.4" />
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <polygon
-                    key={`aux-pv-${i}`}
-                    points={`${664 + i * 46},350 ${695 + i * 46},350 ${706 + i * 46},340 ${675 + i * 46},340`}
-                    fill="url(#pv-panel)"
-                    stroke="#6fa8c8"
-                    strokeOpacity="0.45"
-                    strokeWidth="0.7"
-                  />
-                ))}
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <rect key={`aux-win-${i}`} x={608 + i * 64} y="378" width="44" height="12" fill="#6fa8c8" fillOpacity="0.16" stroke="#6fa8c8" strokeOpacity="0.35" strokeWidth="0.7" />
-                ))}
-                <rect x="726" y="402" width="38" height="34" fill="#1b2937" stroke="#8d99a6" strokeWidth="0.7" />
-                <text x="600" y="314" fill="#a9bccb" fontSize="16">辅房 · 配电 / 控制</text>
-
-                {/* 汇流箱 */}
-                <rect x="104" y="448" width="46" height="30" rx="1.5" fill="url(#pv-cabinet)" stroke="#8d99a6" strokeWidth="1" />
-                {Array.from({ length: 4 }).map((_, i) => (
-                  <line key={`comb-louver-${i}`} x1="110" y1={455 + i * 5} x2="128" y2={455 + i * 5} stroke="#5c6b7a" strokeWidth="0.7" />
-                ))}
-                <circle cx="143" cy="454" r="2" fill="#4dd4ff" />
-                <text x="127" y="494" textAnchor="middle" fill="#9fb0bf" fontSize="16">汇流箱</text>
-
-                {/* 逆变器站：双柜 + 散热百叶 */}
-                {[0, 1].map((i) => (
-                  <g key={`inv-${i}`}>
-                    <rect x={250 + i * 58} y="442" width="52" height="72" fill="url(#pv-cabinet)" stroke="#8d99a6" strokeWidth="1" />
-                    {Array.from({ length: 7 }).map((_, k) => (
-                      <line key={`inv-louver-${k}`} x1={256 + i * 58} y1={458 + k * 6} x2={296 + i * 58} y2={458 + k * 6} stroke="#5c6b7a" strokeWidth="0.7" />
-                    ))}
-                    <rect x={272 + i * 58} y="448" width="16" height="8" fill="#22303d" stroke="#6fa8c8" strokeOpacity="0.4" strokeWidth="0.7" />
-                  </g>
-                ))}
-                <circle cx="258" cy="450" r="2" fill={inverters[0].level === "ok" ? "#4dd4ff" : LEVEL_COLOR[inverters[0].level]} />
-                <circle cx="316" cy="450" r="2" fill={inverters[1].level === "ok" ? "#4dd4ff" : LEVEL_COLOR[inverters[1].level]} />
-                <text x="308" y="432" textAnchor="middle" fill="#c7d6e2" fontSize="16.5">逆变器站 · INV-01~03</text>
-
-                {/* 10kV 配电房 */}
-                <rect x="420" y="440" width="110" height="72" fill="#1b2937" stroke="#8d99a6" strokeWidth="1.4" />
-                <rect x="420" y="440" width="110" height="10" fill="#5c6b7a" stroke="#8d99a6" strokeWidth="0.7" />
-                <rect x="470" y="456" width="52" height="52" fill="#233240" stroke="#5c6b7a" strokeWidth="0.7" />
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <line key={`pd-louver-${i}`} x1="476" y1={462 + i * 7} x2="516" y2={462 + i * 7} stroke="#5c6b7a" strokeWidth="0.7" />
-                ))}
-                <rect x="428" y="462" width="30" height="46" fill="#22303d" stroke="#5c6b7a" strokeWidth="0.7" />
-                <text x="475" y="432" textAnchor="middle" fill="#c7d6e2" fontSize="16.5">10kV 配电房</text>
-
-                {/* 电网并网点柜 */}
-                <rect x="850" y="446" width="54" height="66" fill="url(#pv-cabinet)" stroke="#8d99a6" strokeWidth="1" />
-                <circle cx="877" cy="470" r="11" fill="none" stroke="#6fa8c8" strokeWidth="0.7" />
-                <line x1="877" y1="470" x2="883" y2="463" stroke="#7dd3fc" strokeWidth="0.7" />
-                <line x1="858" y1="492" x2="896" y2="492" stroke="#5c6b7a" strokeWidth="0.7" />
-                <text x="877" y="438" textAnchor="middle" fill="#c7d6e2" fontSize="16.5">电网并网点</text>
-
-                {/* 门式起重机 */}
-                <g stroke="#8d99a6" strokeWidth="1" fill="none">
-                  <line x1="600" y1="588" x2="600" y2="506" />
-                  <line x1="760" y1="588" x2="760" y2="506" />
-                  <rect x="596" y="500" width="168" height="8" fill="#5c6b7a" stroke="#8d99a6" strokeWidth="0.7" />
-                  <line x1="600" y1="588" x2="640" y2="508" />
-                  <line x1="760" y1="588" x2="720" y2="508" />
-                  <rect x="676" y="508" width="12" height="10" fill="#22303d" stroke="#8d99a6" strokeWidth="0.7" />
-                  <line x1="682" y1="518" x2="682" y2="542" />
-                  <path d="M 675 542 h 14 v 7 h -14 z" fill="#5c6b7a" stroke="#8d99a6" strokeWidth="0.7" />
-                </g>
-                <text x="682" y="492" textAnchor="middle" fill="#8fa7ba" fontSize="15">门式起重机</text>
-
-                {/* 电力路径：正交折线 + 慢速流动光点 */}
-                {pvWires.map((d, i) => (
-                  <path key={`wire-${i}`} d={d} fill="none" stroke="#5c6b7a" strokeWidth="1.1" strokeLinejoin="round" strokeLinecap="round" />
-                ))}
-                {pvWires.map((d, i) => (
-                  <path key={`live-${i}`} d={d} fill="none" stroke="#4dd4ff" strokeWidth="0.7" strokeOpacity="0.6" strokeLinejoin="round" strokeLinecap="round" />
-                ))}
-                <FlowDots path={pvWires[0]} dur={13} count={2} />
-                <FlowDots path={pvWires[1]} dur={11} count={1} />
-                <FlowDots path={pvWires[2]} dur={12} count={1} />
-                <FlowDots path={pvWires[3]} dur={10} count={1} color="#fbbf24" opacity={0.75} />
-                <FlowDots path={pvWires[4]} dur={14} count={2} />
-                <FlowDots path={pvWires[5]} dur={10} count={1} color="#fbbf24" opacity={0.75} />
-                <polygon points="962,486 950,480 950,492" fill="#7dd3fc" fillOpacity="0.8" />
-                <text x="962" y="474" textAnchor="end" fill="#8fa7ba" fontSize="15">公共电网</text>
-              </svg>
+                            <OpsScene3D
+                kind="pv"
+                ariaLabel="厂区屋面光伏与并网路径数字孪生场景"
+                data={{
+                  power,
+                  gridExport,
+                  inverters: inverters.map(({ id, level, power: invPower }) => ({ id, level, power: invPower })),
+                }}
+                tags={[
+                  {
+                    key: "roof",
+                    label: "主厂房 · 屋面光伏",
+                    value: `68 kWp · ${fmt(power, 1)} kW`,
+                    anchor: [-195, 70, 55],
+                    offset: [-150, -66],
+                  },
+                  {
+                    key: "aux",
+                    label: "辅房 · 配电控制",
+                    value: "并网监控 · 正常",
+                    anchor: [195, 46, 88],
+                    offset: [58, -54],
+                    tone: "ok",
+                  },
+                  {
+                    key: "combiner",
+                    label: "汇流箱",
+                    value: "18 进 1 · 在线",
+                    anchor: [-373, 38, 153],
+                    offset: [-76, -46],
+                  },
+                  {
+                    key: "inverter",
+                    label: "逆变器站 INV-01~03",
+                    value: `3/3 在线 · ${fmt(power, 1)} kW`,
+                    anchor: [-185, 60, 180],
+                    offset: [-24, -66],
+                    tone: pvTone,
+                  },
+                  {
+                    key: "substation",
+                    label: "10kV 配电房",
+                    value: "保护正常 · 并网中",
+                    anchor: [-25, 52, 166],
+                    offset: [-46, 46],
+                    tone: "ok",
+                  },
+                  {
+                    key: "grid",
+                    label: "电网并网点",
+                    value: `${fmt(gridExport, 1)} kW 上网`,
+                    anchor: [377, 46, 169],
+                    offset: [54, -48],
+                  },
+                  {
+                    key: "crane",
+                    label: "门式起重机",
+                    value: "检修位 · 待机",
+                    anchor: [180, 94, 180],
+                    offset: [82, 20],
+                  },
+                ]}
+              />
             </div>
 
             <div className="ops-stage-overlay ops-stage-overlay-bottom">
@@ -958,29 +792,6 @@ export function WaterReusePage() {
     { key: "mid", name: "中水池", note: "回用调蓄", x: 60, y: 386, w: 140, h: 118, level: tanks[1].level },
     { key: "clr", name: "清水池", note: "消毒出水", x: 430, y: 386, w: 170, h: 118, level: tanks[2].level },
   ];
-  const waterWires = [
-    "M 224 252 H 260",
-    "M 400 252 H 436",
-    "M 600 252 H 632 V 400 H 660",
-    "M 660 432 H 600",
-    "M 430 432 H 380",
-    "M 240 432 H 200",
-    "M 130 504 V 542 H 930",
-  ];
-  const waterValves = [
-    { x: 248, y: 252 },
-    { x: 424, y: 252 },
-    { x: 410, y: 432 },
-    { x: 224, y: 432 },
-    { x: 700, y: 542 },
-  ];
-  const dailyUse = [
-    { label: "绿化浇灌", value: 22 },
-    { label: "冲厕", value: 18 },
-    { label: "道路浇洒", value: 10 },
-    { label: "景观补水", value: 8 },
-  ];
-
   return (
     <div className="ops-screen ops-screen-page">
       <div className="ops-columns">
@@ -1066,200 +877,81 @@ export function WaterReusePage() {
             </div>
 
             <div className="ops-stage-scene">
-              <svg
-                className="ops-scene-svg"
-                viewBox="0 0 1000 620"
-                preserveAspectRatio="xMidYMid meet"
-                role="img"
-                aria-label="厂区水处理站工艺与池体液位数字孪生场景"
-              >
-                <defs>
-                  <linearGradient id="wt-ground" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#0b1823" />
-                    <stop offset="100%" stopColor="#06101a" />
-                  </linearGradient>
-                  <linearGradient id="wt-water" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#4dd4ff" stopOpacity="0.38" />
-                    <stop offset="100%" stopColor="#2a9fc4" stopOpacity="0.12" />
-                  </linearGradient>
-                  <linearGradient id="wt-wall" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#263442" />
-                    <stop offset="100%" stopColor="#17222e" />
-                  </linearGradient>
-                  <linearGradient id="wt-roof" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0%" stopColor="#223142" />
-                    <stop offset="100%" stopColor="#131e2a" />
-                  </linearGradient>
-                </defs>
-
-                {/* 站区地坪 */}
-                <rect x="0" y="60" width="1000" height="560" fill="url(#wt-ground)" />
-                <g stroke="#5c6b7a" strokeOpacity="0.12" strokeWidth="0.7">
-                  {Array.from({ length: 15 }).map((_, i) => (
-                    <line key={`wgx-${i}`} x1={i * 70} y1="60" x2={i * 70} y2="620" />
-                  ))}
-                  {Array.from({ length: 8 }).map((_, i) => (
-                    <line key={`wgy-${i}`} x1="0" y1={80 + i * 70} x2="1000" y2={80 + i * 70} />
-                  ))}
-                </g>
-                <text x="60" y="92" fill="#d6e4ef" fontSize="19" fontWeight="700">厂区水处理站 · 预处理 + 生化 + MBR + 消毒</text>
-                <text x="60" y="108" fill="#8fa7ba" fontSize="16">构筑物剖面 · 管廊低位敷设 · 中水回用至厂区</text>
-
-                {/* 池体：混凝土池壁 + 半透明水位 + 液面波纹 */}
-                {basins.map((b) => {
-                  const innerW = b.w - 14;
-                  const innerH = b.h - 14;
-                  const fillH = Math.max(6, (innerH * b.level) / 100);
-                  const surfaceY = b.y + b.h - 7 - fillH;
-                  const low = b.level < 30;
-                  return (
-                    <g key={b.key}>
-                      <rect x={b.x} y={b.y} width={b.w} height={b.h} fill="#16232f" stroke="#8d99a6" strokeWidth="1.4" />
-                      <rect x={b.x + 7} y={b.y + 7} width={innerW} height={innerH} fill="#08141f" stroke="#5c6b7a" strokeWidth="0.7" />
-                      <rect x={b.x + 7} y={surfaceY} width={innerW} height={fillH} fill="url(#wt-water)" />
-                      <line x1={b.x + 7} y1={surfaceY} x2={b.x + b.w - 7} y2={surfaceY} stroke="#7dd3fc" strokeOpacity="0.45" strokeWidth="0.7" />
-                      <path d={`M ${b.x + 14} ${surfaceY + 6} q 18 -3 36 0 t 36 0 t 36 0`} fill="none" stroke="#9fdcf2" strokeOpacity="0.3" strokeWidth="0.7" />
-                      <path d={`M ${b.x + 20} ${surfaceY + 12} q 18 3 36 0 t 36 0`} fill="none" stroke="#9fdcf2" strokeOpacity="0.2" strokeWidth="0.7" />
-                      <line
-                        x1={b.x + 7} y1={b.y + b.h - 7 - innerH * 0.3}
-                        x2={b.x + b.w - 7} y2={b.y + b.h - 7 - innerH * 0.3}
-                        stroke="#fbbf24" strokeOpacity="0.28" strokeWidth="0.7" strokeDasharray="4 4"
-                      />
-                      <text x={b.x + 12} y={b.y + 20} fill="#c7d6e2" fontSize="16.5" fontWeight="700">{b.name}</text>
-                      <text x={b.x + 12} y={b.y + 33} fill="#8fa7ba" fontSize="14.5">{b.note} · 液位 {b.level}%</text>
-                      {low && <text x={b.x + b.w - 10} y={b.y + 20} textAnchor="end" fill="#fbbf24" fontSize="14.5">低液位</text>}
-                    </g>
-                  );
-                })}
-
-                {/* 加药间 */}
-                <polygon points="680,156 900,156 920,132 700,132" fill="url(#wt-roof)" stroke="#8d99a6" strokeWidth="1.4" strokeLinejoin="round" />
-                <rect x="680" y="156" width="220" height="138" fill="url(#wt-wall)" stroke="#8d99a6" strokeWidth="1.4" />
-                <rect x="690" y="182" width="200" height="102" fill="#101b27" stroke="#5c6b7a" strokeWidth="0.7" />
-                <text x="696" y="174" fill="#c7d6e2" fontSize="16.5">加药间</text>
-                {[0, 1].map((i) => (
-                  <g key={`dose-${i}`}>
-                    <circle cx={728 + i * 56} cy="234" r="18" fill="#1a2c3a" stroke="#8d99a6" strokeWidth="1" />
-                    <path d={`M ${710 + i * 56} 240 h 36`} stroke="#fbbf24" strokeOpacity="0.5" strokeWidth="0.7" />
-                    <text x={728 + i * 56} y="272" textAnchor="middle" fill="#8fa7ba" fontSize="14">{i === 0 ? "PAC" : "次氯"}</text>
-                  </g>
-                ))}
-                <rect x="820" y="220" width="34" height="22" fill="#1a2c3a" stroke="#8d99a6" strokeWidth="0.7" />
-                <line x1="798" y1="252" x2="820" y2="252" stroke="#5c6b7a" strokeWidth="0.7" />
-                <text x="837" y="258" textAnchor="middle" fill="#8fa7ba" fontSize="14">计量泵</text>
-
-                {/* 泵房 */}
-                <polygon points="240,372 380,372 400,348 260,348" fill="url(#wt-roof)" stroke="#8d99a6" strokeWidth="1.4" strokeLinejoin="round" />
-                <rect x="240" y="372" width="140" height="132" fill="url(#wt-wall)" stroke="#8d99a6" strokeWidth="1.4" />
-                <text x="250" y="390" fill="#c7d6e2" fontSize="16.5">泵房</text>
-                <rect x="256" y="404" width="46" height="86" fill="#101b27" stroke="#5c6b7a" strokeWidth="0.7" />
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <line key={`pump-door-${i}`} x1="262" y1={410 + i * 13} x2="296" y2={410 + i * 13} stroke="#5c6b7a" strokeWidth="0.7" />
-                ))}
-                {[0, 1].map((i) => (
-                  <g key={`pump-${i}`}>
-                    <circle cx={324 + i * 34} cy="438" r="12" fill="none" stroke="#8d99a6" strokeWidth="1" />
-                    <line x1={324 + i * 34} y1="426" x2={324 + i * 34} y2="450" stroke="#6fa8c8" strokeWidth="0.7" />
-                    <line x1={312 + i * 34} y1="438" x2={336 + i * 34} y2="438" stroke="#6fa8c8" strokeWidth="0.7" />
-                    <rect x={314 + i * 34} y="464" width="22" height="16" fill="#1a2c3a" stroke="#5c6b7a" strokeWidth="0.7" />
-                  </g>
-                ))}
-
-                {/* MBR 膜车间（剖面） */}
-                <polygon points="660,348 940,348 912,318 688,318" fill="url(#wt-roof)" stroke="#8d99a6" strokeWidth="1.4" strokeLinejoin="round" />
-                <rect x="660" y="348" width="280" height="156" fill="url(#wt-wall)" stroke="#8d99a6" strokeWidth="1.4" />
-                <line x1="660" y1="332" x2="940" y2="332" stroke="#6fa8c8" strokeOpacity="0.35" strokeWidth="0.7" />
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <line key={`truss-${i}`} x1={690 + i * 52} y1="318" x2={690 + i * 52} y2="348" stroke="#5c6b7a" strokeWidth="0.7" />
-                ))}
-                <text x="674" y="366" fill="#c7d6e2" fontSize="16.5" fontWeight="700">MBR 膜车间（剖面）</text>
-                {[0, 1, 2].map((i) => (
-                  <g key={`rack-${i}`}>
-                    <rect x={678 + i * 84} y="380" width="70" height="84" fill="#101b27" stroke="#8d99a6" strokeWidth="1" />
-                    {Array.from({ length: 7 }).map((_, k) => (
-                      <line key={`membrane-${k}`} x1={683 + i * 84 + k * 10} y1="386" x2={683 + i * 84 + k * 10} y2="458" stroke="#6fa8c8" strokeOpacity="0.4" strokeWidth="0.7" />
-                    ))}
-                    <line x1={678 + i * 84} y1="466" x2={748 + i * 84} y2="466" stroke="#4dd4ff" strokeOpacity="0.4" strokeWidth="0.7" />
-                    <text x={713 + i * 84} y="478" textAnchor="middle" fill="#8fa7ba" fontSize="14">膜组 {i + 1}</text>
-                  </g>
-                ))}
-                <line x1="666" y1="486" x2="934" y2="486" stroke="#5c6b7a" strokeWidth="0.7" />
-                <text x="930" y="500" textAnchor="end" fill="#8fa7ba" fontSize="14">曝气总管</text>
-
-                {/* 工艺管道：双线 + 阀门 + 流向箭头 */}
-                {waterWires.map((d, i) => (
-                  <path key={`wp-${i}`} d={d} fill="none" stroke="#5c6b7a" strokeWidth="1.1" strokeLinejoin="round" strokeLinecap="round" />
-                ))}
-                {waterWires.map((d, i) => (
-                  <path key={`wpc-${i}`} d={d} fill="none" stroke="#0b1824" strokeWidth="0.7" strokeLinejoin="round" strokeLinecap="round" />
-                ))}
-                {waterWires.map((d, i) => (
-                  <path key={`wpl-${i}`} d={d} fill="none" stroke="#4dd4ff" strokeWidth="0.7" strokeOpacity="0.32" strokeLinejoin="round" strokeLinecap="round" />
-                ))}
-                {waterValves.map((v, i) => (
-                  <g key={`valve-${i}`} stroke="#8d99a6" strokeWidth="0.7" fill="none">
-                    <polygon points={`${v.x - 7},${v.y - 5} ${v.x - 7},${v.y + 5} ${v.x},${v.y}`} />
-                    <polygon points={`${v.x + 7},${v.y - 5} ${v.x + 7},${v.y + 5} ${v.x},${v.y}`} />
-                    <line x1={v.x} y1={v.y - 5} x2={v.x} y2={v.y - 11} />
-                  </g>
-                ))}
-                {[
-                  { x: 234, y: 252 },
-                  { x: 406, y: 252 },
-                  { x: 770, y: 542 },
-                ].map((p) => (
-                  <polygon key={`arrow-${p.x}-${p.y}`} points={`${p.x},${p.y - 4} ${p.x + 8},${p.y} ${p.x},${p.y + 4}`} fill="#7dd3fc" fillOpacity="0.75" />
-                ))}
-                {[
-                  { x: 616, y: 432 },
-                  { x: 390, y: 432 },
-                  { x: 208, y: 432 },
-                ].map((p) => (
-                  <polygon key={`arrow-l-${p.x}`} points={`${p.x + 8},${p.y - 4} ${p.x},${p.y} ${p.x + 8},${p.y + 4}`} fill="#7dd3fc" fillOpacity="0.75" />
-                ))}
-
-                <FlowDots path={waterWires[0]} dur={11} count={1} />
-                <FlowDots path={waterWires[1]} dur={11} count={1} />
-                <FlowDots path={waterWires[2]} dur={13} count={2} />
-                <FlowDots path={waterWires[3]} dur={12} count={1} />
-                <FlowDots path={waterWires[4]} dur={11} count={1} />
-                <FlowDots path={waterWires[5]} dur={11} count={1} />
-                <FlowDots path={waterWires[6]} dur={14} count={3} color="#34d399" opacity={0.7} />
-
-                {/* 加药支管（静态细线） */}
-                <path d="M 690 200 H 660 V 136 H 330 V 196" fill="none" stroke="#fbbf24" strokeOpacity="0.35" strokeWidth="0.7" />
-                <path d="M 520 136 V 196" fill="none" stroke="#fbbf24" strokeOpacity="0.3" strokeWidth="0.7" />
-
-                {/* 回用出口 */}
-                <polygon points="930,542 924,530 936,530" fill="#34d399" fillOpacity="0.85" />
-                <text x="928" y="564" textAnchor="end" fill="#34d399" fontSize="15">回用至厂区 · {fmt(reuseDaily, 0)} m³/d</text>
-                <text x="60" y="564" fill="#8fa7ba" fontSize="15">中水回用分配</text>
-                <text x="60" y="580" fill="#7dd3fc" fontSize="15">
-                  {dailyUse.map((d) => `${d.label} ${d.value}`).join(" · ")} m³/d
-                </text>
-
-                {/* 读数气泡 */}
-                <StageBubble x={66} y={148} w={166} title="调节池液位" value={`${tanks[0].level}% · ${fmt(rawIntake, 1)} m³/h`} />
-                <StageBubble x={252} y={148} w={140} title="厌氧池 COD" value={`${fmt(quality[0].value, 1)} mg/L`} color={quality[0].level === "ok" ? "#7dd3fc" : LEVEL_COLOR[quality[0].level]} />
-                <StageBubble x={430} y={148} w={150} title="好氧池 氨氮" value={`${fmt(quality[2].value, 2)} mg/L`} color={quality[2].level === "ok" ? "#7dd3fc" : LEVEL_COLOR[quality[2].level]} />
-                <StageBubble x={700} y={92} w={170} title="加药间 pH · 余氯" value={`${fmt(ph, 2)} · ${fmt(residualCl, 2)} mg/L`} color={phLevel === "ok" ? "#7dd3fc" : LEVEL_COLOR[phLevel]} />
-                <StageBubble x={56} y={330} w={140} title="中水池液位" value={`${tanks[1].level}% · ${fmt(reuseDaily, 0)} m³/d`} color={tanks[1].level < 30 ? "#fbbf24" : "#7dd3fc"} />
-                <StageBubble x={238} y={300} w={150} title="泵房 供水流量" value={`${fmt(supply, 1)} m³/h`} />
-                <StageBubble x={430} y={330} w={180} title="清水池 浊度" value={`${tanks[2].level}% · ${fmt(turbidity, 2)} NTU`} color={turbidityLevel === "ok" ? "#7dd3fc" : LEVEL_COLOR[turbidityLevel]} />
-                <StageBubble x={690} y={282} w={210} title="MBR 产水" value={`${fmt(supply, 1)} m³/h · ${fmt(turbidity, 2)} NTU`} />
-
-                {/* 气泡引线 */}
-                <g stroke="#5c6b7a" strokeWidth="0.7" strokeDasharray="2 3" opacity="0.8">
-                  <line x1="146" y1="188" x2="120" y2="198" />
-                  <line x1="322" y1="188" x2="330" y2="198" />
-                  <line x1="505" y1="188" x2="505" y2="198" />
-                  <line x1="785" y1="132" x2="772" y2="156" />
-                  <line x1="126" y1="370" x2="120" y2="386" />
-                  <line x1="313" y1="340" x2="310" y2="374" />
-                  <line x1="520" y1="370" x2="512" y2="386" />
-                  <line x1="795" y1="322" x2="800" y2="348" />
-                </g>
-              </svg>
+                            <OpsScene3D
+                kind="water"
+                ariaLabel="厂区水处理站工艺与池体液位数字孪生场景"
+                data={{
+                  basins: basins.map(({ key, level }) => ({ key, level })),
+                  supply,
+                  reuseDaily,
+                }}
+                tags={[
+                  {
+                    key: "raw",
+                    label: "调节池 · 原水调蓄",
+                    value: `${tanks[0].level}% · ${fmt(rawIntake, 1)} m³/h`,
+                    anchor: [-358, 54, -55],
+                    offset: [-115, -52],
+                    tone: tanks[0].level < 20 ? "alarm" : tanks[0].level < 30 ? "warn" : "ok",
+                  },
+                  {
+                    key: "ana",
+                    label: "厌氧池 · 水解酸化",
+                    value: `COD ${fmt(quality[0].value, 2)} mg/L`,
+                    anchor: [-170, 54, -55],
+                    offset: [-20, -50],
+                    tone: quality[0].level,
+                  },
+                  {
+                    key: "aer",
+                    label: "好氧池 · 曝气生化",
+                    value: `氨氮 ${fmt(quality[2].value, 2)} mg/L`,
+                    anchor: [18, 54, -55],
+                    offset: [70, -50],
+                    tone: quality[2].level,
+                  },
+                  {
+                    key: "dosing",
+                    label: "加药间",
+                    value: `pH ${fmt(ph, 2)} · 余氯 ${fmt(residualCl, 2)}`,
+                    anchor: [290, 48, -85],
+                    offset: [40, -50],
+                    tone: phLevel,
+                  },
+                  {
+                    key: "mid",
+                    label: "中水池 · 回用调蓄",
+                    value: `${tanks[1].level}% · ${fmt(reuseDaily, 0)} m³/d`,
+                    anchor: [-370, 54, 135],
+                    offset: [-105, -50],
+                    tone: tanks[1].level < 20 ? "alarm" : tanks[1].level < 30 ? "warn" : "ok",
+                  },
+                  {
+                    key: "pump",
+                    label: "泵房 · 净水供水",
+                    value: `${fmt(supply, 1)} m³/h`,
+                    anchor: [-190, 36, 128],
+                    offset: [-20, 44],
+                    tone: "ok",
+                  },
+                  {
+                    key: "clr",
+                    label: "清水池 · 消毒出水",
+                    value: `${tanks[2].level}% · ${fmt(turbidity, 2)} NTU`,
+                    anchor: [15, 54, 135],
+                    offset: [60, -50],
+                    tone: turbidityLevel,
+                  },
+                  {
+                    key: "mbr",
+                    label: "MBR 膜车间",
+                    value: `2 用 1 备 · ${fmt(supply, 1)} m³/h`,
+                    anchor: [300, 50, 116],
+                    offset: [90, -44],
+                    tone: "ok",
+                  },
+                ]}
+              />
             </div>
 
             <div className="ops-stage-overlay ops-stage-overlay-bottom">
@@ -1336,89 +1028,6 @@ export function WaterReusePage() {
 
 /* ═══════════════ 设施运维管理 ═══════════════ */
 
-/** 工业设备符号：统一以 (x, y) 为中心，线宽 1，辅助线 0.7 */
-function DeviceGlyph({ kind, x, y, color }: { kind: string; x: number; y: number; color: string }) {
-  switch (kind) {
-    case "elevator":
-      return (
-        <g>
-          <rect x={x - 14} y={y - 26} width="28" height="52" fill="#16222e" stroke={color} strokeWidth="1" />
-          <rect x={x - 9} y={y - 18} width="18" height="18" fill="rgba(111,168,200,0.14)" stroke="#5c6b7a" strokeWidth="0.7" />
-          <path d={`M ${x - 5} ${y + 8} l 5 -5 l 5 5`} fill="none" stroke="#8d99a6" strokeWidth="0.7" />
-          <path d={`M ${x - 5} ${y + 16} l 5 5 l 5 -5`} fill="none" stroke="#8d99a6" strokeWidth="0.7" />
-          <line x1={x} y1={y - 26} x2={x} y2={y - 32} stroke="#5c6b7a" strokeWidth="0.7" />
-        </g>
-      );
-    case "ahu":
-      return (
-        <g>
-          <rect x={x - 34} y={y - 18} width="68" height="36" fill="#16222e" stroke={color} strokeWidth="1" />
-          <circle cx={x - 14} cy={y} r="9" fill="none" stroke="#5c6b7a" strokeWidth="0.7" />
-          <line x1={x - 23} y1={y} x2={x - 5} y2={y} stroke="#5c6b7a" strokeWidth="0.7" />
-          <line x1={x - 14} y1={y - 9} x2={x - 14} y2={y + 9} stroke="#5c6b7a" strokeWidth="0.7" />
-          <path d={`M ${x + 4} ${y - 10} h 26 M ${x + 4} ${y + 10} h 26`} stroke="#5c6b7a" strokeWidth="0.7" />
-        </g>
-      );
-    case "chiller":
-      return (
-        <g>
-          <rect x={x - 30} y={y - 18} width="60" height="36" fill="#16222e" stroke={color} strokeWidth="1" />
-          <circle cx={x - 14} cy={y} r="9" fill="none" stroke="#5c6b7a" strokeWidth="0.7" />
-          <path d={`M ${x - 14} ${y - 6} l 4 6 l -8 0 z`} fill="#5c6b7a" stroke="none" />
-          <path d={`M ${x + 4} ${y - 7} h 6 v 6 h 6 v 6 h 6 v 6`} fill="none" stroke="#5c6b7a" strokeWidth="0.7" />
-        </g>
-      );
-    case "compressor":
-      return (
-        <g>
-          <rect x={x - 32} y={y - 12} width="44" height="24" rx="7" fill="#16222e" stroke={color} strokeWidth="1" />
-          <rect x={x - 24} y={y - 6} width="28" height="12" fill="rgba(111,168,200,0.12)" stroke="#5c6b7a" strokeWidth="0.7" />
-          <circle cx={x + 20} cy={y} r="10" fill="#16222e" stroke={color} strokeWidth="1" />
-          <line x1={x + 20} y1={y - 10} x2={x + 20} y2={y + 10} stroke="#5c6b7a" strokeWidth="0.7" />
-          <line x1={x + 10} y1={y} x2={x + 30} y2={y} stroke="#5c6b7a" strokeWidth="0.7" />
-        </g>
-      );
-    case "switchgear":
-      return (
-        <g>
-          {[-16, 0, 16].map((dx) => (
-            <g key={dx}>
-              <rect x={x + dx - 7} y={y - 24} width="14" height="48" fill="#16222e" stroke={color} strokeWidth="1" />
-              {[0, 1, 2, 3].map((k) => (
-                <line key={k} x1={x + dx - 5} y1={y - 17 + k * 10} x2={x + dx + 5} y2={y - 17 + k * 10} stroke="#5c6b7a" strokeWidth="0.7" />
-              ))}
-            </g>
-          ))}
-          <path d={`M ${x - 2} ${y - 4} l -4 8 h 4 l -2 8 l 7 -10 h -4 l 3 -6 z`} fill="#fbbf24" fillOpacity="0.7" stroke="none" />
-        </g>
-      );
-    case "pump":
-      return (
-        <g>
-          <circle cx={x} cy={y} r="14" fill="#16222e" stroke={color} strokeWidth="1" />
-          <circle cx={x} cy={y} r="5" fill="none" stroke="#5c6b7a" strokeWidth="0.7" />
-          <path d={`M ${x - 6} ${y - 5} l 12 10 M ${x - 6} ${y + 5} l 12 -10`} stroke="#5c6b7a" strokeWidth="0.7" />
-          <line x1={x - 28} y1={y} x2={x - 14} y2={y} stroke={color} strokeWidth="0.7" />
-          <line x1={x + 14} y1={y} x2={x + 26} y2={y} stroke={color} strokeWidth="0.7" />
-        </g>
-      );
-    case "firepump":
-      return (
-        <g>
-          <circle cx={x} cy={y} r="14" fill="#16222e" stroke={color} strokeWidth="1" />
-          <circle cx={x} cy={y} r="5" fill="none" stroke="#5c6b7a" strokeWidth="0.7" />
-          <path d={`M ${x - 6} ${y - 5} l 12 10 M ${x - 6} ${y + 5} l 12 -10`} stroke="#5c6b7a" strokeWidth="0.7" />
-          <path d={`M ${x} ${y - 22} l -6 9 h 12 z`} fill="none" stroke={color} strokeWidth="0.7" />
-          <line x1={x} y1={y - 13} x2={x} y2={y - 14} stroke="#5c6b7a" strokeWidth="0.7" />
-          <line x1={x - 28} y1={y} x2={x - 14} y2={y} stroke={color} strokeWidth="0.7" />
-          <line x1={x + 14} y1={y} x2={x + 26} y2={y} stroke={color} strokeWidth="0.7" />
-        </g>
-      );
-    default:
-      return null;
-  }
-}
-
 export function FacilityOpsPage() {
   const t = useTick(3400);
 
@@ -1455,6 +1064,25 @@ export function FacilityOpsPage() {
     { key: "pump", name: "水泵", kind: "pump", x: 476, y: 456, health: devices[4].health, level: devices[4].level },
     { key: "firepump", name: "消防泵", kind: "firepump", x: 626, y: 456, health: devices[2].health, level: devices[2].level },
   ];
+  // 3D 场景锚点与标签偏移，与 ops3d/builders 中的设备位置保持一致
+  const nodeAnchors: Record<string, [number, number, number]> = {
+    elevator: [326, 142, -84],
+    ahu: [100, 58, -78],
+    chiller: [240, 56, -22],
+    compressor: [-282, 34, 146],
+    switchgear: [-150, 44, 146],
+    pump: [-24, 25, 146],
+    firepump: [146, 25, 146],
+  };
+  const nodeTagOffsets: Record<string, [number, number]> = {
+    elevator: [44, -74],
+    ahu: [-20, -52],
+    chiller: [34, 46],
+    compressor: [-30, 48],
+    switchgear: [-20, -54],
+    pump: [10, 50],
+    firepump: [44, -52],
+  };
 
   const orders = [
     { status: "待接单", count: 2, color: "#fbbf24" },
@@ -1652,151 +1280,21 @@ export function FacilityOpsPage() {
               </div>
 
               <div className="ops-stage-scene">
-                <svg
-                  className="ops-scene-svg"
-                  viewBox="0 0 1000 620"
-                  preserveAspectRatio="xMidYMid meet"
-                  role="img"
-                  aria-label="厂区厂房设备数字孪生总平面"
-                >
-                  <defs>
-                    <linearGradient id="ops-ground" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#0b1722" />
-                      <stop offset="100%" stopColor="#060f18" />
-                    </linearGradient>
-                    <linearGradient id="ops-floor" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#16273a" />
-                      <stop offset="100%" stopColor="#0d1a26" />
-                    </linearGradient>
-                    <linearGradient id="ops-wall" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#33465a" />
-                      <stop offset="100%" stopColor="#22323f" />
-                    </linearGradient>
-                  </defs>
-
-                  {/* 厂区地坪 */}
-                  <rect x="0" y="56" width="1000" height="564" fill="url(#ops-ground)" />
-                  <g stroke="#5c6b7a" strokeOpacity="0.12" strokeWidth="0.7">
-                    {Array.from({ length: 15 }).map((_, i) => (
-                      <line key={`ogx-${i}`} x1={i * 70} y1="56" x2={i * 70} y2="620" />
-                    ))}
-                    {Array.from({ length: 8 }).map((_, i) => (
-                      <line key={`ogy-${i}`} x1="0" y1={80 + i * 70} x2="1000" y2={80 + i * 70} />
-                    ))}
-                  </g>
-                  <text x="96" y="124" fill="#d6e4ef" fontSize="19" fontWeight="700">厂区 A · 设备数字孪生总平面</text>
-                  <text x="940" y="124" textAnchor="end" fill="#8fa7ba" fontSize="15">青 正常 · 琥珀 预警 · 红 故障</text>
-
-                  {/* 厂房外壳（剖切俯视） */}
-                  <rect x="96" y="140" width="808" height="400" fill="url(#ops-wall)" stroke="#8d99a6" strokeWidth="1.4" />
-                  <rect x="106" y="150" width="788" height="380" fill="url(#ops-floor)" stroke="#5c6b7a" strokeWidth="0.7" />
-                  <rect x="96" y="140" width="808" height="10" fill="#22303d" />
-                  {[196, 296, 396, 496, 596, 696, 796, 896].map((x) => (
-                    <line key={`col-${x}`} x1={x} y1="150" x2={x} y2="530" stroke="#5c6b7a" strokeOpacity="0.18" strokeWidth="0.7" />
-                  ))}
-                  <rect x="470" y="518" width="64" height="12" fill="#6fa8c8" fillOpacity="0.25" stroke="#6fa8c8" strokeOpacity="0.5" strokeWidth="0.7" />
-
-                  {/* 功能分区 */}
-                  <rect x="122" y="190" width="350" height="158" fill="#0e1a25" stroke="#5c6b7a" strokeWidth="0.7" />
-                  <text x="132" y="206" fill="#9fb0bf" fontSize="15" letterSpacing="0.6">生产区</text>
-                  {Array.from({ length: 3 }).map((_, r) =>
-                    Array.from({ length: 3 }).map((_, c) => (
-                      <g key={`machine-${r}-${c}`}>
-                        <rect x={144 + c * 92} y={216 + r * 40} width="64" height="24" fill="#1a2a38" stroke="#6fa8c8" strokeOpacity="0.4" strokeWidth="0.7" />
-                        <line x1={150 + c * 92} y1={228 + r * 40} x2={202 + c * 92} y2={228 + r * 40} stroke="#5c6b7a" strokeWidth="0.7" />
-                        <circle cx={211 + c * 92} cy={228 + r * 40} r="2" fill="#4dd4ff" fillOpacity="0.5" />
-                      </g>
-                    )),
-                  )}
-                  <line x1="140" y1="344" x2="462" y2="344" stroke="#5c6b7a" strokeWidth="0.7" />
-                  {Array.from({ length: 12 }).map((_, i) => (
-                    <circle key={`roller-${i}`} cx={148 + i * 26} cy="344" r="3" fill="#22303d" stroke="#8d99a6" strokeWidth="0.7" />
-                  ))}
-                  <text x="462" y="334" textAnchor="end" fill="#8fa7ba" fontSize="14">产线</text>
-
-                  <rect x="500" y="190" width="382" height="158" fill="#0e1a25" stroke="#5c6b7a" strokeWidth="0.7" />
-                  <text x="510" y="206" fill="#9fb0bf" fontSize="15" letterSpacing="0.6">设备区</text>
-
-                  {/* 主通道 */}
-                  <rect x="122" y="366" width="760" height="36" fill="#16222e" stroke="#5c6b7a" strokeWidth="0.7" />
-                  <line x1="140" y1="384" x2="862" y2="384" stroke="#8d99a6" strokeOpacity="0.3" strokeWidth="0.9" strokeDasharray="16 14" />
-                  {[250, 500, 750].map((x) => (
-                    <polygon key={`aisle-arrow-${x}`} points={`${x},380 ${x + 9},384 ${x},388`} fill="#6fa8c8" fillOpacity="0.6" />
-                  ))}
-                  <text x="852" y="360" textAnchor="end" fill="#8fa7ba" fontSize="14.5">主通道</text>
-
-                  <rect x="122" y="420" width="760" height="104" fill="#0e1a25" stroke="#5c6b7a" strokeWidth="0.7" />
-                  <text x="132" y="436" fill="#9fb0bf" fontSize="15" letterSpacing="0.6">动力辅机区</text>
-
-                  {/* 电缆桥架与支线 */}
-                  <g stroke="#5c6b7a" strokeWidth="0.7" fill="none">
-                    <line x1="140" y1="408" x2="862" y2="408" />
-                    <line x1="140" y1="414" x2="862" y2="414" />
-                    {Array.from({ length: 15 }).map((_, i) => (
-                      <line key={`tray-${i}`} x1={148 + i * 50} y1="408" x2={148 + i * 50} y2="414" />
-                    ))}
-                  </g>
-                  {[
-                    { x: 826, y: 252 },
-                    { x: 600, y: 250 },
-                    { x: 740, y: 306 },
-                    { x: 188, y: 438 },
-                    { x: 330, y: 432 },
-                    { x: 476, y: 440 },
-                    { x: 626, y: 440 },
-                  ].map((p) => (
-                    <g key={`drop-${p.x}`}>
-                      <line x1={p.x} y1={p.y < 366 ? 408 : 414} x2={p.x} y2={p.y} stroke="#5c6b7a" strokeWidth="0.7" />
-                      <circle cx={p.x} cy={p.y < 366 ? 408 : 414} r="2" fill="#8d99a6" />
-                    </g>
-                  ))}
-
-                  {/* 冷冻水与工艺管线 */}
-                  <path d="M 710 288 H 680 V 232 H 634" fill="none" stroke="#6fa8c8" strokeOpacity="0.5" strokeWidth="0.7" />
-                  <path d="M 506 456 H 526 V 288 H 710" fill="none" stroke="#6fa8c8" strokeOpacity="0.35" strokeWidth="0.7" />
-
-                  {/* 设备节点 */}
-                  {sceneNodes.map((n) => {
-                    const color = n.level === "ok" ? "#4dd4ff" : LEVEL_COLOR[n.level];
-                    return (
-                      <g key={n.key}>
-                        {n.level !== "ok" && (
-                          <circle
-                            className={`ops-node-glow ${n.level}`}
-                            cx={n.x}
-                            cy={n.y}
-                            r={n.level === "alarm" ? 36 : 30}
-                            fill={color}
-                            opacity="0.22"
-                          />
-                        )}
-                        <DeviceGlyph kind={n.kind} x={n.x} y={n.y} color={color} />
-                        <rect
-                          x={n.x - 66}
-                          y={n.y + 28}
-                          width="132"
-                          height="40"
-                          rx="3"
-                          fill="rgba(6, 17, 28, 0.92)"
-                          stroke={n.level === "ok" ? "#5c6b7a" : color}
-                          strokeOpacity={n.level === "ok" ? 0.7 : 0.45}
-                          strokeWidth="0.7"
-                        />
-                        <text x={n.x - 58} y={n.y + 45} fill="#c7d6e2" fontSize="17">{n.name}</text>
-                        <text x={n.x - 58} y={n.y + 61} fill={color} fontSize="16" fontWeight="700">
-                          {fmt(n.health, 1)} 分 · {n.level === "alarm" ? "故障" : LEVEL_TEXT[n.level]}
-                        </text>
-                      </g>
-                    );
-                  })}
-
-                  <FlowDots path="M 140 411 H 862" dur={14} count={3} color="#8fb6cc" r={2.2} opacity={0.55} />
-
-                  {/* 厂区道路 */}
-                  <rect x="0" y="552" width="1000" height="40" fill="#0e1924" stroke="#5c6b7a" strokeOpacity="0.7" strokeWidth="0.7" />
-                  <line x1="14" y1="572" x2="986" y2="572" stroke="#8d99a6" strokeOpacity="0.3" strokeWidth="0.9" strokeDasharray="20 16" />
-                  <rect x="96" y="542" width="808" height="10" fill="#22352f" stroke="#4c6b5e" strokeOpacity="0.4" strokeWidth="0.7" />
-                </svg>
+                                <OpsScene3D
+                  kind="device"
+                  ariaLabel="厂区厂房设备数字孪生总平面"
+                  data={{
+                    nodes: sceneNodes.map(({ key, name, level, health }) => ({ key, name, level, health })),
+                  }}
+                  tags={sceneNodes.map((node) => ({
+                    key: node.key,
+                    label: node.name,
+                    value: `${fmt(node.health, 1)} 分 · ${node.level === "alarm" ? "故障" : LEVEL_TEXT[node.level]}`,
+                    anchor: nodeAnchors[node.key] ?? [0, 30, 0],
+                    offset: nodeTagOffsets[node.key],
+                    tone: node.level,
+                  }))}
+                />
               </div>
 
               <div className="ops-stage-overlay ops-stage-overlay-bottom">
